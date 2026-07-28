@@ -45,3 +45,21 @@ The POSTGRES section has the following configurations:
 
 - `IRIS_SECRET_KEY` - The secret key used by Flask.
 - `IRIS_SECURITY_PASSWORD_SALT` - ??
+
+## OpenCTI module
+
+IRIS ships with the `iris_opencti_module` processor module. It is registered like the other built-in enrichment modules
+and stays disabled until an administrator configures and enables it in **Manage > Modules**.
+
+Required module parameters:
+
+- `opencti_url` - OpenCTI base URL. `/graphql` is appended automatically when needed.
+- `opencti_token` - OpenCTI API token.
+
+Useful optional parameters:
+
+- `opencti_verify_ssl` - Verify the OpenCTI TLS certificate.
+- `opencti_max_results` - Maximum indicators/observables fetched for each IOC lookup.
+- `opencti_min_score` - Minimum `x_opencti_score` accepted from OpenCTI.
+- `opencti_add_matching_iocs` - Attach matching OpenCTI indicators/observables to alerts and cases.
+- Trigger flags control automatic and manual enrichment for IOCs, alerts, and cases.

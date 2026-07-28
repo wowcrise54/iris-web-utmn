@@ -1694,7 +1694,8 @@ def register_modules_pipelines():
 
 def register_default_modules():
     modules = ['iris_vt_module', 'iris_misp_module', 'iris_check_module',
-               'iris_webhooks_module', 'iris_intelowl_module']
+               'iris_webhooks_module', 'iris_intelowl_module',
+               'iris_opencti_module']
 
     for module_name in modules:
         class_, _ = instantiate_module_from_name(module_name)
