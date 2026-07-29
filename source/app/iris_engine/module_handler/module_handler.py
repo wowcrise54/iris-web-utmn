@@ -26,6 +26,7 @@ from packaging import version
 from pickle import dumps
 from pickle import loads
 from sqlalchemy import and_
+from sqlalchemy import inspect as sqlalchemy_inspect
 
 from app import app
 from app import celery
@@ -450,8 +451,15 @@ def task_hook_wrapper(self, module_name, hook_name, hook_ui_name, data, init_use
         if isinstance(deser_data, list):
             _obj = []
             for dse_data in deser_data:
-                obj = db.session.merge(dse_data)
-                db.session.commit()
+                # Reload a clean instance in the worker session. Pickled ORM
+                # instances retain loader state from the web process; passing
+                # that state to merge() is incompatible with SQLAlchemy 2.x
+                # for models that have joined relationships.
+                identity = sqlalchemy_inspect(dse_data).identity
+                primary_key = identity[0] if len(identity) == 1 else identity
+                obj = db.session.get(type(dse_data), primary_key)
+                if obj is None:
+                    raise Exception(f'Unable to reload {type(dse_data).__name__} #{primary_key}')
                 _obj.append(obj)
 
         elif isinstance(deser_data, str) or isinstance(deser_data, int):
@@ -461,8 +469,11 @@ def task_hook_wrapper(self, module_name, hook_name, hook_ui_name, data, init_use
             _obj = [deser_data]
 
         else:
-            _obj_a = db.session.merge(deser_data)
-            db.session.commit()
+            identity = sqlalchemy_inspect(deser_data).identity
+            primary_key = identity[0] if len(identity) == 1 else identity
+            _obj_a = db.session.get(type(deser_data), primary_key)
+            if _obj_a is None:
+                raise Exception(f'Unable to reload {type(deser_data).__name__} #{primary_key}')
             _obj.append(_obj_a)
 
     except Exception as e:
@@ -492,7 +503,8 @@ def task_hook_wrapper(self, module_name, hook_name, hook_ui_name, data, init_use
     return task_status
 
 
-def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_name: str = None, module_name: str = None) -> any:
+def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_name: str = None,
+                      module_name: str = None, return_task_ids: bool = False) -> any:
     """
     Calls modules which have registered the specified hook
 
@@ -535,6 +547,7 @@ def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_nam
         IrisModule, IrisModuleHook.module_id == IrisModule.id
     ).all()
 
+    task_ids = []
     for module in modules:
         if module.run_asynchronously and "on_preload_" not in hook_name:
             log.info(f'Calling module {module.module_name} asynchronously for hook {hook_name} :: {hook_ui_name}')
@@ -542,9 +555,12 @@ def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_nam
             # So pass a dumped instance and then rebuild on the task side
             ser_data = base64.b64encode(dumps(data))
             ser_data_auth = hmac_sign(ser_data) + b" " + ser_data
-            task_hook_wrapper.delay(module_name=module.module_name, hook_name=hook_name,
-                                    hook_ui_name=module.manual_hook_ui_name, data=ser_data_auth.decode("utf8"),
-                                    init_user=current_user.name, caseid=caseid)
+            queued_task = task_hook_wrapper.delay(
+                module_name=module.module_name, hook_name=hook_name,
+                hook_ui_name=module.manual_hook_ui_name, data=ser_data_auth.decode("utf8"),
+                init_user=current_user.name, caseid=caseid
+            )
+            task_ids.append(queued_task.id)
 
         else:
             # Direct call. Should be fast
@@ -580,6 +596,8 @@ def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_nam
                 else:
                     data = data_result
 
+    if return_task_ids:
+        return {"data": data, "task_ids": task_ids}
     return data
 
 

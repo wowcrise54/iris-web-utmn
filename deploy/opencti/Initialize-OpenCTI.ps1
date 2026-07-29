@@ -1,5 +1,6 @@
 param(
-    [string]$AdminEmail = "admin@opencti.local"
+    [string]$AdminEmail = "admin@opencti.local",
+    [string]$AlienVaultApiKey = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,6 +42,9 @@ $values = @(
     "MINIO_ROOT_PASSWORD=$(New-RandomHex -Count 24)"
     "RABBITMQ_DEFAULT_USER=opencti"
     "RABBITMQ_DEFAULT_PASS=$(New-RandomHex -Count 24)"
+    "ALIENVAULT_CONNECTOR_ID=$([guid]::NewGuid())"
+    "ALIENVAULT_API_KEY=$AlienVaultApiKey"
+    "ALIENVAULT_PULSE_START_TIMESTAMP=$([DateTime]::UtcNow.AddMonths(-1).ToString('yyyy-MM-ddT00:00:00'))"
 )
 
 [System.IO.File]::WriteAllLines(

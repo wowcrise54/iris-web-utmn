@@ -361,6 +361,27 @@
 
 {% include 'modal_escalate.html' %}
 {% include 'modal_enrichment.html' %}
+<div class="modal" id="openCTIGraphModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document" style="max-width:96vw">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">OpenCTI — граф связей</h5>
+        <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button></div>
+      <div class="modal-body p-2"><div id="openCTIGraphNotice"></div>
+        <div class="form-row mb-2">
+          <div class="col-md-4"><input id="openCTIGraphSearch" class="form-control form-control-sm" placeholder="Поиск узла" oninput="filterOpenCTIGraph()"></div>
+          <div class="col-md-3"><select id="openCTIGraphTypeFilter" class="form-control form-control-sm" onchange="filterOpenCTIGraph()"><option value="">Все типы сущностей</option></select></div>
+          <div class="col-md-3"><select id="openCTIGraphRelationFilter" class="form-control form-control-sm" onchange="filterOpenCTIGraph()"><option value="">Все типы связей</option></select></div>
+          <div class="col-md-2"><div id="openCTIGraphLegend" class="small"></div></div>
+        </div>
+        <div class="row no-gutters">
+        <div class="col-md-9"><div id="openCTIGraphCanvas" style="height:72vh;border:1px solid #ddd"></div></div>
+        <div class="col-md-3 pl-3"><div id="openCTIGraphDetails" class="small">Выберите узел</div></div>
+      </div></div>
+      <div class="modal-footer"><button class="btn btn-outline-secondary" onclick="openCTIGraphNetwork && openCTIGraphNetwork.fit()">Центрировать</button>
+        <button class="btn btn-dark" data-dismiss="modal">Закрыть</button></div>
+    </div>
+  </div>
+</div>
 {% include 'modal_new_alert_owner.html' %}
 
 {% endblock content %}

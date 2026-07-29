@@ -325,6 +325,8 @@ def create_safe_hooks():
 
     create_safe(db.session, IrisHook, hook_name='on_manual_trigger_alert',
                 hook_description='Triggered upon user action')
+    create_safe(db.session, IrisHook, hook_name='on_manual_trigger_alert_opencti_graph',
+                hook_description='Triggered only by the manual OpenCTI graph action')
 
     # --- Case
     create_safe(db.session, IrisHook, hook_name='on_preload_case_create',
@@ -1708,6 +1710,9 @@ def register_default_modules():
         module, logs = register_module(module_name)
         if module is None:
             log.info("Attempted to add {mod}. Got {err}".format(mod=module_name, err=logs))
+            if hasattr(class_, "upgrade_existing_registration"):
+                if class_.upgrade_existing_registration():
+                    log.info("Successfully upgraded registered {mod}".format(mod=module_name))
 
         else:
             iris_module_disable_by_id(module.id)

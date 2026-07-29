@@ -1099,7 +1099,8 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                     <!-- Alert IOCs section -->
                     ${
                       alert.iocs && alert.iocs.length > 0
-                          ? `<div class="separator-solid"></div><h3 class="title mb-3"><strong>IOCs</strong></h3>
+                          ? `${renderOpenCTIAlertSummary(alert.iocs, alert.alert_context, alert.alert_id)}
+                             <div class="separator-solid"></div><h3 class="title mb-3"><strong>IOCs</strong></h3>
                                        <div class="table-responsive">
                                          <table class="table table-sm table-striped">
                                            <thead>
@@ -1128,10 +1129,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                                                    <td>${ioc.ioc_type ? filterXSS(ioc.ioc_type.type_name) : '-'}</td>
                                                    <td>${filterXSS(ioc.ioc_tlp) ? ioc.ioc_tlp : '-'}</td>
                                                    <td>${ioc.ioc_tags ? ioc.ioc_tags.split(',').map((tag) => get_tag_from_data(tag, 'badge badge-pill badge-light ml-1')).join('') : ''}</td>
-                                                   <td>${ioc.ioc_enrichment ? `<button type="button" class="btn btn-sm btn-outline-dark" data-toggle="modal" data-target="#enrichmentModal" onclick="showEnrichment(${JSON.stringify(ioc.ioc_enrichment).replace(/"/g, '&quot;')})">
-                                                      View Enrichment
-                                                    </button>` : ''}
-                                                    </td>
+                                                   <td>${renderEnrichmentCell(ioc.ioc_enrichment)}</td>
                                                     <td>
                                                        <button class="btn bg-transparent" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                                           <span aria-hidden="true"><i class="fas fa-ellipsis-v"></i></span>
@@ -1267,7 +1265,11 @@ function init_module_processing_alert(alert_id, hook_name, hook_ui_name, module_
 
     post_request_api("/dim/hooks/call", JSON.stringify(data), true)
     .done(function (data){
-        notify_auto_api(data)
+        notify_auto_api(data);
+        const taskIds = data.data && data.data.task_ids;
+        if (module_name === 'iris_opencti_module' && taskIds && taskIds.length) {
+            pollOpenCTITask(taskIds[0], alert_id, false);
+        }
     });
 }
 
@@ -1588,11 +1590,485 @@ function resetSavedFilters(queryParams = null, replaceState = true) {
 }
 
 
+function encodeEnrichmentData(enrichment) {
+    return btoa(unescape(encodeURIComponent(JSON.stringify(enrichment))));
+}
+
+function showEnrichmentFromButton(button) {
+    const encoded = button.getAttribute('data-enrichment');
+    const enrichment = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    showEnrichment(enrichment);
+}
+
+function openCTIEnrichment(enrichment) {
+    return enrichment && enrichment.opencti ? enrichment.opencti : null;
+}
+
+function renderEnrichmentCell(enrichment) {
+    if (!enrichment) {
+        return '';
+    }
+
+    const opencti = openCTIEnrichment(enrichment);
+    let status = '';
+    if (opencti) {
+        const statusConfig = {
+            match: ['badge-success', 'Совпадение'],
+            no_match: ['badge-secondary', 'Не найдено'],
+            error: ['badge-danger', 'Ошибка'],
+        };
+        const config = statusConfig[opencti.status] || ['badge-light', 'Не проверено'];
+        const count = Number(opencti.match_count || 0);
+        const checkedAt = opencti.last_success_utc || opencti.last_attempt_utc;
+        status = `
+          <div class="mb-1">
+            <span class="badge badge-pill ${config[0]}">${config[1]}</span>
+            ${count ? `<span class="badge badge-pill badge-light ml-1">${count}</span>` : ''}
+          </div>
+          ${checkedAt ? `<small class="text-muted d-block mb-1">${escapeOpenCTI(formatOpenCTIDate(checkedAt))}</small>` : ''}
+        `;
+    }
+
+    return `${status}
+      <button type="button" class="btn btn-sm btn-outline-dark"
+              data-toggle="modal" data-target="#enrichmentModal"
+              data-enrichment="${encodeEnrichmentData(enrichment)}"
+              onclick="showEnrichmentFromButton(this)">
+        Подробнее
+      </button>`;
+}
+
+function renderOpenCTIAlertSummary(iocs, alertContext, alertId) {
+    const results = (iocs || [])
+        .map((ioc) => openCTIEnrichment(ioc.ioc_enrichment))
+        .filter(Boolean);
+    if (!results.length) {
+        return '';
+    }
+
+    const matches = results.filter((item) => item.status === 'match').length;
+    const noMatches = results.filter((item) => item.status === 'no_match').length;
+    const errors = results.filter((item) => item.status === 'error').length;
+    const context = (alertContext && alertContext.opencti) || {};
+    const progress = context.progress || {};
+    const recommendation = context.recommendation;
+    const graph = context.graph;
+    const errorIocIds = (iocs || []).filter((ioc) => {
+        const item = openCTIEnrichment(ioc.ioc_enrichment);
+        return item && item.status === 'error';
+    }).map((ioc) => ioc.ioc_id);
+    const progressPercent = progress.total
+        ? Math.round(100 * Number(progress.processed || 0) / Number(progress.total))
+        : 0;
+    const controls = `
+      ${progress.status === 'running' ? `<div class="progress mt-2" style="height:18px">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:${progressPercent}%">
+          ${Number(progress.processed || 0)}/${Number(progress.total || 0)}
+        </div></div><small class="text-muted">${escapeOpenCTI(progress.current_ioc || '')}</small>` : ''}
+      <div class="mt-2">
+        <button class="btn btn-sm btn-outline-primary" onclick="startOpenCTIGraph(${alertId})">
+          <i class="fas fa-project-diagram mr-1"></i>${graph ? 'Обновить граф' : 'Построить граф OpenCTI'}
+        </button>
+        ${graph ? `<button class="btn btn-sm btn-info ml-1" onclick="showOpenCTIGraph(${alertId})">Открыть граф</button>` : ''}
+        ${errorIocIds.length ? `<button class="btn btn-sm btn-outline-danger ml-1"
+          onclick="retryOpenCTIIocs(${alertId}, [${errorIocIds.join(',')}])">Повторить ошибки (${errorIocIds.length})</button>` : ''}
+        ${recommendation ? `<button class="btn btn-sm btn-warning ml-1"
+          onclick="applyOpenCTIRecommendation(${alertId}, '${escapeOpenCTI(recommendation.severity)}', ${Number(recommendation.risk_score || 0)})">
+          Применить ${escapeOpenCTI(recommendation.severity)} (${Number(recommendation.risk_score || 0)})
+        </button>` : ''}
+      </div>
+      ${graph && graph.stale ? '<div class="alert alert-warning py-1 mt-2 mb-0">Граф устарел после обновления enrichment.</div>' : ''}`;
+    return `
+      <div class="card border-info mb-3">
+        <div class="card-body py-2">
+          <strong><i class="fas fa-project-diagram mr-2"></i>OpenCTI</strong>
+          <span class="badge badge-pill badge-light ml-2">Проверено: ${results.length}</span>
+          <span class="badge badge-pill badge-success ml-1">Найдено: ${matches}</span>
+          <span class="badge badge-pill badge-secondary ml-1">Без совпадений: ${noMatches}</span>
+          ${errors ? `<span class="badge badge-pill badge-danger ml-1">Ошибки: ${errors}</span>` : ''}
+          ${controls}
+        </div>
+      </div>`;
+}
+
+function escapeOpenCTI(value) {
+    return filterXSS(String(value === null || value === undefined ? '' : value));
+}
+
+function safeOpenCTIUrl(value) {
+    if (!value) {
+        return null;
+    }
+    try {
+        const parsed = new URL(String(value), window.location.origin);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return null;
+        }
+        return escapeOpenCTI(parsed.href);
+    } catch (error) {
+        return null;
+    }
+}
+
+function formatOpenCTIDate(value) {
+    if (!value) {
+        return '';
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString();
+}
+
+function mergeOpenCTIValues(target, values, keyBuilder = (value) => String(value)) {
+    const seen = new Set(target.map(keyBuilder));
+    (values || []).forEach((value) => {
+        const key = keyBuilder(value);
+        if (!seen.has(key)) {
+            seen.add(key);
+            target.push(value);
+        }
+    });
+}
+
+function groupOpenCTIMatches(matches) {
+    const groups = new Map();
+    (matches || []).forEach((match) => {
+        const key = `${match.iris_ioc_type || ''}|${String(match.value || match.name || match.id || '').toLowerCase()}`;
+        if (!groups.has(key)) {
+            groups.set(key, {
+                ...match,
+                labels: [],
+                markings: [],
+                external_references: [],
+                related_entities: [],
+                source_objects: [],
+                related_errors: [],
+            });
+        }
+        const group = groups.get(key);
+        ['name', 'value', 'description', 'pattern', 'pattern_type', 'valid_from', 'valid_until',
+            'created_at', 'updated_at', 'iris_ioc_type'].forEach((field) => {
+            if (!group[field] && match[field]) {
+                group[field] = match[field];
+            }
+        });
+        group.score = Math.max(Number(group.score || 0), Number(match.score || 0));
+        group.confidence = Math.max(Number(group.confidence || 0), Number(match.confidence || 0));
+        mergeOpenCTIValues(group.labels, match.labels);
+        mergeOpenCTIValues(group.markings, match.markings);
+        mergeOpenCTIValues(
+            group.external_references,
+            match.external_references,
+            (reference) => `${reference.source_name || ''}|${reference.external_id || ''}|${reference.url || ''}`,
+        );
+        mergeOpenCTIValues(
+            group.related_entities,
+            match.related_entities,
+            (entity) => `${entity.id || ''}|${entity.entity_type || ''}`,
+        );
+        group.source_objects.push({
+            id: match.id,
+            source: match.source,
+            entity_type: match.entity_type,
+            opencti_url: match.opencti_url,
+        });
+        if (match.related_error) {
+            group.related_errors.push(match.related_error);
+        }
+    });
+    return Array.from(groups.values());
+}
+
+function renderOpenCTIBadges(values, className = 'badge-light') {
+    return (values || [])
+        .map((value) => `<span class="badge badge-pill ${className} mr-1 mb-1">${escapeOpenCTI(value)}</span>`)
+        .join('');
+}
+
+function renderOpenCTIRelatedEntities(entities) {
+    if (!entities || !entities.length) {
+        return '';
+    }
+    const grouped = {};
+    entities.forEach((entity) => {
+        const type = entity.entity_type || 'Other';
+        grouped[type] = grouped[type] || [];
+        grouped[type].push(entity);
+    });
+
+    return `<div class="mt-3"><h6><strong>Связанные сущности</strong></h6>
+      ${Object.entries(grouped).map(([type, items]) => `
+        <div class="mb-2">
+          <small class="text-muted text-uppercase">${escapeOpenCTI(type)}</small>
+          <div>${items.map((entity) => {
+              const url = safeOpenCTIUrl(entity.opencti_url);
+              const label = escapeOpenCTI(entity.name || entity.id);
+              const relation = entity.relationship_type
+                  ? ` <small class="text-muted">(${escapeOpenCTI(entity.relationship_type)})</small>`
+                  : '';
+              return url
+                  ? `<a class="badge badge-pill badge-info mr-1 mb-1" href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>${relation}`
+                  : `<span class="badge badge-pill badge-info mr-1 mb-1">${label}</span>${relation}`;
+          }).join('')}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderOpenCTICard(match) {
+    const description = match.description
+        ? `<p class="mt-3 mb-2">${escapeOpenCTI(match.description)}</p>`
+        : '';
+    const pattern = match.pattern
+        ? `<pre class="p-2 bg-light border rounded"><code>${escapeOpenCTI(match.pattern)}</code></pre>`
+        : '';
+    const references = (match.external_references || []).map((reference) => {
+        const url = safeOpenCTIUrl(reference.url);
+        const label = escapeOpenCTI(reference.source_name || reference.external_id || reference.url || 'Reference');
+        return url
+            ? `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a></li>`
+            : `<li>${label}</li>`;
+    }).join('');
+    const objectLinks = (match.source_objects || []).map((object) => {
+        const url = safeOpenCTIUrl(object.opencti_url);
+        const label = escapeOpenCTI(object.entity_type || object.source || 'Object');
+        return url
+            ? `<a class="badge badge-pill badge-primary mr-1" href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`
+            : `<span class="badge badge-pill badge-primary mr-1">${label}</span>`;
+    }).join('');
+
+    return `<div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-start">
+        <div>
+          <strong class="text-break">${escapeOpenCTI(match.value || match.name || match.id)}</strong>
+          <div class="mt-1">
+            ${objectLinks}
+            ${match.iris_ioc_type ? `<span class="badge badge-pill badge-light">${escapeOpenCTI(match.iris_ioc_type)}</span>` : ''}
+          </div>
+        </div>
+        <div class="text-right">
+          <span class="badge badge-info">Score: ${Number(match.score || 0)}</span>
+          <span class="badge badge-secondary">Confidence: ${Number(match.confidence || 0)}</span>
+        </div>
+      </div>
+      <div class="card-body">
+        ${match.markings && match.markings.length ? `<div class="mb-2">${renderOpenCTIBadges(match.markings, 'badge-warning')}</div>` : ''}
+        ${match.labels && match.labels.length ? `<div class="mb-2">${renderOpenCTIBadges(match.labels)}</div>` : ''}
+        ${description}
+        ${pattern}
+        <div class="row mt-3">
+          <div class="col-md-6"><small class="text-muted">Создан: ${escapeOpenCTI(formatOpenCTIDate(match.created_at) || '—')}</small></div>
+          <div class="col-md-6"><small class="text-muted">Обновлён: ${escapeOpenCTI(formatOpenCTIDate(match.updated_at) || '—')}</small></div>
+          <div class="col-md-6"><small class="text-muted">Действует с: ${escapeOpenCTI(formatOpenCTIDate(match.valid_from) || '—')}</small></div>
+          <div class="col-md-6"><small class="text-muted">Действует до: ${escapeOpenCTI(formatOpenCTIDate(match.valid_until) || '—')}</small></div>
+        </div>
+        ${references ? `<div class="mt-3"><h6><strong>Внешние ссылки</strong></h6><ul>${references}</ul></div>` : ''}
+        ${renderOpenCTIRelatedEntities(match.related_entities)}
+        ${match.related_errors && match.related_errors.length
+            ? '<div class="alert alert-warning mt-3 mb-0">Основное совпадение получено, но связанные сущности загрузить не удалось.</div>'
+            : ''}
+      </div>
+    </div>`;
+}
+
+function renderOpenCTIEnrichment(enrichment) {
+    const matches = groupOpenCTIMatches(enrichment.matches || []);
+    const status = enrichment.status || 'unknown';
+    const verdict = enrichment.verdict;
+    const lastSuccess = formatOpenCTIDate(enrichment.last_success_utc);
+    let notice = '';
+    if (status === 'error') {
+        notice = `<div class="alert alert-danger">
+          <strong>Последняя попытка завершилась ошибкой.</strong>
+          ${enrichment.error ? `<div>${escapeOpenCTI(enrichment.error)}</div>` : ''}
+          ${lastSuccess ? `<small>Показан последний успешный результат от ${escapeOpenCTI(lastSuccess)}.</small>` : ''}
+        </div>`;
+    } else if (status === 'no_match') {
+        notice = '<div class="alert alert-secondary">Точных совпадений в OpenCTI не найдено.</div>';
+    } else {
+        notice = `<div class="alert alert-success">
+          Найдено точных объектов: ${Number(enrichment.match_count || 0)}.
+          ${lastSuccess ? `<small class="ml-2">Проверено: ${escapeOpenCTI(lastSuccess)}</small>` : ''}
+        </div>`;
+    }
+    const verdictCard = verdict ? `<div class="card border-warning mb-3"><div class="card-body py-2">
+      <strong>Вердикт: ${escapeOpenCTI(verdict.severity)}</strong>
+      <span class="badge badge-warning ml-2">Риск ${Number(verdict.risk_score || 0)}</span>
+      <span class="badge badge-light ml-1">${escapeOpenCTI(verdict.state || 'unknown')}</span>
+      <div class="small text-muted mt-1">${(verdict.reasons || []).map(escapeOpenCTI).join(' · ')}</div>
+      ${verdict.sightings && verdict.sightings.count ? `<div class="small mt-1">Наблюдения: ${Number(verdict.sightings.count)}
+        (${escapeOpenCTI(formatOpenCTIDate(verdict.sightings.first_seen))} — ${escapeOpenCTI(formatOpenCTIDate(verdict.sightings.last_seen))})</div>` : ''}
+    </div></div>` : '';
+    return `${notice}${verdictCard}${matches.map(renderOpenCTICard).join('')}`;
+}
+
 function showEnrichment(enrichment) {
+    const container = document.getElementById('enrichmentData');
+    container.innerHTML = '';
+    const opencti = openCTIEnrichment(enrichment);
+    if (opencti) {
+        container.className = '';
+        container.removeAttribute('style');
+        $('#enrichmentModalLabel').text('OpenCTI enrichment');
+        container.innerHTML = renderOpenCTIEnrichment(opencti);
+        return;
+    }
+
+    $('#enrichmentModalLabel').text('Enrichment');
     const ace = get_new_ace_editor('enrichmentData', null,
         null, null, null, true, false);
     ace.session.setMode("ace/mode/json");
     ace.setValue(JSON.stringify(enrichment, null, 4), -1);
+}
+
+let openCTIGraphNetwork = null;
+let openCTIGraphSource = {nodes: [], edges: [], colors: {}};
+
+function filterOpenCTIGraph() {
+    if (!openCTIGraphNetwork) return;
+    const search = String($('#openCTIGraphSearch').val() || '').toLowerCase();
+    const type = $('#openCTIGraphTypeFilter').val();
+    const relation = $('#openCTIGraphRelationFilter').val();
+    const visibleNodes = openCTIGraphSource.nodes.filter((node) =>
+        (!type || node.entity_type === type) &&
+        (!search || String(node.name || node.id).toLowerCase().includes(search))
+    );
+    const visibleIds = new Set(visibleNodes.map((node) => node.id));
+    const visibleEdges = openCTIGraphSource.edges.filter((edge) =>
+        visibleIds.has(edge.source) && visibleIds.has(edge.target) &&
+        (!relation || edge.relationship_type === relation)
+    );
+    openCTIGraphNetwork.setData({
+        nodes: new vis.DataSet(visibleNodes.map(openCTIVisNode)),
+        edges: new vis.DataSet(visibleEdges.map(openCTIVisEdge)),
+    });
+}
+
+function openCTIVisNode(node) {
+    return {
+        id: node.id, label: String(node.name || node.id).slice(0, 55),
+        shape: node.is_root ? 'diamond' : 'dot', size: node.is_root ? 28 : 18,
+        color: openCTIGraphSource.colors[node.entity_type] || '#95a5a6',
+        title: `${escapeOpenCTI(node.entity_type)}: ${escapeOpenCTI(node.name || node.id)}`,
+    };
+}
+
+function openCTIVisEdge(edge) {
+    return {
+        id: edge.id, from: edge.source, to: edge.target,
+        label: edge.relationship_type || 'related-to', arrows: 'to',
+        font: {align:'middle', size:10}, color: {color:'#999'},
+    };
+}
+
+function pollOpenCTITask(taskId, alertId, openGraph) {
+    const started = Date.now();
+    const poll = () => $.get(`/dim/tasks/status/${encodeURIComponent(taskId)}/json`).done((response) => {
+        const state = String((response.data && response.data.state) || '').toUpperCase();
+        refreshAlert(alertId);
+        if (state === 'SUCCESS' || state === 'FAILURE') {
+            if (state === 'SUCCESS' && openGraph) setTimeout(() => showOpenCTIGraph(alertId), 500);
+            return;
+        }
+        if (Date.now() - started < 600000) setTimeout(poll, state === 'PROGRESS' ? 1000 : 2000);
+    });
+    poll();
+}
+
+function startOpenCTIGraph(alertId) {
+    const data = {
+        hook_name: 'on_manual_trigger_alert_opencti_graph',
+        module_name: 'iris_opencti_module',
+        hook_ui_name: 'Построить граф OpenCTI',
+        csrf_token: $('#csrf_token').val(),
+        type: 'alert',
+        targets: [alertId],
+    };
+    post_request_api('/dim/hooks/call', JSON.stringify(data), true).done((response) => {
+        notify_auto_api(response);
+        const taskIds = response.data && response.data.task_ids;
+        if (taskIds && taskIds.length) pollOpenCTITask(taskIds[0], alertId, true);
+    });
+}
+
+function retryOpenCTIIocs(alertId, iocIds) {
+    const data = {
+        hook_name: 'on_manual_trigger_ioc',
+        module_name: 'iris_opencti_module',
+        csrf_token: $('#csrf_token').val(),
+        type: 'ioc',
+        targets: iocIds,
+    };
+    post_request_api('/dim/hooks/call', JSON.stringify(data), true).done((response) => {
+        notify_auto_api(response);
+        const taskIds = response.data && response.data.task_ids;
+        if (taskIds && taskIds.length) pollOpenCTITask(taskIds[0], alertId, false);
+    });
+}
+
+async function showOpenCTIGraph(alertId) {
+    const response = await fetchAlert(alertId);
+    if (!notify_auto_api(response, true)) return;
+    const graph = (((response.data || {}).alert_context || {}).opencti || {}).graph;
+    if (!graph) return;
+    const colors = {
+        'Indicator':'#e74c3c', 'Malware':'#8e44ad', 'Threat-Actor':'#c0392b',
+        'Intrusion-Set':'#c0392b', 'Campaign':'#d35400', 'Report':'#3498db',
+        'Attack-Pattern':'#16a085', 'Vulnerability':'#f39c12', 'Tool':'#7f8c8d',
+        'Infrastructure':'#2c3e50', 'Identity':'#27ae60',
+    };
+    openCTIGraphSource = {nodes: graph.nodes || [], edges: graph.edges || [], colors};
+    const nodeMap = new Map(openCTIGraphSource.nodes.map((node) => [node.id, node]));
+    const nodes = new vis.DataSet(openCTIGraphSource.nodes.map(openCTIVisNode));
+    const edges = new vis.DataSet(openCTIGraphSource.edges.map(openCTIVisEdge));
+    const entityTypes = [...new Set(openCTIGraphSource.nodes.map((node) => node.entity_type).filter(Boolean))].sort();
+    const relationTypes = [...new Set(openCTIGraphSource.edges.map((edge) => edge.relationship_type).filter(Boolean))].sort();
+    $('#openCTIGraphTypeFilter').html('<option value="">Все типы сущностей</option>' +
+        entityTypes.map((value) => `<option value="${escapeOpenCTI(value)}">${escapeOpenCTI(value)}</option>`).join(''));
+    $('#openCTIGraphRelationFilter').html('<option value="">Все типы связей</option>' +
+        relationTypes.map((value) => `<option value="${escapeOpenCTI(value)}">${escapeOpenCTI(value)}</option>`).join(''));
+    $('#openCTIGraphSearch').val('');
+    $('#openCTIGraphLegend').html(entityTypes.slice(0, 4).map((value) =>
+        `<span class="mr-2"><i class="fas fa-circle" style="color:${colors[value] || '#95a5a6'}"></i> ${escapeOpenCTI(value)}</span>`
+    ).join(''));
+    const badges = [
+        graph.truncated ? '<span class="badge badge-warning mr-1">Достигнут лимит графа</span>' : '',
+        graph.stale ? '<span class="badge badge-warning mr-1">Устарел</span>' : '',
+        `<span class="badge badge-light">${nodes.length} узлов / ${edges.length} связей</span>`,
+    ].join('');
+    $('#openCTIGraphNotice').html(`<div class="mb-2">${badges}<small class="text-muted ml-2">${escapeOpenCTI(formatOpenCTIDate(graph.generated_at))}</small></div>`);
+    $('#openCTIGraphModal').modal('show');
+    setTimeout(() => {
+        openCTIGraphNetwork = new vis.Network(
+            document.getElementById('openCTIGraphCanvas'), {nodes, edges},
+            {interaction:{hover:true}, physics:{stabilization:{iterations:150}},
+             edges:{smooth:{type:'dynamic'}}, nodes:{font:{size:13}}}
+        );
+        openCTIGraphNetwork.on('selectNode', (event) => {
+            const node = nodeMap.get(event.nodes[0]) || {};
+            const url = safeOpenCTIUrl(node.opencti_url);
+            $('#openCTIGraphDetails').html(`
+              <h5>${escapeOpenCTI(node.name || node.id)}</h5>
+              <span class="badge badge-info">${escapeOpenCTI(node.entity_type || '')}</span>
+              ${node.score != null ? `<p class="mt-2 mb-1">Score: ${Number(node.score)}</p>` : ''}
+              ${node.confidence != null ? `<p class="mb-1">Confidence: ${Number(node.confidence)}</p>` : ''}
+              ${node.description ? `<p class="mt-2">${escapeOpenCTI(node.description)}</p>` : ''}
+              ${(node.markings || []).map((item) => `<span class="badge badge-warning mr-1">${escapeOpenCTI(item)}</span>`).join('')}
+              ${url ? `<p class="mt-3"><a href="${url}" target="_blank" rel="noopener noreferrer">Открыть в OpenCTI</a></p>` : ''}`);
+        });
+    }, 300);
+}
+
+function applyOpenCTIRecommendation(alertId, severity, risk) {
+    swal({
+        title: 'Применить рекомендацию?',
+        text: `Severity будет изменена на ${severity}, риск ${risk}.`,
+        icon: 'warning', buttons: true,
+    }).then((confirmed) => {
+        if (!confirmed) return;
+        post_request_api(`/alerts/${alertId}/opencti/recommendation/apply`, '{}', true).done((response) => {
+            notify_auto_api(response);
+            refreshAlert(alertId);
+        });
+    });
 }
 
 function delete_alert(alert_id) {

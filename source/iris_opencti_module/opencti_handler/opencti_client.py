@@ -8,6 +8,8 @@ class OpenCTIClientError(Exception):
 
 
 class OpenCTIClient:
+    # OpenCTI 7 exposes objectLabel/objectMarking as lists. Older releases
+    # exposed Relay connections, which are handled by _LEGACY_SEARCH_QUERY.
     _SEARCH_QUERY = """
     query IrisOpenCTISearch($search: String!, $first: Int!) {
       indicators(search: $search, first: $first) {
@@ -22,6 +24,79 @@ class OpenCTIClient:
             pattern_type
             confidence
             x_opencti_score
+            revoked
+            valid_from
+            valid_until
+            created_at
+            updated_at
+            objectLabel {
+              value
+              color
+            }
+            objectMarking {
+              definition
+              x_opencti_color
+            }
+            externalReferences {
+              edges {
+                node {
+                  source_name
+                  external_id
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+      stixCyberObservables(search: $search, first: $first) {
+        edges {
+          node {
+            id
+            standard_id
+            entity_type
+            observable_value
+            x_opencti_score
+            created_at
+            updated_at
+            objectLabel {
+              value
+              color
+            }
+            objectMarking {
+              definition
+              x_opencti_color
+            }
+            externalReferences {
+              edges {
+                node {
+                  source_name
+                  external_id
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    _LEGACY_SEARCH_QUERY = """
+    query IrisOpenCTISearchLegacy($search: String!, $first: Int!) {
+      indicators(search: $search, first: $first) {
+        edges {
+          node {
+            id
+            standard_id
+            entity_type
+            name
+            description
+            pattern
+            pattern_type
+            confidence
+            x_opencti_score
+            revoked
             valid_from
             valid_until
             created_at
@@ -61,7 +136,6 @@ class OpenCTIClient:
             standard_id
             entity_type
             observable_value
-            description
             x_opencti_score
             created_at
             updated_at
@@ -88,6 +162,102 @@ class OpenCTIClient:
                   external_id
                   url
                 }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    _RELATED_QUERY = """
+    query IrisOpenCTIRelated($ids: [String], $objectId: Any!, $first: Int!) {
+      stixCoreRelationships(fromOrToId: $ids, first: $first) {
+        edges {
+          node {
+            id
+            relationship_type
+            from {
+              ... on StixCoreObject {
+                id
+                entity_type
+                representative {
+                  main
+                }
+              }
+            }
+            to {
+              ... on StixCoreObject {
+                id
+                entity_type
+                representative {
+                  main
+                }
+              }
+            }
+          }
+        }
+      }
+      containers(
+        first: $first
+        filters: {
+          mode: and
+          filters: [{ key: ["objects"], values: [$objectId] }]
+          filterGroups: []
+        }
+      ) {
+        edges {
+          node {
+            ... on StixCoreObject {
+              id
+              entity_type
+              representative {
+                main
+              }
+              created_at
+              updated_at
+            }
+          }
+        }
+      }
+    }
+    """
+
+    _SIGHTINGS_QUERY = """
+    query IrisOpenCTISightings($ids: [String], $first: Int!) {
+      stixSightingRelationships(fromOrToId: $ids, first: $first) {
+        edges {
+          node {
+            id
+            first_seen
+            last_seen
+            attribute_count
+          }
+        }
+      }
+    }
+    """
+
+    _GRAPH_QUERY = """
+    query IrisOpenCTIGraph($ids: [String], $first: Int!, $after: ID) {
+      stixCoreRelationships(fromOrToId: $ids, first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        edges {
+          node {
+            id
+            relationship_type
+            created_at
+            updated_at
+            from {
+              ... on StixCoreObject {
+                id entity_type created_at updated_at
+                representative { main }
+              }
+            }
+            to {
+              ... on StixCoreObject {
+                id entity_type created_at updated_at
+                representative { main }
               }
             }
           }
@@ -220,10 +390,35 @@ class OpenCTIClient:
             if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
                 raise
 
-        try:
-            return self.query(self._MINIMAL_SEARCH_QUERY, variables)
-        except OpenCTIClientError as exc:
-            if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
-                raise
+        for query in (self._LEGACY_SEARCH_QUERY, self._MINIMAL_SEARCH_QUERY):
+            try:
+                return self.query(query, variables)
+            except OpenCTIClientError as exc:
+                if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
+                    raise
 
         return self.query(self._BARE_SEARCH_QUERY, variables)
+
+    def get_related_entities(self, object_id, first=20):
+        return self.query(
+            self._RELATED_QUERY,
+            {
+                "ids": [object_id],
+                "objectId": object_id,
+                "first": first,
+            },
+        )
+
+    def get_sightings(self, object_id, first=50):
+        try:
+            return self.query(self._SIGHTINGS_QUERY, {"ids": [object_id], "first": first})
+        except OpenCTIClientError as exc:
+            if "Cannot query field" in str(exc) or "Unknown argument" in str(exc):
+                return {"stixSightingRelationships": {"edges": []}}
+            raise
+
+    def get_graph_relationships(self, object_ids, first=100, after=None):
+        return self.query(
+            self._GRAPH_QUERY,
+            {"ids": list(object_ids), "first": first, "after": after},
+        )

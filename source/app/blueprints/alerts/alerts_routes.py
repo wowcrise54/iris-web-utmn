@@ -23,6 +23,7 @@ from flask_login import current_user
 from flask_wtf import FlaskForm
 from typing import Union, List
 from werkzeug import Response
+from sqlalchemy.orm.attributes import flag_modified
 
 import app
 from app import db
@@ -39,18 +40,74 @@ from app.datamgmt.manage.manage_access_control_db import check_ua_case_client, u
 from app.iris_engine.access_control.utils import ac_set_new_case_access
 from app.iris_engine.module_handler.module_handler import call_modules_hook
 from app.iris_engine.utils.tracker import track_activity
+from app.models.alerts import Alert
 from app.models.alerts import AlertStatus
+from app.models.alerts import Severity
 from app.models.authorization import Permissions
 from app.schema.marshables import AlertSchema, CaseSchema, CommentSchema, CaseAssetsSchema, IocSchema
 from app.util import ac_api_requires
 from app.util import response_error, add_obj_history_entry, ac_requires
 from app.util import response_success
+from iris_opencti_module.opencti_handler.opencti_insights import alert_recommendation
 
 alerts_blueprint = Blueprint(
     'alerts',
     __name__,
     template_folder='templates'
 )
+
+
+@alerts_blueprint.route('/alerts/<int:alert_id>/opencti/recommendation/apply', methods=['POST'])
+@ac_api_requires(Permissions.alerts_write)
+def apply_opencti_recommendation(alert_id):
+    alert = Alert.query.filter(Alert.alert_id == alert_id).first()
+    if not alert:
+        return response_error('Invalid alert ID')
+    if not user_has_client_access(current_user.id, alert.alert_customer_id):
+        return response_error('User not entitled to update alerts for the client', status=403)
+
+    recommendation = alert_recommendation(alert.iocs)
+    stored = ((alert.alert_context or {}).get("opencti") or {}).get("recommendation") or {}
+    if not stored or stored.get("fingerprint") != recommendation.get("fingerprint"):
+        return response_error('OpenCTI recommendation is stale; run enrichment again', status=409)
+
+    severity = Severity.query.filter(
+        Severity.severity_name == recommendation["severity"]
+    ).first()
+    if not severity:
+        return response_error('Recommended severity is not configured')
+
+    tags = [tag.strip() for tag in (alert.alert_tags or "").split(",") if tag.strip()]
+    tags = [
+        tag for tag in tags
+        if not tag.startswith("opencti:verdict:") and not tag.startswith("opencti:risk:")
+    ]
+    tags.extend([
+        f"opencti:verdict:{recommendation['severity'].lower()}",
+        f"opencti:risk:{recommendation['risk_score']}",
+    ])
+    alert.alert_tags = ",".join(dict.fromkeys(tags))
+    alert.alert_severity_id = severity.severity_id
+    context = dict(alert.alert_context or {})
+    opencti_context = dict(context.get("opencti") or {})
+    opencti_context["recommendation"] = {
+        **recommendation,
+        "applied_at": datetime.utcnow().isoformat() + "Z",
+        "applied_by": current_user.id,
+    }
+    context["opencti"] = opencti_context
+    alert.alert_context = context
+    flag_modified(alert, "alert_context")
+    add_obj_history_entry(
+        alert,
+        f"applied OpenCTI recommendation: {recommendation['severity']} "
+        f"(risk {recommendation['risk_score']})",
+    )
+    db.session.commit()
+    return response_success(
+        'OpenCTI recommendation applied',
+        data={"severity": recommendation["severity"], "risk_score": recommendation["risk_score"]},
+    )
 
 
 @alerts_blueprint.route('/alerts/filter', methods=['GET'])

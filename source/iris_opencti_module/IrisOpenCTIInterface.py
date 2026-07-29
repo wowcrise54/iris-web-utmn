@@ -8,10 +8,14 @@
 #  License as published by the Free Software Foundation; either
 #  version 3 of the License, or (at your option) any later version.
 
+import copy
+
 import iris_interface.IrisInterfaceStatus as InterfaceStatus
 from iris_interface.IrisModuleInterface import IrisModuleInterface
 from iris_interface.IrisModuleInterface import IrisModuleTypes
 
+from app import db
+from app.models import IrisModule
 import iris_opencti_module.IrisOpenCTIConfig as interface_conf
 from iris_opencti_module.opencti_handler.opencti_handler import OpenCTIHandler
 
@@ -30,8 +34,19 @@ class IrisOpenCTIInterface(IrisModuleInterface):
     _pipeline_info = interface_conf.pipeline_info
     _module_configuration = interface_conf.module_configuration
     _module_type = IrisModuleTypes.module_processor
+    _DISABLED_HOOKS = (
+        "on_postload_ioc_create",
+        "on_postload_ioc_update",
+        "on_postload_alert_create",
+        "on_postload_alert_update",
+        "on_postload_case_update",
+        "on_manual_trigger_case",
+    )
 
     def _sync_hook(self, module_id, enabled, iris_hook_name, manual_hook_name=None):
+        # Re-register manual hooks so stale UI labels and legacy duplicate
+        # registrations cannot remain after a module upgrade.
+        self.deregister_from_hook(module_id=module_id, iris_hook_name=iris_hook_name)
         if enabled:
             status = self.register_to_hook(
                 module_id,
@@ -43,59 +58,70 @@ class IrisOpenCTIInterface(IrisModuleInterface):
                 self.log.error(status.get_data())
             else:
                 self.log.info(f"Successfully registered {iris_hook_name} hook")
-        else:
-            self.deregister_from_hook(module_id=self.module_id, iris_hook_name=iris_hook_name)
 
     def register_hooks(self, module_id: int):
         """
-        Registers all OpenCTI hooks.
+        Register manual-only OpenCTI hooks and remove every legacy automatic hook.
         """
         self.module_id = module_id
         module_conf = self.module_dict_conf
 
-        self._sync_hook(
-            module_id,
-            module_conf.get("opencti_on_ioc_create_hook_enabled"),
-            "on_postload_ioc_create",
-        )
-        self._sync_hook(
-            module_id,
-            module_conf.get("opencti_on_ioc_update_hook_enabled"),
-            "on_postload_ioc_update",
-        )
-        self._sync_hook(
-            module_id,
-            module_conf.get("opencti_on_alert_create_hook_enabled"),
-            "on_postload_alert_create",
-        )
-        self._sync_hook(
-            module_id,
-            module_conf.get("opencti_on_alert_update_hook_enabled"),
-            "on_postload_alert_update",
-        )
-        self._sync_hook(
-            module_id,
-            module_conf.get("opencti_on_case_update_hook_enabled"),
-            "on_postload_case_update",
-        )
+        for hook_name in self._DISABLED_HOOKS:
+            self.deregister_from_hook(module_id=module_id, iris_hook_name=hook_name)
+
         self._sync_hook(
             module_id,
             module_conf.get("opencti_manual_ioc_hook_enabled"),
             "on_manual_trigger_ioc",
-            "Get OpenCTI insight",
+            "Получить данные из OpenCTI",
         )
         self._sync_hook(
             module_id,
             module_conf.get("opencti_manual_alert_hook_enabled"),
             "on_manual_trigger_alert",
-            "Enrich alert with OpenCTI",
+            "Обогатить IOC алёрта через OpenCTI",
         )
+
+        graph_hook_name = "on_manual_trigger_alert_opencti_graph"
         self._sync_hook(
             module_id,
-            module_conf.get("opencti_manual_case_hook_enabled"),
-            "on_manual_trigger_case",
-            "Enrich case with OpenCTI",
+            module_conf.get("opencti_manual_alert_hook_enabled"),
+            graph_hook_name,
+            "Построить граф OpenCTI",
         )
+
+    @staticmethod
+    def _merged_configuration(existing_configuration):
+        existing_values = {
+            parameter.get("param_name"): parameter.get("value", parameter.get("default"))
+            for parameter in (existing_configuration or [])
+        }
+        merged = copy.deepcopy(interface_conf.module_configuration)
+        for parameter in merged:
+            parameter["value"] = existing_values.get(
+                parameter["param_name"],
+                parameter.get("default"),
+            )
+        return merged
+
+    def upgrade_existing_registration(self):
+        """
+        Synchronize an already registered OpenCTI module during IRIS startup.
+        """
+        module = IrisModule.query.filter(
+            IrisModule.module_name == "iris_opencti_module"
+        ).first()
+        if module is None:
+            return False
+
+        module.module_config = self._merged_configuration(module.module_config)
+        module.module_description = interface_conf.module_description
+        module.module_version = interface_conf.module_version
+        module.interface_version = interface_conf.interface_version
+        db.session.commit()
+
+        self.register_hooks(module.id)
+        return True
 
     def hooks_handler(self, hook_name: str, hook_ui_name: str, data: any):
         """
@@ -108,12 +134,12 @@ class IrisOpenCTIInterface(IrisModuleInterface):
             logger=self.log,
         )
 
-        if hook_name in ["on_postload_ioc_create", "on_postload_ioc_update", "on_manual_trigger_ioc"]:
+        if hook_name == "on_manual_trigger_ioc":
             status = opencti_handler.safe_handle(opencti_handler.handle_iocs, data)
-        elif hook_name in ["on_postload_alert_create", "on_postload_alert_update", "on_manual_trigger_alert"]:
+        elif hook_name == "on_manual_trigger_alert":
             status = opencti_handler.safe_handle(opencti_handler.handle_alerts, data)
-        elif hook_name in ["on_postload_case_update", "on_manual_trigger_case"]:
-            status = opencti_handler.safe_handle(opencti_handler.handle_cases, data)
+        elif hook_name == "on_manual_trigger_alert_opencti_graph":
+            status = opencti_handler.safe_handle(opencti_handler.handle_alert_graphs, data)
         else:
             self.log.critical(f"Received unsupported hook {hook_name}")
             return InterfaceStatus.I2Error(data=data, logs=list(self.message_queue))

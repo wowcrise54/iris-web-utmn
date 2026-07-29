@@ -3,6 +3,8 @@
 import ipaddress
 import re
 from datetime import datetime
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 
 HASH_TYPE_BY_LENGTH = {
@@ -36,12 +38,78 @@ STIX_PATTERN_TYPE_TO_IRIS = {
     "autonomous-system": "AS",
 }
 
+RELATED_ENTITY_TYPES = {
+    "Report",
+    "Malware",
+    "Threat-Actor",
+    "Campaign",
+    "Vulnerability",
+    "Attack-Pattern",
+}
+
 
 def utc_now_iso():
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 
 
+def canonicalize_ioc_value(value, ioc_type=None):
+    if value is None:
+        return None
+
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+
+    normalized_type = (ioc_type or infer_ioc_type(normalized) or "").lower()
+
+    try:
+        if normalized_type in {"ip-any", "ip-dst", "ip-src", "ipv4", "ipv6"}:
+            return ipaddress.ip_address(normalized).compressed
+    except ValueError:
+        return None
+
+    hash_types = set(HASH_TYPE_BY_LENGTH.values())
+    if normalized_type in hash_types or any(
+        normalized_type.endswith(f"|{hash_type}") for hash_type in hash_types
+    ):
+        return normalized.lower()
+
+    if normalized_type in {"domain", "hostname"}:
+        return normalized.lower().rstrip(".")
+
+    if normalized_type in {"email", "email-src", "email-dst", "target-email"}:
+        return normalized.lower()
+
+    if normalized_type == "url":
+        try:
+            parsed = urlsplit(normalized)
+        except ValueError:
+            return None
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        return urlunsplit((
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            parsed.path or "",
+            parsed.query,
+            parsed.fragment,
+        ))
+
+    return normalized
+
+
+def is_exact_ioc_match(query_value, match, query_type=None):
+    match_value = match.get("value")
+    match_type = match.get("iris_ioc_type")
+    canonical_query = canonicalize_ioc_value(query_value, query_type)
+    canonical_match = canonicalize_ioc_value(match_value, match_type)
+    return canonical_query is not None and canonical_query == canonical_match
+
+
 def connection_edges(connection):
+    if isinstance(connection, list):
+        return [node for node in connection if isinstance(node, dict)]
+
     return [
         edge.get("node")
         for edge in (connection or {}).get("edges", [])
@@ -66,6 +134,63 @@ def flatten_external_references(connection):
             "url": node.get("url"),
         })
     return refs
+
+
+def opencti_entity_url(base_url, entity_id):
+    if not base_url or not entity_id:
+        return None
+    normalized = str(base_url).strip().rstrip("/")
+    if normalized.endswith("/graphql"):
+        normalized = normalized[:-8].rstrip("/")
+    return f"{normalized}/dashboard/id/{entity_id}"
+
+
+def normalize_related_entities(payload, object_id, base_url=None, limit=20):
+    related = []
+
+    for relationship in connection_edges(payload.get("stixCoreRelationships")):
+        source = relationship.get("from") or {}
+        target = relationship.get("to") or {}
+        entity = target if source.get("id") == object_id else source
+        if entity.get("id") == object_id or entity.get("entity_type") not in RELATED_ENTITY_TYPES:
+            continue
+        related.append({
+            "id": entity.get("id"),
+            "entity_type": entity.get("entity_type"),
+            "name": (entity.get("representative") or {}).get("main"),
+            "relationship_type": relationship.get("relationship_type"),
+            "direction": "outgoing" if source.get("id") == object_id else "incoming",
+            "created_at": entity.get("created_at"),
+            "updated_at": entity.get("updated_at"),
+            "opencti_url": opencti_entity_url(base_url, entity.get("id")),
+        })
+
+    for container in connection_edges(payload.get("containers")):
+        if container.get("entity_type") not in RELATED_ENTITY_TYPES:
+            continue
+        related.append({
+            "id": container.get("id"),
+            "entity_type": container.get("entity_type"),
+            "name": (container.get("representative") or {}).get("main"),
+            "relationship_type": "contains",
+            "direction": "incoming",
+            "created_at": container.get("created_at"),
+            "updated_at": container.get("updated_at"),
+            "opencti_url": opencti_entity_url(base_url, container.get("id")),
+        })
+
+    deduped = []
+    seen = set()
+    for entity in related:
+        key = (entity.get("id"), entity.get("entity_type"))
+        if not entity.get("id") or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(entity)
+        if len(deduped) >= max(0, int(limit)):
+            break
+
+    return deduped
 
 
 def extract_value_from_pattern(pattern):
@@ -129,7 +254,8 @@ def infer_ioc_type(value, entity_type=None, pattern=None):
         if hash_type:
             return hash_type
 
-    if re.match(r"^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$", lowered):
+    domain_candidate = lowered.rstrip(".")
+    if re.match(r"^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$", domain_candidate):
         return "domain"
 
     if entity_type == "File":
@@ -138,7 +264,7 @@ def infer_ioc_type(value, entity_type=None, pattern=None):
     return "other"
 
 
-def normalize_opencti_node(node, source):
+def normalize_opencti_node(node, source, base_url=None):
     value = node.get("observable_value") or node.get("value")
     extracted_value, extracted_type = extract_value_from_pattern(node.get("pattern"))
     value = value or extracted_value
@@ -161,6 +287,7 @@ def normalize_opencti_node(node, source):
         "pattern_type": node.get("pattern_type"),
         "confidence": node.get("confidence"),
         "score": score if score is not None else 0,
+        "revoked": node.get("revoked"),
         "valid_from": node.get("valid_from"),
         "valid_until": node.get("valid_until"),
         "created_at": node.get("created_at"),
@@ -168,6 +295,8 @@ def normalize_opencti_node(node, source):
         "labels": flatten_connection_values(node.get("objectLabel"), "value"),
         "markings": flatten_connection_values(node.get("objectMarking"), "definition"),
         "external_references": flatten_external_references(node.get("externalReferences")),
+        "opencti_url": opencti_entity_url(base_url, node.get("id")),
+        "related_entities": [],
     }
 
 
@@ -188,19 +317,26 @@ def dedupe_matches(matches):
     return deduped
 
 
-def normalize_search_results(search_results, min_score=0):
+def normalize_search_results(search_results, min_score=0, query_value=None, query_type=None, base_url=None):
     matches = []
     for node in connection_edges(search_results.get("indicators")):
-        match = normalize_opencti_node(node, source="indicator")
+        match = normalize_opencti_node(node, source="indicator", base_url=base_url)
         if safe_int(match.get("score")) >= min_score:
             matches.append(match)
 
     for node in connection_edges(search_results.get("stixCyberObservables")):
-        match = normalize_opencti_node(node, source="observable")
+        match = normalize_opencti_node(node, source="observable", base_url=base_url)
         if safe_int(match.get("score")) >= min_score:
             matches.append(match)
 
-    return dedupe_matches(matches)
+    matches = dedupe_matches(matches)
+    if query_value is not None:
+        matches = [
+            match
+            for match in matches
+            if is_exact_ioc_match(query_value, match, query_type=query_type)
+        ]
+    return matches
 
 
 def safe_int(value, default=0):
@@ -210,11 +346,25 @@ def safe_int(value, default=0):
         return default
 
 
-def build_enrichment_payload(query_value, matches):
+def build_enrichment_payload(
+    query_value,
+    matches,
+    status=None,
+    last_attempt_utc=None,
+    last_success_utc=None,
+    error=None,
+    generated_tags=None,
+):
+    lookup_time = last_attempt_utc or utc_now_iso()
     return {
         "provider": "OpenCTI",
         "query_value": query_value,
-        "last_lookup_utc": utc_now_iso(),
+        "last_lookup_utc": lookup_time,
+        "status": status or ("match" if matches else "no_match"),
+        "last_attempt_utc": lookup_time,
+        "last_success_utc": last_success_utc or lookup_time,
+        "error": error,
+        "generated_tags": generated_tags or [],
         "match_count": len(matches),
         "matches": matches,
     }

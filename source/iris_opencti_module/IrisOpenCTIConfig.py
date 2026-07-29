@@ -11,7 +11,7 @@
 module_name = "IrisOpenCTI"
 module_description = "Provides an interface between OpenCTI and IRIS"
 interface_version = "1.2.0"
-module_version = "1.0.0"
+module_version = "1.3.0"
 pipeline_support = False
 pipeline_info = {}
 
@@ -28,6 +28,13 @@ DEFAULT_REPORT_TEMPLATE = """
           {% if match.score is not none %}
             <span class="badge badge-info ml-2">score: {{ match.score }}</span>
           {% endif %}
+          {% if match.confidence is not none %}
+            <span class="badge badge-secondary ml-2">confidence: {{ match.confidence }}</span>
+          {% endif %}
+          {% if match.opencti_url %}
+            <a class="btn btn-sm btn-outline-primary float-right" href="{{ match.opencti_url }}"
+               target="_blank" rel="noopener noreferrer">Open in OpenCTI</a>
+          {% endif %}
         </div>
         <div class="card-body">
           {% if match.description %}
@@ -42,11 +49,29 @@ DEFAULT_REPORT_TEMPLATE = """
           {% if match.markings %}
             <p><strong>Markings:</strong> {{ match.markings|join(", ") }}</p>
           {% endif %}
+          {% if match.valid_from or match.valid_until %}
+            <p><strong>Validity:</strong> {{ match.valid_from or "unknown" }} — {{ match.valid_until or "open" }}</p>
+          {% endif %}
           {% if match.external_references %}
             <ul>
               {% for ref in match.external_references %}
                 <li>{{ ref.source_name }}{% if ref.external_id %}: {{ ref.external_id }}{% endif %}
                 {% if ref.url %} - <a href="{{ ref.url }}" target="_blank" rel="noreferrer">{{ ref.url }}</a>{% endif %}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if match.related_entities %}
+            <p><strong>Related entities:</strong></p>
+            <ul>
+              {% for entity in match.related_entities %}
+                <li>
+                  {{ entity.entity_type }}: {{ entity.name or entity.id }}
+                  {% if entity.relationship_type %} ({{ entity.relationship_type }}){% endif %}
+                  {% if entity.opencti_url %}
+                    - <a href="{{ entity.opencti_url }}" target="_blank"
+                         rel="noopener noreferrer">OpenCTI</a>
+                  {% endif %}
+                </li>
               {% endfor %}
             </ul>
           {% endif %}
@@ -74,6 +99,18 @@ module_configuration = [
         "default": "",
         "mandatory": True,
         "type": "sensitive_string",
+        "section": "OpenCTI"
+    },
+    {
+        "param_name": "opencti_public_url",
+        "param_human_name": "OpenCTI browser URL",
+        "param_description": (
+            "Optional URL reachable from analyst browsers. "
+            "Used only for links; defaults to the OpenCTI API URL."
+        ),
+        "default": "",
+        "mandatory": False,
+        "type": "string",
         "section": "OpenCTI"
     },
     {
@@ -149,18 +186,18 @@ module_configuration = [
         "section": "Insights"
     },
     {
-        "param_name": "opencti_add_matching_iocs",
-        "param_human_name": "Add matching OpenCTI IOCs",
-        "param_description": "Attach matching indicators/observables returned by OpenCTI to alerts and cases.",
-        "default": True,
+        "param_name": "opencti_manual_alert_max_iocs",
+        "param_human_name": "Maximum IOCs per alert lookup",
+        "param_description": "Reject a manual alert lookup when it contains more unique IOCs than this limit.",
+        "default": 100,
         "mandatory": True,
-        "type": "bool",
-        "section": "Insights"
+        "type": "int",
+        "section": "OpenCTI"
     },
     {
         "param_name": "opencti_manual_ioc_hook_enabled",
         "param_human_name": "Manual trigger on IOCs",
-        "param_description": "Offer a manual OpenCTI lookup action on IOCs.",
+        "param_description": "Offer the manual 'Получить данные из OpenCTI' action on IOCs.",
         "default": True,
         "mandatory": True,
         "type": "bool",
@@ -169,62 +206,8 @@ module_configuration = [
     {
         "param_name": "opencti_manual_alert_hook_enabled",
         "param_human_name": "Manual trigger on alerts",
-        "param_description": "Offer a manual OpenCTI enrichment action on alerts.",
+        "param_description": "Offer the manual 'Обогатить IOC алёрта через OpenCTI' action on alerts.",
         "default": True,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_manual_case_hook_enabled",
-        "param_human_name": "Manual trigger on cases",
-        "param_description": "Offer a manual OpenCTI enrichment action on cases.",
-        "default": True,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_on_ioc_create_hook_enabled",
-        "param_human_name": "Run on IOC create",
-        "param_description": "Automatically enrich IOCs after they are created.",
-        "default": False,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_on_ioc_update_hook_enabled",
-        "param_human_name": "Run on IOC update",
-        "param_description": "Automatically enrich IOCs after they are updated.",
-        "default": False,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_on_alert_create_hook_enabled",
-        "param_human_name": "Run on alert create",
-        "param_description": "Automatically enrich alert IOCs after an alert is created.",
-        "default": False,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_on_alert_update_hook_enabled",
-        "param_human_name": "Run on alert update",
-        "param_description": "Automatically enrich alert IOCs after an alert is updated.",
-        "default": False,
-        "mandatory": True,
-        "type": "bool",
-        "section": "Triggers"
-    },
-    {
-        "param_name": "opencti_on_case_update_hook_enabled",
-        "param_human_name": "Run on case update",
-        "param_description": "Automatically enrich case IOCs after a case is updated.",
-        "default": False,
         "mandatory": True,
         "type": "bool",
         "section": "Triggers"

@@ -25,6 +25,7 @@ from flask import render_template
 from flask import request
 from flask import url_for
 from flask_wtf import FlaskForm
+from flask_login import current_user
 from sqlalchemy import desc
 
 import app
@@ -44,6 +45,7 @@ from app.models import Notes
 from app.models.alerts import Alert
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import Permissions
+from app.datamgmt.manage.manage_access_control_db import user_has_client_access
 from app.util import ac_api_case_requires
 from app.util import ac_api_requires
 from app.util import ac_case_requires
@@ -175,6 +177,9 @@ def dim_hooks_call(caseid):
             obj = Alert.query.filter(
                 Alert.alert_id == target
             ).first()
+            if obj and not user_has_client_access(current_user.id, obj.alert_customer_id):
+                logs.append(f'Access denied for alert ID {target}')
+                continue
 
         else:
             logs.append(f'Data type {data_type} not supported')
@@ -189,14 +194,34 @@ def dim_hooks_call(caseid):
         index += 1
 
     if len(obj_targets) > 0:
-        call_modules_hook(hook_name=hook_name, hook_ui_name=hook_ui_name, data=obj_targets,
-                          caseid=caseid, module_name=module_name)
+        queued = call_modules_hook(
+            hook_name=hook_name, hook_ui_name=hook_ui_name, data=obj_targets,
+            caseid=caseid, module_name=module_name, return_task_ids=True
+        )
+    else:
+        queued = {"task_ids": []}
 
     if len(logs) > 0:
         return response_error(f"Errors encountered during processing of data. Queued task with {index} objects",
                               data=logs)
 
-    return response_success(f'Queued task with {index} objects')
+    return response_success(
+        f'Queued task with {index} objects',
+        data={"task_ids": queued.get("task_ids", [])},
+    )
+
+
+@dim_tasks_blueprint.route('/dim/tasks/status/<task_id>/json', methods=['GET'])
+@ac_api_requires(Permissions.standard_user)
+def task_status_json(task_id):
+    task = app.celery.AsyncResult(task_id)
+    info = task.info if isinstance(task.info, dict) else {}
+    return response_success(data={
+        "task_id": task_id,
+        "state": task.state,
+        "ready": task.ready(),
+        "progress": info,
+    })
 
 
 @dim_tasks_blueprint.route('/dim/tasks/list/<int:count>', methods=['GET'])
