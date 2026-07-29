@@ -1,0 +1,157 @@
+name: opencti-local
+
+services:
+  redis:
+    image: redis:8.8.0
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.16
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.ml.enabled=false
+      - xpack.security.enabled=false
+      - thread_pool.search.queue_size=5000
+      - logger.org.elasticsearch.discovery=ERROR
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow' >/dev/null || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - opencti-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  opencti:
+    image: opencti/platform:${OPENCTI_VERSION}
+    restart: unless-stopped
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - APP__PORT=8080
+      - APP__BASE_URL=http://localhost:4000
+      - APP__ADMIN__EMAIL=${OPENCTI_ADMIN_EMAIL}
+      - APP__ADMIN__PASSWORD=${OPENCTI_ADMIN_PASSWORD}
+      - APP__ADMIN__TOKEN=${OPENCTI_ADMIN_TOKEN}
+      - APP__ENCRYPTION_KEY=${OPENCTI_ENCRYPTION_KEY}
+      - APP__HEALTH_ACCESS_KEY=${OPENCTI_HEALTHCHECK_ACCESS_KEY}
+      - REDIS__HOSTNAME=redis
+      - REDIS__PORT=6379
+      - ELASTICSEARCH__URL=http://elasticsearch:9200
+      - ELASTICSEARCH__NUMBER_OF_REPLICAS=0
+      - MINIO__ENDPOINT=minio
+      - MINIO__PORT=9000
+      - MINIO__USE_SSL=false
+      - MINIO__ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO__SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - RABBITMQ__HOSTNAME=opencti-rabbitmq
+      - RABBITMQ__PORT=5672
+      - RABBITMQ__PORT_MANAGEMENT=15672
+      - RABBITMQ__MANAGEMENT_SSL=false
+      - RABBITMQ__USERNAME=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ__PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - SMTP__HOSTNAME=localhost
+      - SMTP__PORT=25
+      - PROVIDERS__LOCAL__STRATEGY=LocalStrategy
+    ports:
+      - "127.0.0.1:4000:8080"
+    networks:
+      default:
+      iris_backend:
+        aliases:
+          - opencti
+    depends_on:
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-qO-",
+          "http://localhost:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_ACCESS_KEY}",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+
+  worker:
+    image: opencti/worker:${OPENCTI_VERSION}
+    restart: unless-stopped
+    environment:
+      - OPENCTI_URL=http://opencti:8080
+      - OPENCTI_TOKEN=${OPENCTI_ADMIN_TOKEN}
+    depends_on:
+      opencti:
+        condition: service_healthy
+
+networks:
+  iris_backend:
+    external: true
+    name: iris_backend
+
+volumes:
+  redis_data:
+  elasticsearch_data:
+  minio_data:
+  rabbitmq_data:
