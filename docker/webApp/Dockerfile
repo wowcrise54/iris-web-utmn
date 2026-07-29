@@ -62,6 +62,7 @@ WORKDIR /iriswebapp
 
 COPY docker/webApp/iris-entrypoint.sh .
 COPY docker/webApp/wait-for-iriswebapp.sh .
+RUN sed -i 's/\r$//' iris-entrypoint.sh wait-for-iriswebapp.sh
 COPY ./source .
 
 # Add execution right to binaries needed by evtx2splunk for iris_evtx module

@@ -28,6 +28,7 @@ ARG NGINX_CONF_FILE
 RUN groupadd -g ${NGINX_CONF_GID} az-app-nginx-conf && usermod -a -G az-app-nginx-conf www-data
 
 COPY entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh
 RUN chmod 700 /entrypoint.sh
 RUN chown www-data:www-data /entrypoint.sh
 
