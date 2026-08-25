@@ -30,8 +30,14 @@
 
     <!-- Specific CSS goes HERE -->
     {% block stylesheets %}{% endblock stylesheets %}
+	{% if current_user.prefers_minimalist_ui %}
+		<link rel="stylesheet" href="/static/assets/css/design-tokens.css">
+		<link rel="stylesheet" href="/static/assets/css/minimalist-base.css">
+	{% endif %}
 	{% if current_user.in_dark_mode %}
 		<link rel="stylesheet" href="/static/assets/css/dark-theme.css">
+		<link rel="stylesheet" href="/static/assets/css/modern-ui-enhancements.css">
+		<link rel="stylesheet" href="/static/assets/css/glassmorphism-theme.css">
 	{% endif %}
 </head>
 <body>
