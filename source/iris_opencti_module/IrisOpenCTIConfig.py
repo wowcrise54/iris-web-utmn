@@ -211,5 +211,86 @@ module_configuration = [
         "mandatory": True,
         "type": "bool",
         "section": "Triggers"
+    },
+    {
+        "param_name": "opencti_cache_enabled",
+        "param_human_name": "Enable query caching",
+        "param_description": "Cache OpenCTI query results to improve performance.",
+        "default": True,
+        "mandatory": True,
+        "type": "bool",
+        "section": "Performance"
+    },
+    {
+        "param_name": "opencti_cache_ttl",
+        "param_human_name": "Cache TTL (seconds)",
+        "param_description": "Time-to-live for cached OpenCTI queries.",
+        "default": 300,
+        "mandatory": True,
+        "type": "int",
+        "section": "Performance"
+    },
+    {
+        "param_name": "opencti_cache_size",
+        "param_human_name": "Cache size",
+        "param_description": "Maximum number of entries in the cache.",
+        "default": 1000,
+        "mandatory": True,
+        "type": "int",
+        "section": "Performance"
+    },
+    {
+        "param_name": "opencti_retry_enabled",
+        "param_human_name": "Enable retry logic",
+        "param_description": "Retry failed OpenCTI requests with exponential backoff.",
+        "default": True,
+        "mandatory": True,
+        "type": "bool",
+        "section": "Reliability"
+    },
+    {
+        "param_name": "opencti_retry_attempts",
+        "param_human_name": "Retry attempts",
+        "param_description": "Number of retry attempts for failed requests.",
+        "default": 3,
+        "mandatory": True,
+        "type": "int",
+        "section": "Reliability"
+    },
+    {
+        "param_name": "opencti_retry_delay",
+        "param_human_name": "Initial retry delay (seconds)",
+        "param_description": "Initial delay before first retry attempt.",
+        "default": 1,
+        "mandatory": True,
+        "type": "int",
+        "section": "Reliability"
+    },
+    {
+        "param_name": "opencti_auto_enrich_alerts",
+        "param_human_name": "Auto-enrich alerts on creation",
+        "param_description": "Automatically enrich alerts with OpenCTI data when created.",
+        "default": False,
+        "mandatory": True,
+        "type": "bool",
+        "section": "Automation"
+    },
+    {
+        "param_name": "opencti_auto_enrich_min_iocs",
+        "param_human_name": "Minimum IOCs for auto-enrichment",
+        "param_description": "Minimum number of IOCs required for auto-enrichment.",
+        "default": 1,
+        "mandatory": True,
+        "type": "int",
+        "section": "Automation"
+    },
+    {
+        "param_name": "opencti_min_confidence",
+        "param_human_name": "Minimum confidence score",
+        "param_description": "Minimum OpenCTI confidence score (0-100) for matches.",
+        "default": 20,
+        "mandatory": True,
+        "type": "int",
+        "section": "Filtering"
     }
 ]

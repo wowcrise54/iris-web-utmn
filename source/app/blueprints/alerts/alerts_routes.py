@@ -49,6 +49,7 @@ from app.util import ac_api_requires
 from app.util import response_error, add_obj_history_entry, ac_requires
 from app.util import response_success
 from iris_opencti_module.opencti_handler.opencti_insights import alert_recommendation
+from iris_opencti_module.opencti_handler.auto_enrich import trigger_auto_enrichment
 
 alerts_blueprint = Blueprint(
     'alerts',
@@ -272,6 +273,16 @@ def alerts_add_route() -> Response:
         new_alert = call_modules_hook('on_postload_alert_create', data=new_alert)
 
         track_activity(f"created alert #{new_alert.alert_id} - {new_alert.alert_title}", ctx_less=True)
+
+        # Trigger auto-enrichment if enabled
+        try:
+            from iris_opencti_module.IrisOpenCTIInterface import IrisOpenCTIInterface
+            iris_opencti_module = IrisOpenCTIInterface()
+            module_config = iris_opencti_module.get_configuration()
+            if module_config:
+                trigger_auto_enrichment(new_alert, module_config)
+        except Exception as enrich_exc:
+            app.app.logger.warning(f"Auto-enrichment trigger failed: {enrich_exc}")
 
         # Emit a socket io event
         app.socket_io.emit('new_alert', json.dumps({
