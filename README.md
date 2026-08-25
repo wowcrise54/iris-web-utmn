@@ -101,9 +101,30 @@ changes might require some manual labor depending on the version.
 ### API
 The API reference is available in the [documentation](https://docs.dfir-iris.org/operations/api/#references) or [documentation repository](https://github.com/dfir-iris/iris-doc-src).
 
+## Minimalist UI Mode
+
+DFIR-IRIS includes a minimalist UI mode for focused analysis work.
+
+### Features
+- Clean, distraction-free interface
+- Keyboard-first navigation (Cmd+K, j/k, etc.)
+- Zen mode for deep work
+- Smart IOC input with auto-detection
+- WCAG 2.1 AA accessible
+
+### Enabling
+1. Go to User Settings
+2. Check "Enable Minimalist UI"
+3. Refresh page
+
+### Documentation
+- [User Guide](docs/MINIMALIST_UI_GUIDE.md)
+- [CSS Reference](docs/MINIMALIST_CSS_REFERENCE.md)
+- [Accessibility Report](docs/ACCESSIBILITY_REPORT.md)
+
 ## Help
 You can reach us on [Discord](https://discord.gg/76tM6QUJza) or by [mail](mailto:contact@dfir-iris.org) if you have any question, issue or idea!   
-We are also on [Twitter](https://twitter.com/dfir_iris) and [Matrix](https://matrix.to/#/#dfir-iris:matrix.org).  
+We are also on [Twitter](https://twitter.com/dfir_iris) and [Matrix](https://matrix.to/#/#dfir-iris:matrix.org).
 
 ## Considerations
 Iris is still in its early stage. It can already be used in production, but please set backups of the database and DO NOT expose the interface on the Internet. We highly recommend using a private dedicated and secured network.
