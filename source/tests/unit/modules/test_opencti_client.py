@@ -1,5 +1,5 @@
 from unittest import TestCase
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from iris_opencti_module.opencti_handler.opencti_client import OpenCTIClient
 from iris_opencti_module.opencti_handler.opencti_client import OpenCTIClientError
@@ -45,3 +45,68 @@ class TestOpenCTIClient(TestCase):
             variables,
             {"ids": ["indicator--1"], "objectId": "indicator--1", "first": 20},
         )
+
+    def test_retry_on_transient_error(self):
+        """Test that client retries on transient errors with exponential backoff"""
+        # Create client with short retry delay for testing
+        client = OpenCTIClient(
+            url="http://test-opencti.local",
+            token="test-token",
+            timeout=5,
+            retry_attempts=3,
+            retry_delay=0.1
+        )
+        
+        # Mock transient failures then success
+        with patch.object(client, '_make_request') as mock_execute:
+            mock_execute.side_effect = [
+                OpenCTIClientError("Transient error"),
+                OpenCTIClientError("Transient error"),
+                {"data": {"indicator": {"id": "test"}}}
+            ]
+            
+            result = client.search_ioc("8.8.8.8", first=10)
+            
+            # Should have retried twice (3 total attempts)
+            self.assertEqual(mock_execute.call_count, 3)
+            self.assertEqual(result["data"]["indicator"]["id"], "test")
+
+    def test_no_retry_on_auth_error(self):
+        """Test that client does NOT retry on authentication errors"""
+        client = OpenCTIClient(
+            url="http://test-opencti.local",
+            token="test-token",
+            timeout=5,
+            retry_attempts=3,
+            retry_delay=0.1
+        )
+        
+        # Mock auth error - should not retry
+        with patch.object(client, '_make_request') as mock_execute:
+            mock_execute.side_effect = OpenCTIClientError("unauthorized")
+            
+            with self.assertRaises(OpenCTIClientError):
+                client.search_ioc("8.8.8.8", first=10)
+            
+            # Should have only tried once, no retries
+            self.assertEqual(mock_execute.call_count, 1)
+
+    def test_no_retry_on_validation_error(self):
+        """Test that client does NOT retry on validation errors"""
+        client = OpenCTIClient(
+            url="http://test-opencti.local",
+            token="test-token",
+            timeout=5,
+            retry_attempts=3,
+            retry_delay=0.1
+        )
+        
+        # Mock validation error - should not retry
+        with patch.object(client, '_make_request') as mock_execute:
+            mock_execute.side_effect = OpenCTIClientError("validation error")
+            
+            with self.assertRaises(OpenCTIClientError):
+                client.search_ioc("8.8.8.8", first=10)
+            
+            # Should have only tried once, no retries
+            self.assertEqual(mock_execute.call_count, 1)

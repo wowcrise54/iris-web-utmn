@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 
+import time
+import logging
 import requests
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenCTIClientError(Exception):
@@ -329,13 +334,15 @@ class OpenCTIClient:
     }
     """
 
-    def __init__(self, url, token, verify_ssl=True, timeout=20, proxies=None):
+    def __init__(self, url, token, verify_ssl=True, timeout=20, proxies=None, retry_attempts=3, retry_delay=1.0):
         self.api_url = self._normalize_graphql_url(url)
         self.token = token
         self.verify_ssl = verify_ssl
         self.timeout = timeout
         self.proxies = proxies or {}
         self.session = requests.Session()
+        self.retry_attempts = retry_attempts
+        self.retry_delay = retry_delay
 
     @staticmethod
     def _normalize_graphql_url(url):
@@ -354,7 +361,36 @@ class OpenCTIClient:
             "Authorization": f"Bearer {self.token}",
         }
 
-    def query(self, query, variables=None):
+    def _execute_query(self, query: str, variables: dict = None) -> dict:
+        """Execute GraphQL query with retry logic and exponential backoff"""
+        last_error = None
+        
+        for attempt in range(self.retry_attempts):
+            try:
+                return self._make_request(query, variables)
+            except OpenCTIClientError as e:
+                last_error = e
+                
+                # Don't retry on authentication or validation errors
+                if "unauthorized" in str(e).lower() or "validation" in str(e).lower():
+                    logger.warning(f"Authentication/validation error, not retrying: {e}")
+                    raise
+                
+                if attempt < self.retry_attempts - 1:
+                    delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
+                    logger.warning(
+                        f"Request failed (attempt {attempt + 1}/{self.retry_attempts}): {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(f"All {self.retry_attempts} attempts failed: {e}")
+                    raise
+        
+        raise last_error
+
+    def _make_request(self, query: str, variables: dict = None) -> dict:
+        """Make a single GraphQL request without retry logic"""
         if not self.api_url:
             raise OpenCTIClientError("OpenCTI URL is not configured")
         if not self.token:
@@ -378,6 +414,10 @@ class OpenCTIClient:
             raise OpenCTIClientError(str(payload["errors"]))
 
         return payload.get("data") or {}
+
+    def query(self, query, variables=None):
+        """Execute a GraphQL query (wrapper for backward compatibility)"""
+        return self._execute_query(query, variables)
 
     def health_check(self):
         return self.query(self._HEALTH_QUERY)
