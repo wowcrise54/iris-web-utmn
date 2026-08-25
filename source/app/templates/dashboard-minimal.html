@@ -1,0 +1,88 @@
+{% extends "layouts/default.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-minimal">
+  <!-- Welcome Header -->
+  <div class="dashboard-header">
+    <h1>Good morning, {{ current_user.username }}!</h1>
+    {% if current_user.prefers_minimalist_ui %}
+      <button class="zen-mode-toggle" onclick="minimalistNav.toggleZenMode()" title="Toggle Zen Mode (Cmd+)">
+        ◐
+      </button>
+    {% endif %}
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-icon">⚠️</div>
+      <div class="kpi-content">
+        <div class="kpi-number">{{ new_alerts_count|default(0) }}</div>
+        <div class="kpi-label">New Alerts</div>
+      </div>
+      <a href="/alerts?status=new" class="kpi-link">View all →</a>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">🔄</div>
+      <div class="kpi-content">
+        <div class="kpi-number">{{ in_progress_cases_count|default(0) }}</div>
+        <div class="kpi-label">In Progress Cases</div>
+      </div>
+      <a href="/cases?status=in_progress" class="kpi-link">View all →</a>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon">✅</div>
+      <div class="kpi-content">
+        <div class="kpi-number">{{ closed_today_count|default(0) }}</div>
+        <div class="kpi-label">Closed Today</div>
+      </div>
+      <a href="/cases?status=closed&date=today" class="kpi-link">View all →</a>
+    </div>
+  </div>
+
+  <!-- Recent Alerts -->
+  <div class="dashboard-section">
+    <div class="section-header">
+      <h2>Recent Alerts</h2>
+      <a href="/alerts" class="btn-link">View all alerts</a>
+    </div>
+
+    <div class="recent-alerts-list">
+      {% for alert in recent_alerts %}
+      <div class="recent-alert-item">
+        <div class="alert-status">
+          {% if alert.alert_status_id == 1 %}
+            <span class="badge badge-new">New</span>
+          {% elif alert.alert_status_id == 2 %}
+            <span class="badge badge-in-progress">In Progress</span>
+          {% else %}
+            <span class="badge badge-closed">Closed</span>
+          {% endif %}
+        </div>
+        <div class="alert-info">
+          <h3>{{ alert.alert_title }}</h3>
+          <p class="alert-meta">
+            {% if alert.iocs %}
+              {{ alert.iocs|length }} IOC{% if alert.iocs|length > 1 %s{% endif %} • 
+            {% endif %}
+            {{ alert.alert_creation_time|strftime('%b %d, %H:%M') }}
+          </p>
+        </div>
+        <a href="/alerts/{{ alert.alert_id }}" class="alert-action">→</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Primary Action -->
+  <div class="dashboard-primary-action">
+    <a href="/alerts/new" class="btn btn-primary btn-lg">
+      + Create New Investigation
+    </a>
+  </div>
+</div>
+{% endblock %}

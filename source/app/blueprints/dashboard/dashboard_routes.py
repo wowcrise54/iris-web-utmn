@@ -32,6 +32,7 @@ from flask import session
 from flask import url_for
 from flask_login import current_user
 from flask_login import logout_user
+from flask_login import login_required
 from flask_wtf import FlaskForm
 
 from app import app
@@ -621,6 +622,33 @@ def index(caseid, url_redir):
     form = FlaskForm()
 
     return render_template('index.html', data=data, form=form, msg=msg)
+
+
+@dashboard_blueprint.route('/dashboard/minimal')
+@login_required
+def dashboard_minimal():
+    """
+    Minimalist dashboard view with KPI cards and recent alerts.
+    """
+    # Get counts for KPI cards
+    new_alerts_count = Alert.query.filter_by(alert_status_id=1).count()
+    in_progress_cases_count = Cases.query.filter_by(case_status='in_progress').count()
+    closed_today_count = Cases.query.filter(
+        func.date(Cases.case_creation_time) == func.date(func.now())
+    ).filter_by(case_status='closed').count()
+    
+    # Get recent alerts
+    recent_alerts = Alert.query.order_by(
+        Alert.alert_creation_time.desc()
+    ).limit(5).all()
+    
+    return render_template(
+        'dashboard-minimal.html',
+        new_alerts_count=new_alerts_count,
+        in_progress_cases_count=in_progress_cases_count,
+        closed_today_count=closed_today_count,
+        recent_alerts=recent_alerts
+    )
 
 
 @dashboard_blueprint.route('/global/tasks/list', methods=['GET'])
