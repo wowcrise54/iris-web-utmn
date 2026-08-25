@@ -1,0 +1,23 @@
+<nav class="minimal-nav">
+  <div class="minimal-nav-brand">
+    <a href="/dashboard">IRIS</a>
+  </div>
+  
+  <ul class="minimal-nav-items">
+    <li class="minimal-nav-item"><a href="/dashboard">📊 Dashboard</a></li>
+    <li class="minimal-nav-item"><a href="/alerts">⚠️ Alerts</a></li>
+    <li class="minimal-nav-item"><a href="/cases">📁 Cases</a></li>
+    <li class="minimal-nav-item"><a href="/customers">👥 Customers</a></li>
+    <li class="minimal-nav-item"><a href="/modules">🧩 Modules</a></li>
+    <li class="minimal-nav-item"><a href="/admin">⚙️ Admin</a></li>
+  </ul>
+  
+  <div class="minimal-nav-actions">
+    <button class="btn-icon search-toggle" onclick="minimalistNav.openSearch()" aria-label="Open search">
+      🔍
+    </button>
+    <div class="user-menu">
+      <span>{{ current_user.username }}</span>
+    </div>
+  </div>
+</nav>
