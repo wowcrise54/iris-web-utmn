@@ -1,0 +1,127 @@
+/**
+ * DFIR-IRIS Zen Mode Styles
+ * 
+ * Full-screen focus mode for distraction-free work
+ * Activated via zen-mode-toggle button or Cmd+. hotkey
+ */
+
+/* Zen Mode Body Class */
+body.zen-mode {
+  /* Hide all sidebars */
+  --sidebar-width: 0 !important;
+  --quick-sidebar-width: 0 !important;
+  
+  /* Remove sidebar margins */
+  overflow-x: hidden;
+}
+
+body.zen-mode .sidebar,
+body.zen-mode .quick-sidebar,
+body.zen-mode .datastore-sidebar {
+  display: none !important;
+  visibility: hidden;
+}
+
+/* Maximize main panel */
+body.zen-mode .main-panel {
+  margin-left: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+body.zen-mode .content {
+  padding: var(--space-8) var(--space-12);
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+/* Zen mode toggle button */
+body.zen-mode .zen-mode-toggle {
+  background-color: var(--color-primary-600);
+  color: white;
+  animation: zen-mode-active 2s ease-in-out;
+}
+
+@keyframes zen-mode-active {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* Enhanced typography in zen mode */
+body.zen-mode h1 {
+  font-size: var(--text-4xl);
+  margin-bottom: var(--space-6);
+}
+
+body.zen-mode h2 {
+  font-size: var(--text-2xl);
+  margin-bottom: var(--space-4);
+}
+
+body.zen-mode p {
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+}
+
+/* Dark mode defaults for zen mode */
+body.zen-mode {
+  background-color: var(--color-neutral-900);
+  color: var(--color-neutral-50);
+}
+
+body.zen-mode .card {
+  background-color: var(--color-neutral-800);
+  border: 1px solid var(--color-neutral-700);
+}
+
+/* Focus mode indicators */
+body.zen-mode .zen-mode-indicator {
+  position: fixed;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  background-color: var(--color-primary-600);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: var(--z-index-tooltip);
+}
+
+/* Exit hint on hover */
+body.zen-mode .zen-mode-exit-hint {
+  position: fixed;
+  top: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+  pointer-events: none;
+  z-index: var(--z-index-tooltip);
+}
+
+body.zen-mode:hover .zen-mode-exit-hint {
+  opacity: 1;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  body.zen-mode .content {
+    padding: var(--space-4) var(--space-6);
+  }
+  
+  body.zen-mode h1 {
+    font-size: var(--text-2xl);
+  }
+  
+  body.zen-mode p {
+    font-size: var(--text-base);
+  }
+}

@@ -205,7 +205,8 @@ class User(UserMixin, db.Model):
     is_service_account = Column(Boolean(), default=False)
     mfa_secrets = Column(Text, nullable=True)
     webauthn_credentials = Column(JSON, nullable=True)
-    mfa_setup_complete = Column(Boolean(), default=False)
+    mfa_setup_complete = Column(Boolean, default=False)
+    zen_mode_enabled = Column(Boolean, default=False)
 
     def __init__(self, user: str, name: str, email: str, password: str, active: bool,
                  external_id: str = None, is_service_account: bool = False, mfa_secret: str = None,

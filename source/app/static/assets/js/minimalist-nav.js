@@ -155,52 +155,14 @@ class MinimalistNavigation {
       zenButton.innerHTML = '◐';
       zenButton.title = 'Toggle Zen Mode (Cmd+.)';
       zenButton.setAttribute('aria-label', 'Toggle Zen Mode');
-      zenButton.onclick = () => this.toggleZenMode();
+      zenButton.onclick = () => {
+        if (typeof zenMode !== 'undefined') {
+          zenMode.toggle();
+        }
+      };
       
       minimalNav.appendChild(zenButton);
     }
-    
-    // Bind Cmd+. hotkey
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
-        e.preventDefault();
-        this.toggleZenMode();
-      }
-    });
-    
-    // Restore zen mode from localStorage
-    if (localStorage.getItem('zen-mode') === 'true') {
-      this.enableZenMode();
-    }
-  }
-
-  toggleZenMode() {
-    const isZenMode = document.body.classList.toggle('zen-mode');
-    localStorage.setItem('zen-mode', isZenMode);
-    
-    if (isZenMode) {
-      this.enableZenMode();
-    } else {
-      this.disableZenMode();
-    }
-  }
-
-  enableZenMode() {
-    document.body.classList.add('zen-mode');
-    // Hide sidebars
-    const sidebars = document.querySelectorAll('.sidebar');
-    sidebars.forEach(sidebar => {
-      sidebar.style.display = 'none';
-    });
-  }
-
-  disableZenMode() {
-    document.body.classList.remove('zen-mode');
-    // Show sidebars
-    const sidebars = document.querySelectorAll('.sidebar');
-    sidebars.forEach(sidebar => {
-      sidebar.style.display = '';
-    });
   }
 
   handleListNavigation(key) {
