@@ -46,6 +46,54 @@ class TestOpenCTIClient(TestCase):
             {"ids": ["indicator--1"], "objectId": "indicator--1", "first": 20},
         )
 
+    def test_search_ioc_uses_cache_on_subsequent_calls(self):
+        """Test that search_ioc caches results and returns cached data on repeat queries."""
+        # First call - should query OpenCTI
+        expected = {"indicators": {"edges": [{"node": {"id": "test"}}]}}
+        self.client.query.return_value = expected
+
+        result1 = self.client.search_ioc("8.8.8.8", first=10)
+        self.assertEqual(result1, expected)
+        self.assertEqual(self.client.query.call_count, 1)
+
+        # Second call with same value - should use cache
+        result2 = self.client.search_ioc("8.8.8.8", first=10)
+        self.assertEqual(result2, expected)
+        # query should not be called again (still 1 call)
+        self.assertEqual(self.client.query.call_count, 1)
+
+    def test_search_ioc_caches_after_fallback_queries(self):
+        """Test that search_ioc caches results even when falling back to legacy queries."""
+        # First call falls back to legacy query
+        fallback_result = {"indicators": {"edges": []}}
+        self.client.query.side_effect = [
+            OpenCTIClientError("Cannot query field"),
+            fallback_result,
+        ]
+
+        result1 = self.client.search_ioc("example.com", first=10)
+        self.assertEqual(result1, fallback_result)
+        self.assertEqual(self.client.query.call_count, 2)
+
+        # Second call should use cache
+        result2 = self.client.search_ioc("example.com", first=10)
+        self.assertEqual(result2, fallback_result)
+        # query should not be called again
+        self.assertEqual(self.client.query.call_count, 2)
+
+    def test_cache_stats_accessible(self):
+        """Test that cache statistics are accessible."""
+        self.client.query.return_value = {"indicators": {"edges": []}}
+
+        # Make some queries
+        self.client.search_ioc("8.8.8.8", first=10)
+        self.client.search_ioc("8.8.8.8", first=10)  # cache hit
+        self.client.search_ioc("1.1.1.1", first=10)  # cache miss then store
+
+        stats = self.client.cache.get_stats()
+        self.assertEqual(stats["size"], 2)
+        self.assertGreaterEqual(stats["hits"], 1)
+
     def test_retry_on_transient_error(self):
         """Test that client retries on transient errors with exponential backoff"""
         # Create client with short retry delay for testing

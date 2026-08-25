@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DFIR-IRIS - Utilitarian Dense Design</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Utilitarian Dense Design Variant */
+        /* Design principle: Maximum information density, power-user focused */
+        
+        :root {
+            --bg-dark: #0F172A;
+            --bg-card: #1E293B;
+            --bg-card-hover: #25334D;
+            --text-primary: #F1F5F9;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --border-color: #334155;
+            --accent-blue: #3B82F6;
+            --accent-green: #10B981;
+            --accent-orange: #F59E0B;
+            --accent-purple: #8B5CF6;
+            --accent-pink: #EC4899;
+            --accent-red: #EF4444;
+            --accent-cyan: #06B6D4;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.4;
+            padding: 24px;
+            font-size: 13px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-bottom: 24px;
+        }
+
+        h2 {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 12px;
+        }
+
+        /* Status Badges - High contrast, compact */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-right: 4px;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .badge-new { background: var(--accent-blue); color: white; }
+        .badge-open { background: var(--accent-orange); color: #1F2937; }
+        .badge-closed { background: var(--accent-green); color: white; }
+        .badge-resolved { background: var(--accent-purple); color: white; }
+        .badge-pending { background: var(--accent-pink); color: white; }
+        .badge-critical { 
+            background: var(--accent-red); 
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
+        }
+
+        /* Dense Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            transition: all 0.15s ease;
+        }
+
+        .card:hover {
+            background: var(--bg-card-hover);
+            border-color: #475569;
+            transform: translateX(2px);
+        }
+
+        .card-header {
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .card-body {
+            padding: 10px 12px;
+        }
+
+        .card-description {
+            color: var(--text-secondary);
+            font-size: 11px;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .card-data-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+
+        .card-data-label {
+            color: var(--text-muted);
+            min-width: 60px;
+        }
+
+        .card-data-value {
+            color: var(--text-primary);
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+        }
+
+        /* Status-based left borders */
+        .card.status-new { border-left: 3px solid var(--accent-blue); }
+        .card.status-open { border-left: 3px solid var(--accent-orange); }
+        .card.status-closed { border-left: 3px solid var(--accent-green); }
+        .card.status-critical { 
+            border-left: 3px solid var(--accent-red);
+            animation: border-pulse 2s infinite;
+        }
+
+        @keyframes border-pulse {
+            0%, 100% { border-left-color: var(--accent-red); }
+            50% { border-left-color: #FCA5A5; }
+        }
+
+        /* Compact Tags */
+        .tag {
+            display: inline-block;
+            padding: 1px 6px;
+            background: #334155;
+            color: var(--text-secondary);
+            border-radius: 2px;
+            font-size: 9px;
+            margin-right: 3px;
+            margin-bottom: 3px;
+            border: 1px solid #475569;
+        }
+
+        .tag-opencti {
+            background: rgba(236, 72, 153, 0.2);
+            color: #F472B6;
+            border-color: #EC4899;
+        }
+
+        /* Compact IOC Badges */
+        .ioc-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #60A5FA;
+            border-radius: 3px;
+            font-size: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+
+        /* Compact Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            border: none;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563EB;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+            color: var(--text-primary);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 32px;
+        }
+
+        /* Severity - Compact */
+        .severity {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 2px;
+            font-size: 9px;
+            font-weight: 700;
+            margin-right: 3px;
+            text-transform: uppercase;
+        }
+
+        .severity-low { background: #166534; color: #BBF7D0; }
+        .severity-medium { background: #92400E; color: #FDE68A; }
+        .severity-high { background: #C2410C; color: #FED7AA; }
+        .severity-critical { background: var(--accent-red); color: #FEE2E2; }
+
+        /* Data table style */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+
+        .data-table th {
+            text-align: left;
+            padding: 6px 8px;
+            background: rgba(0, 0, 0, 0.2);
+            color: var(--text-secondary);
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .data-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .data-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+
+        /* Info panel */
+        .info-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 24px;
+        }
+
+        .info-panel h3 {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .info-panel ul {
+            color: var(--text-muted);
+            font-size: 10px;
+            line-height: 1.6;
+            padding-left: 16px;
+        }
+
+        /* Quick stats */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .stat-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-shield-alt"></i> DFIR-IRIS <span style="color: var(--text-muted); font-weight: 400;">// Utilitarian Dense</span></h1>
+        <p class="subtitle">High-density interface for security analysts</p>
+
+        <div class="stats-bar">
+            <div class="stat">
+                <span class="stat-value" style="color: var(--accent-blue);">12</span>
+                <span class="stat-label">New</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" style="color: var(--accent-orange);">8</span>
+                <span class="stat-label">Open</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" style="color: var(--accent-red);">3</span>
+                <span class="stat-label">Critical</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" style="color: var(--accent-green);">47</span>
+                <span class="stat-label">Closed</span>
+            </div>
+            <div class="stat">
+                <span class="stat-value" style="color: var(--accent-purple);">156</span>
+                <span class="stat-label">This Week</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Status Badges</h2>
+            <div>
+                <span class="badge badge-new">New</span>
+                <span class="badge badge-open">Open</span>
+                <span class="badge badge-closed">Closed</span>
+                <span class="badge badge-resolved">Resolved</span>
+                <span class="badge badge-pending">Pending</span>
+                <span class="badge badge-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Severity Levels</h2>
+            <div>
+                <span class="severity severity-low">Low</span>
+                <span class="severity severity-medium">Medium</span>
+                <span class="severity severity-high">High</span>
+                <span class="severity severity-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Alert Feed</h2>
+            <div class="grid">
+                <div class="card status-new">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-bug"></i>
+                            Malware: Emotet
+                        </h3>
+                        <div class="card-meta">
+                            <span class="badge badge-new">New</span>
+                            <span class="severity severity-critical">Critical</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-description">
+                            Emotet trojan detected in email attachment. High confidence.
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">MD5:</span>
+                            <span class="card-data-value">a1b2c3d4e5f6...</span>
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">Source:</span>
+                            <span class="card-data-value">email-gateway</span>
+                        </div>
+                        <div>
+                            <span class="tag">emotet</span>
+                            <span class="tag tag-opencti">opencti:apt</span>
+                            <span class="tag">email</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-external-link-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-open">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-network-wired"></i>
+                            C2 Communication
+                        </h3>
+                        <div class="card-meta">
+                            <span class="badge badge-open">Open</span>
+                            <span class="severity severity-high">High</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-description">
+                            Outbound connection to known C2 infrastructure detected.
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">IP:</span>
+                            <span class="card-data-value">185.220.101.1</span>
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">Port:</span>
+                            <span class="card-data-value">443/TCP</span>
+                        </div>
+                        <div>
+                            <span class="tag">c2</span>
+                            <span class="tag tag-opencti">opencti:tor</span>
+                            <span class="tag">network</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-external-link-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-critical">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-skull-crossbones"></i>
+                            Ransomware: LockBit
+                        </h3>
+                        <div class="card-meta">
+                            <span class="badge badge-critical">Critical</span>
+                            <span class="severity severity-critical">Critical</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-description">
+                            LockBit ransomware activity detected on file server.
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">Host:</span>
+                            <span class="card-data-value">FS-PROD-01</span>
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">User:</span>
+                            <span class="card-data-value">DOMAIN\admin</span>
+                        </div>
+                        <div>
+                            <span class="tag">ransomware</span>
+                            <span class="tag tag-opencti">opencti:apt</span>
+                            <span class="tag">lateral</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-ban"></i> Isolate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-closed">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-user-secret"></i>
+                            Suspicious PowerShell
+                        </h3>
+                        <div class="card-meta">
+                            <span class="badge badge-closed">Closed</span>
+                            <span class="severity severity-medium">Medium</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-description">
+                            Obfuscated PowerShell script executed - verified as legitimate admin tool.
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">Host:</span>
+                            <span class="card-data-value">WS-ADMIN-05</span>
+                        </div>
+                        <div class="card-data-row">
+                            <span class="card-data-label">User:</span>
+                            <span class="card-data-value">admin.johnson</span>
+                        </div>
+                        <div>
+                            <span class="tag">false-positive</span>
+                            <span class="tag">admin-tool</span>
+                            <span class="tag">powershell</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-history"></i> View
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-copy"></i> Clone
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>IOC Table</h2>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                        <th>Tags</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><i class="fas fa-globe"></i> Domain</td>
+                        <td style="font-family: monospace;">evil-phish.com</td>
+                        <td><span class="severity severity-high">High</span></td>
+                        <td><span class="badge badge-open">Open</span></td>
+                        <td><span class="tag">phishing</span></td>
+                        <td>
+                            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 9px;">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-hashtag"></i> MD5</td>
+                        <td style="font-family: monospace;">a1b2c3d4e5f6...</td>
+                        <td><span class="severity severity-critical">Critical</span></td>
+                        <td><span class="badge badge-new">New</span></td>
+                        <td><span class="tag">emotet</span></td>
+                        <td>
+                            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 9px;">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><i class="fas fa-server"></i> IP</td>
+                        <td style="font-family: monospace;">185.220.101.1</td>
+                        <td><span class="severity severity-high">High</span></td>
+                        <td><span class="badge badge-open">Open</span></td>
+                        <td><span class="tag">tor</span><span class="tag">c2</span></td>
+                        <td>
+                            <button class="btn btn-secondary" style="padding: 2px 6px; font-size: 9px;">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="info-panel">
+            <h3><i class="fas fa-info-circle"></i> Design Philosophy</h3>
+            <ul>
+                <li>Maximum information density for power users</li>
+                <li>Dark theme reduces eye strain during long shifts</li>
+                <li>High contrast for quick status recognition</li>
+                <li>Compact spacing allows more data on screen</li>
+                <li>Monospace fonts for IOC readability</li>
+                <li>Minimal animations - focus on data, not decoration</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

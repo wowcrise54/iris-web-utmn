@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DFIR-IRIS - Glassmorphism Modern Design</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Glassmorphism Modern Design Variant */
+        /* Design principle: Futuristic, depth-focused with glass effects */
+        
+        :root {
+            --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            --glass-bg: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            --text-primary: #E8EEF7;
+            --text-secondary: #CBD5E1;
+            --accent-blue: #3B82F6;
+            --accent-green: #10B981;
+            --accent-orange: #F59E0B;
+            --accent-purple: #8B5CF6;
+            --accent-pink: #EC4899;
+            --accent-red: #EF4444;
+            --accent-cyan: #06B6D4;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 40px;
+            min-height: 100vh;
+        }
+
+        /* Animated background elements */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            animation: background-move 20s ease-in-out infinite;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        @keyframes background-move {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(2%, 2%) rotate(1deg); }
+            66% { transform: translate(-1%, 1%) rotate(-1deg); }
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-bottom: 40px;
+            font-weight: 300;
+            opacity: 0.8;
+        }
+
+        h2 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+            opacity: 0.9;
+        }
+
+        /* Glassmorphism Card */
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px) saturate(180%);
+            -webkit-backdrop-filter: blur(12px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+            margin-bottom: 20px;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card:hover {
+            transform: translateY(-4px) scale(1.01);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 2px 0 rgba(255, 255, 255, 0.15) inset;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .card-header {
+            padding: 20px 24px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .card-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-body {
+            padding: 24px;
+            color: var(--text-secondary);
+        }
+
+        .card-body p {
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        /* Status-based left borders with glow */
+        .card.status-new { 
+            border-left: 4px solid var(--accent-blue);
+            box-shadow: var(--glass-shadow), 0 0 20px rgba(59, 130, 246, 0.3) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+        }
+        .card.status-open { 
+            border-left: 4px solid var(--accent-orange);
+            box-shadow: var(--glass-shadow), 0 0 20px rgba(245, 158, 11, 0.3) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+        }
+        .card.status-closed { 
+            border-left: 4px solid var(--accent-green);
+            box-shadow: var(--glass-shadow), 0 0 20px rgba(16, 185, 129, 0.3) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+        }
+        .card.status-critical { 
+            border-left: 4px solid var(--accent-red);
+            box-shadow: var(--glass-shadow), 0 0 30px rgba(239, 68, 68, 0.5) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+            animation: border-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes border-glow {
+            0%, 100% { box-shadow: var(--glass-shadow), 0 0 30px rgba(239, 68, 68, 0.5) inset, 0 1px 0 rgba(255, 255, 255, 0.1) inset; }
+            50% { box-shadow: var(--glass-shadow), 0 0 50px rgba(239, 68, 68, 0.8) inset, 0 1px 0 rgba(255, 255, 255, 0.15) inset; }
+        }
+
+        /* Glassmorphism Badges */
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            text-transform: uppercase;
+        }
+
+        .badge-new {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.9) 0%, rgba(37, 99, 235, 0.9) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-open {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.9) 0%, rgba(217, 119, 6, 0.9) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-closed {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.9) 0%, rgba(5, 150, 105, 0.9) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-resolved {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.9) 0%, rgba(124, 58, 237, 0.9) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(139, 92, 246, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-pending {
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.9) 0%, rgba(219, 39, 119, 0.9) 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(236, 72, 153, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .badge-critical {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.95) 0%, rgba(220, 38, 38, 0.95) 100%);
+            color: white;
+            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            animation: badge-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes badge-pulse {
+            0%, 100% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6); }
+            50% { box-shadow: 0 4px 30px rgba(239, 68, 68, 0.9); }
+        }
+
+        /* Glass Tags */
+        .tag {
+            display: inline-block;
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin-right: 6px;
+            margin-bottom: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+        }
+
+        .tag:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .tag-opencti {
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(219, 39, 119, 0.1) 100%);
+            border-color: rgba(236, 72, 153, 0.4);
+            color: #F472B6;
+        }
+
+        /* IOC Badges */
+        .ioc-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #60A5FA;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            font-family: 'Consolas', 'Monaco', monospace;
+            transition: all 0.2s ease;
+        }
+
+        .ioc-badge:hover {
+            background: rgba(59, 130, 246, 0.25);
+            border-color: rgba(59, 130, 246, 0.5);
+            transform: translateY(-1px);
+        }
+
+        /* Glass Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: none;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue) 0%, #2563EB 100%);
+            color: white;
+            box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.55);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 24px;
+            margin-top: 20px;
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 56px;
+        }
+
+        /* Severity with glass effect */
+        .severity {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-right: 6px;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            text-transform: uppercase;
+        }
+
+        .severity-low {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6EE7B7;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .severity-medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: #FCD34D;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .severity-high {
+            background: rgba(249, 115, 22, 0.2);
+            color: #FB923C;
+            border: 1px solid rgba(249, 115, 22, 0.3);
+        }
+
+        .severity-critical {
+            background: rgba(239, 68, 68, 0.25);
+            color: #FCA5A5;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        /* Info panel */
+        .info-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px) saturate(180%);
+            -webkit-backdrop-filter: blur(12px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-top: 48px;
+            box-shadow: var(--glass-shadow);
+        }
+
+        .info-panel h3 {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-panel ul {
+            color: var(--text-secondary);
+            font-size: 0.8125rem;
+            line-height: 1.8;
+            padding-left: 20px;
+            opacity: 0.9;
+        }
+
+        /* Stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px) saturate(180%);
+            -webkit-backdrop-filter: blur(12px) saturate(180%);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-shield-alt"></i> DFIR-IRIS</h1>
+        <p class="subtitle">Glassmorphism Modern Design Variant</p>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--accent-blue);">12</div>
+                <div class="stat-label">New Alerts</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--accent-orange);">8</div>
+                <div class="stat-label">Open Cases</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--accent-red);">3</div>
+                <div class="stat-label">Critical</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color: var(--accent-green);">47</div>
+                <div class="stat-label">Resolved</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Status Badges</h2>
+            <div>
+                <span class="badge badge-new">New</span>
+                <span class="badge badge-open">Open</span>
+                <span class="badge badge-closed">Closed</span>
+                <span class="badge badge-resolved">Resolved</span>
+                <span class="badge badge-pending">Pending</span>
+                <span class="badge badge-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Severity Levels</h2>
+            <div>
+                <span class="severity severity-low">Low</span>
+                <span class="severity severity-medium">Medium</span>
+                <span class="severity severity-high">High</span>
+                <span class="severity severity-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Alert Cards</h2>
+            <div class="grid">
+                <div class="card status-new">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-bell" style="color: var(--accent-blue);"></i>
+                            Malware Detection
+                        </h3>
+                        <span class="badge badge-new">New</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Malicious executable detected in email attachment from external sender. High confidence match.</p>
+                        <div>
+                            <span class="ioc-badge">MD5: a1b2c3d4...</span>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <span class="tag">malware</span>
+                            <span class="tag tag-opencti">opencti:malicious</span>
+                            <span class="tag">email</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Create Case
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-open">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-exclamation-triangle" style="color: var(--accent-orange);"></i>
+                            Phishing Campaign
+                        </h3>
+                        <span class="badge badge-open">Open</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Multiple phishing emails detected targeting finance department. Ongoing investigation.</p>
+                        <div>
+                            <span class="ioc-badge">evil-phish.com</span>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <span class="tag">phishing</span>
+                            <span class="tag">finance</span>
+                            <span class="tag">ongoing</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Create Case
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-critical">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-skull" style="color: var(--accent-red);"></i>
+                            Ransomware Attack
+                        </h3>
+                        <span class="badge badge-critical">Critical</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Ransomware detected on file server. Immediate response required. LockBit variant identified.</p>
+                        <div>
+                            <span class="ioc-badge">192.168.1.100</span>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <span class="tag">ransomware</span>
+                            <span class="tag tag-opencti">opencti:apt</span>
+                            <span class="tag">critical</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Create Case
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-ban"></i> Isolate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-closed">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-check-circle" style="color: var(--accent-green);"></i>
+                            Suspicious Login
+                        </h3>
+                        <span class="badge badge-closed">Closed</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Unusual login from unknown location - verified as legitimate business travel.</p>
+                        <div>
+                            <span class="ioc-badge">185.220.101.1</span>
+                        </div>
+                        <div style="margin-top: 16px;">
+                            <span class="tag">false-positive</span>
+                            <span class="tag">resolved</span>
+                            <span class="tag">travel</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-history"></i> View History
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Combined Alert Example</h2>
+            <div class="card status-new">
+                <div class="card-header">
+                    <div style="flex: 1;">
+                        <h3 class="card-title">
+                            <i class="fas fa-network-wired" style="color: var(--accent-blue);"></i>
+                            Brute Force Attack Detected
+                        </h3>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="severity severity-high">High</span>
+                        <span class="badge badge-new">New</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Multiple failed login attempts detected from external IP addresses. Possible brute force attack against user accounts. Automated response initiated.</p>
+                    
+                    <div style="margin-bottom: 16px;">
+                        <strong style="color: var(--text-primary); font-size: 0.875rem;">Indicators:</strong><br>
+                        <span class="ioc-badge">185.220.101.1</span>
+                        <span class="ioc-badge">91.234.56.78</span>
+                        <span class="ioc-badge">45.142.120.67</span>
+                    </div>
+
+                    <div style="margin-bottom: 16px;">
+                        <strong style="color: var(--text-primary); font-size: 0.875rem;">Tags:</strong><br>
+                        <span class="tag">brute-force</span>
+                        <span class="tag">external</span>
+                        <span class="tag tag-opencti">opencti:suspicious</span>
+                        <span class="tag">automated</span>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-primary">
+                            <i class="fas fa-bolt"></i> Enrich with OpenCTI
+                        </button>
+                        <button class="btn btn-secondary">
+                            <i class="fas fa-folder"></i> Create Case
+                        </button>
+                        <button class="btn btn-secondary">
+                            <i class="fas fa-shield-alt"></i> Block IPs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3><i class="fas fa-info-circle"></i> Design Philosophy</h3>
+            <ul>
+                <li>Glassmorphism effects create depth and modern aesthetics</li>
+                <li>Backdrop blur and transparency for futuristic feel</li>
+                <li>Glowing accents for critical alerts</li>
+                <li>Smooth animations and transitions</li>
+                <li>Gradient backgrounds with animated elements</li>
+                <li>High contrast for readability on dark backgrounds</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

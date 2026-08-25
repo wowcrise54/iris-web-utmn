@@ -31,9 +31,14 @@
     <!-- Specific CSS goes HERE -->
     {% block stylesheets %}{% endblock stylesheets %}
 	{% if current_user.prefers_minimalist_ui %}
+		<!-- CSS - Preload critical styles -->
+		<link rel="preload" href="/static/assets/css/design-tokens.css" as="style">
 		<link rel="stylesheet" href="/static/assets/css/design-tokens.css">
+		<link rel="preload" href="/static/assets/css/minimalist-base.css" as="style">
 		<link rel="stylesheet" href="/static/assets/css/minimalist-base.css">
+		<link rel="preload" href="/static/assets/css/minimalist-components.css" as="style">
 		<link rel="stylesheet" href="/static/assets/css/minimalist-components.css">
+		<link rel="preload" href="/static/assets/css/zen-mode.css" as="style">
 		<link rel="stylesheet" href="/static/assets/css/zen-mode.css">
 	{% endif %}
 	{% if current_user.in_dark_mode %}
@@ -43,17 +48,22 @@
 	{% endif %}
 </head>
 <body>
-	<div class="wrapper {% block layout %}{% endblock layout %} {% include 'includes/sidebar_handler.html' %}">
+  <!-- Skip link for keyboard navigation -->
+  <a href="#main-content" class="skip-to-main">Skip to main content</a>
 
-		{% include 'includes/navigation.html' %}
+  <div class="wrapper {% block layout %}{% endblock layout %} {% include 'includes/sidebar_handler.html' %}">
 
-		{% include 'includes/sidenav.html' %}
+    <header role="banner">
+      {% include 'includes/navigation.html' %}
+    </header>
 
-		<div class="main-panel">
+    {% include 'includes/sidenav.html' %}
 
-			<div class="content">
+    <div class="main-panel">
 
-				{% block content %}{% endblock content %}
+      <div class="content" role="main" id="main-content">
+
+        {% block content %}{% endblock content %}
 			
 			</div>
 			<div id="minimized_modal_box" class="col-10 col-xs-11 col-sm-4 minimized_modal shadow-lg" style="display:none;" title="Maximize modal" onclick="modal_maximize();">
@@ -66,7 +76,9 @@
 				</div>
 			</div>
 		</div>
-			{% include 'includes/footer.html' %}
+			<footer role="contentinfo">
+				{% include 'includes/footer.html' %}
+			</footer>
 		</div>
 
 		{% include 'includes/quick-sidebar.html' %}
@@ -126,9 +138,8 @@
     {% block javascripts %}{% endblock javascripts %}
 	
 	{% if current_user.prefers_minimalist_ui %}
-		<script src="/static/assets/js/minimalist-nav.js"></script>
-		<script src="/static/assets/js/zen-mode.js"></script>
-		<script src="/static/assets/js/keyboard-nav.js"></script>
+		<!-- JS - Defer non-critical bundle -->
+		<script src="/static/assets/js/minimalist-bundle.js" defer></script>
 	{% endif %}
 	
 </body>

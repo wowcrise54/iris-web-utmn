@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 
+import os
 import time
 import logging
 import requests
+from datetime import datetime
+from typing import List, Optional, Union, Dict, Any
 
+from iris_opencti_module.opencti_handler.cache import OpenCTICache
+from iris_opencti_module.opencti_handler.filters import (
+    BaseFilter,
+    EntityFilter,
+    LabelFilter,
+    DateRangeFilter,
+    ScoreFilter,
+    ConfidenceFilter,
+    AndFilter,
+    OrFilter,
+    NotFilter,
+    FilterBuilder,
+    apply_filters,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -343,6 +360,12 @@ class OpenCTIClient:
         self.session = requests.Session()
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
+        
+        # Initialize cache with configurable size and TTL
+        self.cache = OpenCTICache(
+            max_size=int(os.getenv("OPENCTI_CACHE_SIZE", 1000)),
+            ttl=int(os.getenv("OPENCTI_CACHE_TTL", 300))
+        )
 
     @staticmethod
     def _normalize_graphql_url(url):
@@ -423,21 +446,52 @@ class OpenCTIClient:
         return self.query(self._HEALTH_QUERY)
 
     def search_ioc(self, value, first=20):
+        """Search OpenCTI for an IOC with caching support.
+        
+        Args:
+            value: The IOC value to search for (e.g., "8.8.8.8", "example.com")
+            first: Maximum number of results to return
+            
+        Returns:
+            Query result dictionary containing indicators and stixCyberObservables
+            
+        Note:
+            Results are cached to improve performance for repeated queries.
+            Cache key includes the query value and type for proper deduplication.
+        """
+        # Check cache first
+        cached = self.cache.get(value, "indicator")
+        if cached:
+            logger.info(f"Cache hit for IOC: {value}")
+            return cached
+        
+        # Execute query with retry logic
         variables = {"search": value, "first": first}
         try:
-            return self.query(self._SEARCH_QUERY, variables)
+            result = self.query(self._SEARCH_QUERY, variables)
         except OpenCTIClientError as exc:
             if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
                 raise
-
-        for query in (self._LEGACY_SEARCH_QUERY, self._MINIMAL_SEARCH_QUERY):
-            try:
-                return self.query(query, variables)
-            except OpenCTIClientError as exc:
-                if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
-                    raise
-
-        return self.query(self._BARE_SEARCH_QUERY, variables)
+            
+            # Try fallback queries
+            result = None
+            for query in (self._LEGACY_SEARCH_QUERY, self._MINIMAL_SEARCH_QUERY):
+                try:
+                    result = self.query(query, variables)
+                    break
+                except OpenCTIClientError as exc:
+                    if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
+                        raise
+            
+            # Last resort: bare query
+            if result is None:
+                result = self.query(self._BARE_SEARCH_QUERY, variables)
+        
+        # Cache the result
+        self.cache.set(value, result, "indicator")
+        logger.debug(f"Cached result for IOC: {value}")
+        
+        return result
 
     def get_related_entities(self, object_id, first=20):
         return self.query(
@@ -461,4 +515,167 @@ class OpenCTIClient:
         return self.query(
             self._GRAPH_QUERY,
             {"ids": list(object_ids), "first": first, "after": after},
+        )
+
+    def search_with_filters(
+        self,
+        value: str,
+        filter: Optional[BaseFilter] = None,
+        first: int = 20,
+        entity_type: Optional[Union[str, List[str]]] = None,
+        labels: Optional[Union[str, List[str]]] = None,
+        min_score: Optional[int] = None,
+        max_score: Optional[int] = None,
+        min_confidence: Optional[int] = None,
+        max_confidence: Optional[int] = None,
+        valid_from: Optional[Union[str, datetime]] = None,
+        valid_until: Optional[Union[str, datetime]] = None,
+    ) -> Dict[str, Any]:
+        """Search OpenCTI with advanced filtering.
+
+        Args:
+            value: Search term (IOC value)
+            filter: Pre-built filter object (overrides individual params)
+            first: Maximum number of results
+            entity_type: Filter by entity type(s)
+            labels: Filter by labels
+            min_score: Minimum score threshold
+            max_score: Maximum score threshold
+            min_confidence: Minimum confidence threshold
+            max_confidence: Maximum confidence threshold
+            valid_from: Start of validity date range
+            valid_until: End of validity date range
+
+        Returns:
+            Filtered query results
+        """
+        # Build filter from parameters if not provided
+        if filter is None:
+            builder = FilterBuilder()
+
+            if entity_type:
+                builder.entity_type(entity_type if isinstance(entity_type, list) else [entity_type])
+
+            if labels:
+                builder.label(labels if isinstance(labels, list) else [labels])
+
+            if min_score is not None or max_score is not None:
+                builder.score(min_score, max_score)
+
+            if min_confidence is not None or max_confidence is not None:
+                builder.confidence(min_confidence, max_confidence)
+
+            if valid_from is not None or valid_until is not None:
+                builder.date_range('valid_from', valid_from, valid_until)
+
+            filter = builder.build()
+
+        # Execute search
+        result = self.search_ioc(value, first=first)
+
+        # Extract entities from both indicators and observables
+        entities = []
+
+        for edge in result.get('indicators', {}).get('edges', []):
+            node = edge.get('node', {})
+            node['source'] = 'indicator'
+            entities.append(node)
+
+        for edge in result.get('stixCyberObservables', {}).get('edges', []):
+            node = edge.get('node', {})
+            node['source'] = 'observable'
+            entities.append(node)
+
+        # Apply filter
+        if filter:
+            filtered_entities = apply_filters(entities, filter)
+            logger.info(f"Filtered {len(entities)} entities down to {len(filtered_entities)}")
+            return filtered_entities
+
+        return entities
+
+    def filter_entities(
+        self,
+        entities: List[Dict[str, Any]],
+        filter: BaseFilter
+    ) -> List[Dict[str, Any]]:
+        """Apply a filter to a list of entities.
+
+        Args:
+            entities: List of entity dictionaries
+            filter: Filter to apply
+
+        Returns:
+            Filtered list of entities
+        """
+        return apply_filters(entities, filter)
+
+    def get_high_confidence_matches(
+        self,
+        value: str,
+        min_confidence: int = 50,
+        first: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Get high-confidence matches for an IOC.
+
+        Args:
+            value: IOC value to search
+            min_confidence: Minimum confidence threshold (default: 50)
+            first: Maximum results
+
+        Returns:
+            List of high-confidence entities
+        """
+        return self.search_with_filters(
+            value,
+            min_confidence=min_confidence,
+            first=first
+        )
+
+    def get_malicious_entities(
+        self,
+        value: str,
+        first: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Get entities with malicious labels.
+
+        Args:
+            value: Search term
+            first: Maximum results
+
+        Returns:
+            List of malicious entities
+        """
+        return self.search_with_filters(
+            value,
+            labels=['malicious'],
+            first=first
+        )
+
+    def get_recent_entities(
+        self,
+        value: str,
+        days: int = 30,
+        first: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Get recently created/updated entities.
+
+        Args:
+            value: Search term
+            days: Number of days to look back
+            first: Maximum results
+
+        Returns:
+            List of recent entities
+        """
+        from datetime import datetime, timedelta
+
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+
+        return self.search_with_filters(
+            value,
+            valid_from=start_date.isoformat(),
+            valid_until=end_date.isoformat(),
+            first=first
         )

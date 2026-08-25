@@ -25,6 +25,7 @@ from iris_opencti_module.opencti_handler.opencti_insights import alert_recommend
 from iris_opencti_module.opencti_handler.opencti_insights import calculate_verdict
 from iris_opencti_module.opencti_handler.opencti_insights import graph_fingerprint
 from iris_opencti_module.opencti_handler.opencti_insights import normalize_graph
+from iris_opencti_module.opencti_handler.history import EnrichmentHistory
 
 
 class OpenCTIHandler:
@@ -35,6 +36,37 @@ class OpenCTIHandler:
         self.server_config = server_config
         self.log = logger
         self.client = self._build_client()
+        
+        # Initialize enrichment history tracker
+        history_ttl = int(mod_config.get("opencti_history_ttl_hours", 24))
+        history_max_size = int(mod_config.get("opencti_history_max_size", 10000))
+        self.history = EnrichmentHistory(
+            history_ttl_hours=history_ttl,
+            max_history_size=history_max_size
+        )
+        self._progress_callback = None
+
+    def set_progress_callback(self, callback):
+        """
+        Set a callback function to emit progress updates.
+        
+        Args:
+            callback: Function that accepts a progress dict and emits it via SocketIO
+        """
+        self._progress_callback = callback
+
+    def _emit_progress(self, progress_data):
+        """
+        Emit progress update via callback if set.
+        
+        Args:
+            progress_data: Dictionary containing progress information
+        """
+        if self._progress_callback:
+            try:
+                self._progress_callback(progress_data)
+            except Exception as e:
+                self.log.warning(f"Progress callback failed: {e}")
 
     def _build_client(self):
         proxies = {}
@@ -197,6 +229,32 @@ class OpenCTIHandler:
         if not ioc or not ioc.ioc_value:
             return InterfaceStatus.I2Success(), []
 
+        # Get IOC type for history lookup
+        ioc_type = self._ioc_type_name(ioc) or "unknown"
+        
+        # Check enrichment history first for deduplication
+        history_result = self.history.check_history(ioc.ioc_value, ioc_type)
+        
+        if history_result["in_history"] and not history_result["should_enrich"]:
+            # Skip enrichment - use cached result
+            self.log.info(
+                f"Skipping enrichment for {ioc.ioc_value} - "
+                f"recent {history_result['cached_status']} found in history"
+            )
+            # Apply cached result to the IOC
+            cached_record = history_result["record"]
+            enrichment = {
+                "query_value": ioc.ioc_value,
+                "status": cached_record.get("status", "no_match"),
+                "match_count": cached_record.get("match_count", 0),
+                "matches": cached_record.get("matches", []),
+                "generated_tags": cached_record.get("generated_tags", []),
+                "provider": "OpenCTI",
+                "last_lookup_utc": cached_record.get("timestamp"),
+            }
+            self._store_enrichment(ioc, enrichment)
+            return InterfaceStatus.I2Success(message="Skipped - cached result"), []
+
         previous = self._previous_enrichment(ioc)
         self.log.info(f"Searching OpenCTI for IOC {ioc.ioc_value}")
         try:
@@ -207,6 +265,16 @@ class OpenCTIHandler:
         except OpenCTIClientError as exc:
             self.log.error(f"OpenCTI lookup failed for {ioc.ioc_value}: {exc}")
             self._store_lookup_error(ioc, exc)
+            
+            # Store in history
+            self.history.add_record({
+                "query_value": ioc.ioc_value,
+                "ioc_type": ioc_type,
+                "status": "error",
+                "error": str(exc),
+                "timestamp": utc_now_iso(),
+            })
+            
             return InterfaceStatus.I2Error(message=str(exc)), []
 
         matches = normalize_search_results(
@@ -260,6 +328,19 @@ class OpenCTIHandler:
         )
         enrichment["verdict"] = calculate_verdict(matches)
         self._store_enrichment(ioc, enrichment)
+        
+        # Store in history for deduplication
+        status = "match" if matches else "no_match"
+        self.history.add_record({
+            "query_value": ioc.ioc_value,
+            "ioc_type": ioc_type,
+            "status": status,
+            "match_count": len(matches),
+            "matches": matches,
+            "generated_tags": generated_tags,
+            "timestamp": utc_now_iso(),
+        })
+        
         self._replace_generated_tags(
             ioc,
             generated_tags,
@@ -330,6 +411,7 @@ class OpenCTIHandler:
             flag_modified(alert, "alert_context")
             db.session.commit()
             self._update_task_progress(progress)
+            self._emit_progress(progress)
 
             for grouped in grouped_iocs.values():
                 source_ioc = grouped[0]
@@ -357,6 +439,7 @@ class OpenCTIHandler:
                 flag_modified(alert, "alert_context")
                 db.session.commit()
                 self._update_task_progress(progress)
+                self._emit_progress(progress)
 
             recommendation = alert_recommendation(alert.iocs)
             alert_context = copy.deepcopy(alert.alert_context or {})
@@ -372,6 +455,7 @@ class OpenCTIHandler:
                 graph["stale"] = True
             alert.alert_context = alert_context
             flag_modified(alert, "alert_context")
+            self._emit_progress(opencti_context["progress"])
 
             self.log.info(
                 f"Enriched {len(grouped_iocs)} unique existing IOC(s) on alert #{alert.alert_id}"

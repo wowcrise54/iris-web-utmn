@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DFIR-IRIS - Calm Editorial Design</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Calm Editorial Design Variant */
+        /* Design principle: Clean, readable, content-focused with subtle modern touches */
+        
+        :root {
+            --bg-primary: #F8FAFC;
+            --bg-secondary: #FFFFFF;
+            --text-primary: #1E293B;
+            --text-secondary: #64748B;
+            --accent-blue: #3B82F6;
+            --accent-green: #10B981;
+            --accent-orange: #F59E0B;
+            --accent-purple: #8B5CF6;
+            --accent-pink: #EC4899;
+            --accent-red: #EF4444;
+            --border-color: #E2E8F0;
+            --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.06);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-weight: 400;
+            font-size: 2rem;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin-bottom: 40px;
+            font-weight: 300;
+        }
+
+        h2 {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+
+        /* Status Badges - Subtle, clean design */
+        .badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .badge-new {
+            background: #DBEAFE;
+            color: #1E40AF;
+            border: 1px solid #BFDBFE;
+        }
+
+        .badge-open {
+            background: #FEF3C7;
+            color: #92400E;
+            border: 1px solid #FDE68A;
+        }
+
+        .badge-closed {
+            background: #D1FAE5;
+            color: #065F46;
+            border: 1px solid #A7F3D0;
+        }
+
+        .badge-resolved {
+            background: #EDE9FE;
+            color: #5B21B6;
+            border: 1px solid #DDD6FE;
+        }
+
+        .badge-pending {
+            background: #FCE7F3;
+            color: #9D174D;
+            border: 1px solid #FBCFE8;
+        }
+
+        .badge-critical {
+            background: #FEE2E2;
+            color: #991B1B;
+            border: 1px solid #FECACA;
+        }
+
+        /* Cards - Clean, minimal shadows */
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: var(--shadow-subtle);
+            margin-bottom: 20px;
+            overflow: hidden;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-card);
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-title {
+            font-size: 0.9375rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-body {
+            padding: 20px;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .card-body p {
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        /* Status-based left borders */
+        .card.status-new { border-left: 3px solid var(--accent-blue); }
+        .card.status-open { border-left: 3px solid var(--accent-orange); }
+        .card.status-closed { border-left: 3px solid var(--accent-green); }
+        .card.status-critical { border-left: 3px solid var(--accent-red); }
+
+        /* Tags - Minimal design */
+        .tag {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: #F1F5F9;
+            color: var(--text-secondary);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-right: 0.4rem;
+            margin-bottom: 0.4rem;
+            border: 1px solid #E2E8F0;
+        }
+
+        .tag-opencti {
+            background: #FCE7F3;
+            color: #9D174D;
+            border-color: #FBCFE8;
+        }
+
+        /* IOC Badges */
+        .ioc-badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            background: #EFF6FF;
+            border: 1px solid #BFDBFE;
+            color: #1E40AF;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Buttons - Subtle, professional */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.6rem 1.25rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563EB;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: #F8FAFC;
+            border-color: #CBD5E1;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+            margin-top: 16px;
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 48px;
+        }
+
+        /* Severity */
+        .severity {
+            display: inline-block;
+            padding: 0.25rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            margin-right: 0.4rem;
+        }
+
+        .severity-low { background: #D1FAE5; color: #065F46; }
+        .severity-medium { background: #FEF3C7; color: #92400E; }
+        .severity-high { background: #FED7AA; color: #9A3412; }
+        .severity-critical { background: #FEE2E2; color: #991B1B; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-shield-alt"></i> DFIR-IRIS</h1>
+        <p class="subtitle">Calm Editorial Design Variant</p>
+
+        <div class="section">
+            <h2>Alert Statuses</h2>
+            <div>
+                <span class="badge badge-new">New</span>
+                <span class="badge badge-open">Open</span>
+                <span class="badge badge-closed">Closed</span>
+                <span class="badge badge-resolved">Resolved</span>
+                <span class="badge badge-pending">Pending</span>
+                <span class="badge badge-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Severity Levels</h2>
+            <div>
+                <span class="severity severity-low">Low</span>
+                <span class="severity severity-medium">Medium</span>
+                <span class="severity severity-high">High</span>
+                <span class="severity severity-critical">Critical</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Alert Cards</h2>
+            <div class="grid">
+                <div class="card status-new">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-bell" style="color: var(--accent-blue);"></i>
+                            Malware Detection
+                        </h3>
+                        <span class="badge badge-new">New</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Malicious executable detected in email attachment from external sender.</p>
+                        <div>
+                            <span class="ioc-badge">MD5: a1b2c3d4...</span>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <span class="tag">malware</span>
+                            <span class="tag tag-opencti">opencti:malicious</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-open">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-exclamation-triangle" style="color: var(--accent-orange);"></i>
+                            Phishing Campaign
+                        </h3>
+                        <span class="badge badge-open">Open</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Multiple phishing emails detected targeting finance department.</p>
+                        <div>
+                            <span class="ioc-badge">evil-phish.com</span>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <span class="tag">phishing</span>
+                            <span class="tag">finance</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-critical">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-skull" style="color: var(--accent-red);"></i>
+                            Ransomware Attack
+                        </h3>
+                        <span class="badge badge-critical">Critical</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Ransomware detected on file server. Immediate response required.</p>
+                        <div>
+                            <span class="ioc-badge">192.168.1.100</span>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <span class="tag">ransomware</span>
+                            <span class="tag tag-opencti">opencti:apt</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary">
+                                <i class="fas fa-bolt"></i> Enrich
+                            </button>
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-folder"></i> Case
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card status-closed">
+                    <div class="card-header">
+                        <h3 class="card-title">
+                            <i class="fas fa-check-circle" style="color: var(--accent-green);"></i>
+                            Suspicious Login
+                        </h3>
+                        <span class="badge badge-closed">Closed</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Unusual login from unknown location - verified as legitimate travel.</p>
+                        <div>
+                            <span class="ioc-badge">185.220.101.1</span>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <span class="tag">false-positive</span>
+                            <span class="tag">resolved</span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary">
+                                <i class="fas fa-history"></i> View
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Combined Alert Example</h2>
+            <div class="card status-new">
+                <div class="card-header">
+                    <div style="flex: 1;">
+                        <h3 class="card-title">
+                            <i class="fas fa-network-wired" style="color: var(--accent-blue);"></i>
+                            Brute Force Attack Detected
+                        </h3>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span class="severity severity-high">High</span>
+                        <span class="badge badge-new">New</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>Multiple failed login attempts detected from external IP addresses. Possible brute force attack against user accounts.</p>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <strong style="color: var(--text-primary); font-size: 0.8125rem;">Indicators:</strong><br>
+                        <span class="ioc-badge">185.220.101.1</span>
+                        <span class="ioc-badge">91.234.56.78</span>
+                    </div>
+
+                    <div style="margin-bottom: 12px;">
+                        <strong style="color: var(--text-primary); font-size: 0.8125rem;">Tags:</strong><br>
+                        <span class="tag">brute-force</span>
+                        <span class="tag">external</span>
+                        <span class="tag tag-opencti">opencti:suspicious</span>
+                    </div>
+
+                    <div class="btn-group">
+                        <button class="btn btn-primary">
+                            <i class="fas fa-bolt"></i> Enrich with OpenCTI
+                        </button>
+                        <button class="btn btn-secondary">
+                            <i class="fas fa-folder"></i> Create Case
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="margin-top: 48px; padding: 24px; background: #F1F5F9; border-radius: 8px; border: 1px solid #E2E8F0;">
+            <h3 style="color: var(--text-primary); font-size: 0.875rem; margin-bottom: 12px;">
+                <i class="fas fa-info-circle"></i> Design Notes
+            </h3>
+            <ul style="color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.8; padding-left: 20px;">
+                <li>Minimal color palette with pastel status indicators</li>
+                <li>Focus on readability and content hierarchy</li>
+                <li>Subtle shadows and borders for depth</li>
+                <li>Clean typography with generous whitespace</li>
+                <li>Professional, calm aesthetic suitable for security operations</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

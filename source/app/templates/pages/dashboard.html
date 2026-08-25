@@ -1,0 +1,129 @@
+{% extends "layouts/default.html" %}
+
+{% block title %}Dashboard - DFIR-IRIS{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6">
+  <!-- Page Header -->
+  <div class="mb-6">
+    <h1 class="text-3xl">Dashboard</h1>
+    <p class="text-secondary">Welcome to DFIR-IRIS</p>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    <div class="card">
+      <div class="card-body">
+        <h3 class="text-lg font-semibold mb-3">Quick Actions</h3>
+        <div class="flex flex-col gap-2">
+          <a href="/alerts/new" class="btn btn-primary">
+            Create New Alert
+          </a>
+          <a href="/cases/new" class="btn btn-secondary">
+            Create New Case
+          </a>
+          <a href="/ioc/add" class="btn btn-outline-secondary">
+            Add IOC
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Card -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="text-lg">Statistics</h3>
+      </div>
+      <div class="card-body">
+        <div class="space-y-3">
+          <div class="flex justify-between items-center">
+            <span class="text-muted">Open Alerts</span>
+            <span class="badge badge-primary">12</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-muted">Closed Alerts</span>
+            <span class="badge badge-success">48</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-muted">Total Cases</span>
+            <span class="badge badge-neutral">25</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="text-lg">Recent Activity</h3>
+      </div>
+      <div class="card-body">
+        <ul class="nav-list">
+          <li class="nav-item">
+            <a href="#" class="nav-link">
+              <span class="badge badge-success">✓</span>
+              <span>Alert #1234 resolved</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#" class="nav-link">
+              <span class="badge badge-primary">i</span>
+              <span>New case created</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a href="#" class="nav-link">
+              <span class="badge badge-warning">!</span>
+              <span>IOC flagged as suspicious</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Alerts Table -->
+  <div class="card">
+    <div class="card-header">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg">Recent Alerts</h3>
+        <a href="/alerts" class="btn btn-sm btn-outline-primary">View All</a>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table-minimal">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="/alerts/1234" class="text-primary-color">1234</a></td>
+              <td>Suspicious network activity detected</td>
+              <td><span class="badge badge-primary">Open</span></td>
+              <td><span class="badge badge-warning">High</span></td>
+            </tr>
+            <tr>
+              <td><a href="/alerts/1233" class="text-primary-color">1233</a></td>
+              <td>Malware sample analyzed</td>
+              <td><span class="badge badge-success">Closed</span></td>
+              <td><span class="badge badge-danger">Critical</span></td>
+            </tr>
+            <tr>
+              <td><a href="/alerts/1232" class="text-primary-color">1232</a></td>
+              <td>Phishing email investigation</td>
+              <td><span class="badge badge-primary">Open</span></td>
+              <td><span class="badge badge-neutral">Medium</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

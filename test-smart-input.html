@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart IOC Input - Test Suite</title>
+    <style>
+        :root {
+            --color-success-600: #16a34a;
+            --color-primary-600: #2563eb;
+            --color-warning-600: #d97706;
+            --color-info-600: #0891b2;
+            --color-danger-600: #dc2626;
+            --color-neutral-500: #6b7280;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f9fafb;
+        }
+        h1 { color: #1f2937; }
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .test-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .detected-type {
+            font-size: 14px;
+            margin-top: 4px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        .input-error {
+            color: var(--color-danger-600);
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .pass { background: #dcfce7; color: #166534; }
+        .fail { background: #fee2e2; color: #991b1b; }
+        .test-case {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Smart IOC Input - Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>Interactive Test</h2>
+        <p>Type or paste an IOC below to see detection in action:</p>
+        <input type="text" class="smart-ioc-input test-input" placeholder="Try: 192.168.1.1, example.com, https://evil.com, etc.">
+        <div class="detected-type"></div>
+        <div class="input-error"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Automated Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <script>
+    /**
+     * DFIR-IRIS Smart IOC Input
+     */
+    class SmartIOCInput {
+      constructor(selector) {
+        this.input = document.querySelector(selector);
+        if (!this.input) return;
+        
+        this.detectedType = null;
+        this.init();
+      }
+
+      init() {
+        const indicator = document.createElement('div');
+        indicator.className = 'detected-type';
+        indicator.style.display = 'none';
+        this.input.parentElement.appendChild(indicator);
+        this.typeIndicator = indicator;
+
+        const error = document.createElement('div');
+        error.className = 'input-error';
+        error.style.display = 'none';
+        this.input.parentElement.appendChild(error);
+        this.errorIndicator = error;
+
+        this.input.addEventListener('input', (e) => this.handleInput(e.target.value));
+        this.input.addEventListener('focus', () => this.handleFocus());
+        this.input.addEventListener('blur', () => this.handleBlur());
+      }
+
+      handleInput(value) {
+        if (!value.trim()) {
+          this.clear();
+          return;
+        }
+
+        const type = this.detectType(value.trim());
+        
+        if (type) {
+          this.detectedType = type;
+          this.showType(type);
+          this.errorIndicator.style.display = 'none';
+        } else {
+          this.detectedType = null;
+          this.showError('Unrecognized IOC type. Supported: IP, Domain, URL, Hash, Email, MAC');
+        }
+      }
+
+      detectType(value) {
+        // IPv4
+        const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        if (ipv4Regex.test(value)) {
+          return { type: 'IPv4 Address', icon: '🌐', color: 'var(--color-success-600)' };
+        }
+
+        // IPv6
+        const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::1$|^::$/;
+        if (ipv6Regex.test(value)) {
+          return { type: 'IPv6 Address', icon: '🌐', color: 'var(--color-success-600)' };
+        }
+
+        // Domain
+        const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
+        if (domainRegex.test(value) && !value.includes('http')) {
+          return { type: 'Domain', icon: '🌍', color: 'var(--color-primary-600)' };
+        }
+
+        // URL
+        const urlRegex = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
+        if (urlRegex.test(value)) {
+          return { type: 'URL', icon: '🔗', color: 'var(--color-primary-600)' };
+        }
+
+        // SHA256
+        const sha256Regex = /^[a-fA-F0-9]{64}$/;
+        if (sha256Regex.test(value)) {
+          return { type: 'SHA256', icon: '🔐', color: 'var(--color-warning-600)' };
+        }
+
+        // SHA1
+        const sha1Regex = /^[a-fA-F0-9]{40}$/;
+        if (sha1Regex.test(value)) {
+          return { type: 'SHA1', icon: '🔐', color: 'var(--color-warning-600)' };
+        }
+
+        // MD5
+        const md5Regex = /^[a-fA-F0-9]{32}$/;
+        if (md5Regex.test(value)) {
+          return { type: 'MD5', icon: '🔐', color: 'var(--color-warning-600)' };
+        }
+
+        // Email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (emailRegex.test(value)) {
+          return { type: 'Email', icon: '📧', color: 'var(--color-info-600)' };
+        }
+
+        // MAC Address
+        const macRegex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/;
+        if (macRegex.test(value)) {
+          return { type: 'MAC Address', icon: '🔌', color: 'var(--color-info-600)' };
+        }
+
+        return null;
+      }
+
+      showType(type) {
+        this.typeIndicator.innerHTML = `${type.icon} ${type.type}`;
+        this.typeIndicator.style.color = type.color;
+        this.typeIndicator.style.display = 'flex';
+      }
+
+      showError(message) {
+        this.errorIndicator.textContent = message;
+        this.errorIndicator.style.color = 'var(--color-danger-600)';
+        this.errorIndicator.style.display = 'block';
+      }
+
+      clear() {
+        this.detectedType = null;
+        this.typeIndicator.style.display = 'none';
+        this.errorIndicator.style.display = 'none';
+      }
+
+      handleFocus() {
+        this.typeIndicator.innerHTML = '🔍 Paste IOC (IP, domain, URL, hash...)';
+        this.typeIndicator.style.color = 'var(--color-neutral-500)';
+        this.typeIndicator.style.display = 'flex';
+      }
+
+      handleBlur() {
+        if (!this.input.value.trim()) {
+          this.clear();
+        }
+      }
+
+      getDetectedType() {
+        return this.detectedType;
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      const inputs = document.querySelectorAll('.smart-ioc-input');
+      inputs.forEach(input => new SmartIOCInput(input));
+      
+      // Run automated tests
+      runTests();
+    });
+
+    function runTests() {
+      const tests = [
+        { input: '192.168.1.1', expected: 'IPv4 Address', desc: 'IPv4 detection' },
+        { input: 'malicious-example.com', expected: 'Domain', desc: 'Domain detection' },
+        { input: 'e99a18c428cb38d5f260853678922e03abc123def456789012345678901234abcd', expected: 'SHA256', desc: 'SHA256 detection' },
+        { input: 'https://evil.com/malware.exe', expected: 'URL', desc: 'URL detection' },
+        { input: 'not a valid ioc', expected: null, desc: 'Invalid input error' },
+        { input: '2001:0db8:85a3::8a2e:0370:7334', expected: 'IPv6 Address', desc: 'IPv6 detection' },
+        { input: '5d41402abc4b2a76b9719d911017c592', expected: 'MD5', desc: 'MD5 detection' },
+        { input: 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3', expected: 'SHA1', desc: 'SHA1 detection' },
+        { input: 'user@example.com', expected: 'Email', desc: 'Email detection' },
+        { input: '00:1A:2B:3C:4D:5E', expected: 'MAC Address', desc: 'MAC detection' }
+      ];
+
+      const resultsDiv = document.getElementById('test-results');
+      let passed = 0;
+      let failed = 0;
+
+      tests.forEach((test, i) => {
+        const div = document.createElement('div');
+        div.className = 'test-case';
+        
+        // Create a test input
+        const testInput = document.createElement('input');
+        testInput.type = 'text';
+        testInput.className = 'test-input';
+        testInput.value = test.input;
+        div.appendChild(testInput);
+        
+        // Initialize detector on this input
+        const detector = new SmartIOCInput(testInput);
+        
+        // Trigger input event
+        testInput.dispatchEvent(new Event('input'));
+        
+        // Check result
+        const detected = detector.getDetectedType();
+        const success = test.expected 
+          ? detected && detected.type === test.expected
+          : detected === null;
+        
+        if (success) passed++;
+        else failed++;
+        
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'result ' + (success ? 'pass' : 'fail');
+        resultDiv.textContent = `${success ? '✓' : '✗'} ${test.desc}: "${test.input}" → ${detected ? detected.type : 'null'} (expected: ${test.expected || 'null'})`;
+        div.appendChild(resultDiv);
+        resultsDiv.appendChild(div);
+      });
+
+      // Summary
+      const summary = document.createElement('div');
+      summary.className = 'result ' + (failed === 0 ? 'pass' : 'fail');
+      summary.innerHTML = `<strong>Summary:</strong> ${passed} passed, ${failed} failed out of ${tests.length} tests`;
+      resultsDiv.appendChild(summary);
+    }
+    </script>
+</body>
+</html>

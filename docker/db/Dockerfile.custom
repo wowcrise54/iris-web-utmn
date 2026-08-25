@@ -1,0 +1,4 @@
+FROM ghcr.io/dfir-iris/iriswebapp_db:v2.4.20
+
+# Copy our fixed initialization script
+COPY create_user.sh /docker-entrypoint-initdb.d/10-create_user.sh

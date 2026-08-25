@@ -1,0 +1,102 @@
+{% extends "layouts/default.html" %}
+
+{% block title %}New Alert - DFIR-IRIS{% endblock %}
+
+{% block content %}
+<div class="container mx-auto p-6">
+  <!-- Page Header -->
+  <div class="mb-6">
+    <a href="/alerts" class="btn btn-sm btn-outline-secondary mb-4">
+      ← Back to Alerts
+    </a>
+    <h1 class="text-3xl">Create New Alert</h1>
+    <p class="text-secondary">Enter the details for the new alert</p>
+  </div>
+
+  <!-- Alert Form Card -->
+  <div class="card max-w-2xl">
+    <div class="card-header">
+      <h2 class="text-lg">Alert Information</h2>
+    </div>
+    <div class="card-body">
+      <form id="alert-form" method="POST" action="/alerts/new">
+        <!-- Title -->
+        <div class="mb-4">
+          <label for="alert-title" class="form-label required">Title</label>
+          <input type="text" id="alert-title" name="alert_title" class="smart-input" 
+                 placeholder="Enter alert title" required>
+          <span class="form-help">Brief description of the alert</span>
+        </div>
+
+        <!-- Customer -->
+        <div class="mb-4">
+          <label for="alert-customer" class="form-label required">Customer</label>
+          <select id="alert-customer" name="alert_customer" class="smart-input" required>
+            <option value="">Select a customer</option>
+            <option value="1">Acme Corporation</option>
+            <option value="2">TechStart Inc</option>
+            <option value="3">Global Services Ltd</option>
+          </select>
+        </div>
+
+        <!-- Severity -->
+        <div class="mb-4">
+          <label for="alert-severity" class="form-label required">Severity</label>
+          <select id="alert-severity" name="alert_severity" class="smart-input" required>
+            <option value="">Select severity</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+
+        <!-- Status -->
+        <div class="mb-4">
+          <label for="alert-status" class="form-label">Status</label>
+          <select id="alert-status" name="alert_status" class="smart-input">
+            <option value="open">Open</option>
+            <option value="investigating">Investigating</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+
+        <!-- Description -->
+        <div class="mb-4">
+          <label for="alert-description" class="form-label">Description</label>
+          <textarea id="alert-description" name="alert_description" class="smart-input" 
+                    rows="5" placeholder="Detailed description of the incident..."></textarea>
+        </div>
+
+        <!-- Smart IOC Input -->
+        <div class="mb-4">
+          <label for="alert-ioc" class="form-label">Indicator of Compromise (IOC)</label>
+          <input type="text" id="alert-ioc" name="alert_ioc" class="smart-ioc-input" 
+                 placeholder="Paste IOC here (IP, domain, URL, hash...)"
+                 data-auto-detect="true">
+          <small class="form-help">
+            Supported: IPv4, IPv6, Domain, URL, MD5, SHA1, SHA256, Email, MAC
+          </small>
+        </div>
+
+        <!-- Tags -->
+        <div class="mb-6">
+          <label for="alert-tags" class="form-label">Tags</label>
+          <input type="text" id="alert-tags" name="alert_tags" class="smart-input" 
+                 placeholder="comma, separated, tags">
+        </div>
+
+        <!-- Form Actions -->
+        <div class="flex gap-3">
+          <button type="submit" class="btn btn-primary">Create Alert</button>
+          <a href="/alerts" class="btn btn-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+<script src="{{ url_for('static', filename='assets/js/smart-input.js') }}"></script>
+{% endblock %}

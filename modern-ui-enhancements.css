@@ -1,0 +1,474 @@
+/**
+ * DFIR-IRIS Modern UI Enhancements
+ * 
+ * Improvements:
+ * 1. Enhanced alert status color scheme with better contrast and modern gradients
+ * 2. Modern card designs with glassmorphism effects
+ * 3. Improved visual hierarchy and readability
+ * 
+ * Install: Add to source/app/static/assets/css/modern-ui-enhancements.css
+ *          Then include in your layout templates
+ */
+
+/* ============================================
+   SECTION 1: ENHANCED ALERT STATUS COLORS
+   ============================================ */
+
+/* Modern status badges with gradients and better contrast */
+.badge-status-new,
+.badge-new,
+.status-new {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-status-open,
+.badge-open,
+.status-open {
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-status-closed,
+.badge-closed,
+.status-closed {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-status-resolved,
+.badge-resolved,
+.status-resolved {
+  background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.badge-status-pending,
+.badge-pending,
+.status-pending {
+  background: linear-gradient(135deg, #EC4899 0%, #DB2777 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+/* Severity indicators with modern colors */
+.severity-low,
+.badge-severity-low {
+  background: linear-gradient(135deg, #6EE7B7 0%, #34D399 100%) !important;
+  color: #064E3B !important;
+  box-shadow: 0 2px 6px rgba(52, 211, 153, 0.3);
+}
+
+.severity-medium,
+.badge-severity-medium {
+  background: linear-gradient(135deg, #FCD34D 0%, #FBBF24 100%) !important;
+  color: #78350F !important;
+  box-shadow: 0 2px 6px rgba(251, 191, 36, 0.3);
+}
+
+.severity-high,
+.badge-severity-high {
+  background: linear-gradient(135deg, #FB923C 0%, #F97316 100%) !important;
+  color: #431407 !important;
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.35);
+}
+
+.severity-critical,
+.badge-severity-critical {
+  background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%) !important;
+  color: #7F1D1D !important;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.45);
+  animation: pulse-critical 2s infinite;
+}
+
+@keyframes pulse-critical {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+/* ============================================
+   SECTION 2: GLASSMORPHISM CARDS
+   ============================================ */
+
+/* Modern card base with glassmorphism */
+.card-modern,
+.card {
+  background: rgba(32, 41, 64, 0.7) !important;
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.card-modern:hover,
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 2px 0 rgba(255, 255, 255, 0.1) inset;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Card header with gradient accent */
+.card-modern .card-header,
+.card .card-header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding: 1.25rem 1.5rem;
+}
+
+.card-modern .card-title,
+.card .card-title {
+  color: #E8EEF7 !important;
+  font-weight: 600;
+  letter-spacing: -0.25px;
+}
+
+/* Card with status accent border */
+.card-modern.status-new {
+  border-left: 4px solid #3B82F6;
+}
+
+.card-modern.status-open {
+  border-left: 4px solid #F59E0B;
+}
+
+.card-modern.status-closed {
+  border-left: 4px solid #10B981;
+}
+
+.card-modern.status-critical {
+  border-left: 4px solid #EF4444;
+  animation: border-pulse 3s infinite;
+}
+
+@keyframes border-pulse {
+  0%, 100% {
+    border-left-color: #EF4444;
+  }
+  50% {
+    border-left-color: #FCA5A5;
+  }
+}
+
+/* Elevated card for important items */
+.card-modern.elevated {
+  background: rgba(40, 52, 80, 0.85) !important;
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 2px 0 rgba(255, 255, 255, 0.12) inset;
+}
+
+/* ============================================
+   SECTION 3: ALERT CARDS SPECIFIC
+   ============================================ */
+
+/* Alert card container */
+.alert-card-modern {
+  background: rgba(32, 41, 64, 0.75) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.alert-card-modern:hover {
+  transform: translateY(-3px);
+  box-shadow: 
+    0 12px 48px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+/* Alert card header */
+.alert-card-modern .card-header {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.1) 100%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding: 1rem 1.5rem;
+}
+
+/* Alert title */
+.alert-card-modern .alert-title,
+.alert-card-modern h3,
+.alert-card-modern .card-title {
+  color: #F0F4F8 !important;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+
+/* Alert metadata */
+.alert-card-modern .alert-meta {
+  color: #94A3B8 !important;
+  font-size: 0.85rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Alert body */
+.alert-card-modern .card-body {
+  padding: 1.25rem 1.5rem;
+  color: #CBD5E1 !important;
+}
+
+/* Alert footer/actions */
+.alert-card-modern .card-footer {
+  background: rgba(26, 32, 53, 0.6) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 0.85rem 1.5rem;
+}
+
+/* ============================================
+   SECTION 4: IOCs AND TAGS
+   ============================================ */
+
+/* IOC badges with modern styling */
+.ioc-badge-modern {
+  background: rgba(59, 130, 246, 0.15) !important;
+  border: 1px solid rgba(59, 130, 246, 0.3) !important;
+  color: #60A5FA !important;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.ioc-badge-modern:hover {
+  background: rgba(59, 130, 246, 0.25) !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+  transform: translateY(-1px);
+}
+
+/* IOC type indicators */
+.ioc-type-ip {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.1) 100%) !important;
+  border-color: #3B82F6 !important;
+}
+
+.ioc-type-domain {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.1) 100%) !important;
+  border-color: #10B981 !important;
+}
+
+.ioc-type-hash {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(124, 58, 237, 0.1) 100%) !important;
+  border-color: #8B5CF6 !important;
+}
+
+.ioc-type-url {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.1) 100%) !important;
+  border-color: #F59E0B !important;
+}
+
+/* Modern tags */
+.tag-modern {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #CBD5E1 !important;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-right: 0.4rem;
+  margin-bottom: 0.4rem;
+  display: inline-block;
+  transition: all 0.2s ease;
+}
+
+.tag-modern:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  transform: translateY(-1px);
+}
+
+/* OpenCTI enrichment tags */
+.tag-opencti {
+  background: linear-gradient(135deg, rgba(236, 72, 153, 0.2) 0%, rgba(219, 39, 119, 0.1) 100%) !important;
+  border-color: #EC4899 !important;
+  color: #F472B6 !important;
+  box-shadow: 0 1px 4px rgba(236, 72, 153, 0.25);
+}
+
+/* ============================================
+   SECTION 5: BUTTONS AND ACTIONS
+   ============================================ */
+
+/* Modern primary button */
+.btn-modern-primary {
+  background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+  border: none !important;
+  color: #ffffff !important;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px !important;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-modern-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.55);
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+}
+
+/* Modern secondary button */
+.btn-modern-secondary {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #E8EEF7 !important;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px !important;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-modern-secondary:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  transform: translateY(-1px);
+}
+
+/* Action buttons in alert cards */
+.alert-card-modern .btn-action {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #CBD5E1 !important;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.alert-card-modern .btn-action:hover {
+  background: rgba(59, 130, 246, 0.2) !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+  color: #60A5FA !important;
+}
+
+/* ============================================
+   SECTION 6: TABLES AND LISTS
+   ============================================ */
+
+/* Modern table styling */
+.table-modern {
+  background: transparent !important;
+}
+
+.table-modern thead th {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: #E8EEF7 !important;
+  font-weight: 600;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1) !important;
+  padding: 1rem;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+}
+
+.table-modern tbody td {
+  background: rgba(32, 41, 64, 0.5) !important;
+  color: #CBD5E1 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 1rem;
+  vertical-align: middle;
+}
+
+.table-modern tbody tr:hover td {
+  background: rgba(59, 130, 246, 0.1) !important;
+}
+
+/* ============================================
+   SECTION 7: RESPONSIVE ADJUSTMENTS
+   ============================================ */
+
+@media (max-width: 768px) {
+  .card-modern,
+  .alert-card-modern {
+    border-radius: 12px !important;
+  }
+  
+  .badge-status-new,
+  .badge-status-open,
+  .badge-status-closed,
+  .badge-status-resolved,
+  .badge-status-pending {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+/* ============================================
+   SECTION 8: DARK THEME COMPATIBILITY
+   ============================================ */
+
+/* Ensure compatibility with existing dark theme */
+body.dark-theme .card-modern,
+body.dark-theme .card {
+  background: rgba(32, 41, 64, 0.85) !important;
+}
+
+body.dark-theme .modal-content {
+  background: rgba(40, 52, 80, 0.95) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* ============================================
+   SECTION 9: ANIMATIONS
+   ============================================ */
+
+/* Fade-in animation for cards */
+@keyframes card-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card-modern,
+.alert-card-modern {
+  animation: card-fade-in 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Stagger animation for list items */
+.alert-card-modern:nth-child(1) { animation-delay: 0.05s; }
+.alert-card-modern:nth-child(2) { animation-delay: 0.1s; }
+.alert-card-modern:nth-child(3) { animation-delay: 0.15s; }
+.alert-card-modern:nth-child(4) { animation-delay: 0.2s; }
+.alert-card-modern:nth-child(5) { animation-delay: 0.25s; }

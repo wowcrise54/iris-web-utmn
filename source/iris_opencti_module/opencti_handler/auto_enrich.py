@@ -40,7 +40,7 @@ def enrich_alert_task(self, alert_id: int) -> Dict[str, Any]:
         Exception: Re-raised for Celery retry logic
     """
     try:
-        from app import db
+        from app import db, socket_io
         from app.models.alerts import Alert
         from iris_opencti_module.opencti_handler.opencti_handler import OpenCTIHandler
 
@@ -48,10 +48,22 @@ def enrich_alert_task(self, alert_id: int) -> Dict[str, Any]:
         alert = Alert.query.get(alert_id)
         if not alert:
             logger.warning(f"Alert {alert_id} not found, skipping enrichment")
+            # Emit completion event via SocketIO
+            socket_io.emit('enrichment_progress', {
+                'alert_id': alert_id,
+                'status': 'error',
+                'progress': {'status': 'error', 'error': 'alert_not_found'}
+            }, room=f'enrichment_{alert_id}')
             return {"status": "skipped", "reason": "alert_not_found", "alert_id": alert_id}
 
         if not alert.iocs:
             logger.info(f"Alert {alert_id} has no IOCs, skipping enrichment")
+            # Emit completion event via SocketIO
+            socket_io.emit('enrichment_progress', {
+                'alert_id': alert_id,
+                'status': 'skipped',
+                'progress': {'status': 'skipped', 'reason': 'no_iocs'}
+            }, room=f'enrichment_{alert_id}')
             return {"status": "skipped", "reason": "no_iocs", "alert_id": alert_id}
 
         # Get module configuration
@@ -81,6 +93,19 @@ def enrich_alert_task(self, alert_id: int) -> Dict[str, Any]:
 
         # Create handler and perform enrichment
         handler = OpenCTIHandler(mod_config, server_config, logger)
+        
+        # Set up progress callback for SocketIO emission
+        def emit_progress(progress_data):
+            """Emit progress update via SocketIO to alert-specific room."""
+            try:
+                socket_io.emit('enrichment_progress', {
+                    'alert_id': alert_id,
+                    'progress': progress_data
+                }, room=f'enrichment_{alert_id}')
+            except Exception as e:
+                logger.warning(f"Failed to emit progress for alert {alert_id}: {e}")
+        
+        handler.set_progress_callback(emit_progress)
         status = handler.handle_alerts([alert])
 
         db.session.commit()
@@ -94,13 +119,34 @@ def enrich_alert_task(self, alert_id: int) -> Dict[str, Any]:
         if not status.is_success():
             result["error"] = status.get_msg()
             logger.error(f"Auto-enrichment failed for alert {alert_id}: {status.get_msg()}")
+            # Emit final error event
+            socket_io.emit('enrichment_progress', {
+                'alert_id': alert_id,
+                'status': 'error',
+                'progress': {'status': 'error', 'error': status.get_msg()}
+            }, room=f'enrichment_{alert_id}')
         else:
             logger.info(f"Auto-enrichment completed for alert {alert_id}: {len(alert.iocs)} IOCs processed")
+            # Emit final success event
+            socket_io.emit('enrichment_progress', {
+                'alert_id': alert_id,
+                'status': 'completed',
+                'progress': {'status': 'success', 'completed': True}
+            }, room=f'enrichment_{alert_id}')
 
         return result
 
     except Exception as exc:
         logger.error(f"Auto-enrichment failed for alert {alert_id}: {exc}")
+        # Emit error event via SocketIO
+        try:
+            socket_io.emit('enrichment_progress', {
+                'alert_id': alert_id,
+                'status': 'error',
+                'progress': {'status': 'error', 'error': str(exc)}
+            }, room=f'enrichment_{alert_id}')
+        except Exception:
+            pass
         # Retry with exponential backoff
         raise self.retry(exc=exc)
 

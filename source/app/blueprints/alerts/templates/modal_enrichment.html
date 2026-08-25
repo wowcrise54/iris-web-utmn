@@ -8,11 +8,62 @@
         </button>
       </div>
       <div class="modal-body">
+        <!-- Progress Bar Section -->
+        <div id="enrichmentProgressSection" style="display: none;">
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-subtitle mb-2">OpenCTI Enrichment Progress</h6>
+              <div class="progress mb-2" style="height: 25px;">
+                <div id="enrichmentProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" style="width: 0%;" 
+                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                  <span id="enrichmentProgressText">0%</span>
+                </div>
+              </div>
+              <div id="enrichmentProgressDetails" class="small text-muted">
+                <div class="row">
+                  <div class="col-3">
+                    <strong>Total:</strong> <span id="progressTotal">-</span>
+                  </div>
+                  <div class="col-3">
+                    <strong>Processed:</strong> <span id="progressProcessed">-</span>
+                  </div>
+                  <div class="col-3">
+                    <strong>Matched:</strong> <span id="progressMatched">-</span>
+                  </div>
+                  <div class="col-3">
+                    <strong>Errors:</strong> <span id="progressErrors">-</span>
+                  </div>
+                </div>
+                <div class="mt-2" id="progressCurrentIOC" style="display: none;">
+                  <strong>Current IOC:</strong> <span id="currentIOCValue"></span>
+                </div>
+                <div class="mt-1" id="progressStatus" style="display: none;">
+                  <span class="badge" id="statusBadge">-</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Enrichment Data Section -->
         <div id="enrichmentData"></div>
       </div>
       <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="triggerEnrichmentBtn" style="display: none;">
+          <i class="fas fa-play mr-1"></i> Start Enrichment
+        </button>
         <button type="button" class="btn btn-dark" data-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Progress Status Badges -->
+<style>
+  .progress-status-running { background-color: #17a2b8; }
+  .progress-status-success { background-color: #28a745; }
+  .progress-status-partial { background-color: #ffc107; color: #212529; }
+  .progress-status-error { background-color: #dc3545; }
+  .progress-status-skipped { background-color: #6c757d; }
+</style>

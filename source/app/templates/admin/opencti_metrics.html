@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenCTI Metrics Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/css/dashboard.css') }}">
+    <script src="{{ url_for('static', filename='assets/js/chart.min.js') }}"></script>
+    <style>
+        .metric-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #333;
+        }
+        .metric-label {
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .metric-card.success .metric-value { color: #28a745; }
+        .metric-card.warning .metric-value { color: #ffc107; }
+        .metric-card.danger .metric-value { color: #dc3545; }
+        .metric-card.info .metric-value { color: #17a2b8; }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #28a745; }
+        .status-offline { background-color: #dc3545; }
+        .progress-thin {
+            height: 8px;
+            border-radius: 4px;
+        }
+        .table-metrics {
+            font-size: 0.9rem;
+        }
+        .table-metrics th {
+            font-weight: 600;
+            background-color: #f8f9fa;
+        }
+        .refresh-btn {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        .last-updated {
+            position: fixed;
+            top: 20px;
+            right: 140px;
+            color: #666;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    {% extends "layouts/default.html" %}
+    
+    {% block content %}
+    <div class="container-fluid py-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-5">
+                    <i class="bi bi-graph-up"></i> OpenCTI Metrics Dashboard
+                </h1>
+                <p class="text-muted">Real-time performance monitoring and analytics</p>
+            </div>
+        </div>
+
+        <!-- Refresh Controls -->
+        <button class="btn btn-primary refresh-btn" onclick="refreshMetrics()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+        <div class="last-updated" id="lastUpdated">Last updated: --</div>
+
+        <!-- KPI Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card info">
+                    <div class="metric-label">Total Enrichments</div>
+                    <div class="metric-value" id="kpiTotalEnrichments">0</div>
+                    <div class="text-muted small">All-time count</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card success">
+                    <div class="metric-label">Success Rate</div>
+                    <div class="metric-value" id="kpiSuccessRate">100%</div>
+                    <div class="text-muted small">Successful operations</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card info">
+                    <div class="metric-label">Avg Enrichment Time</div>
+                    <div class="metric-value" id="kpiAvgTime">0ms</div>
+                    <div class="text-muted small">Per IOC</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card info">
+                    <div class="metric-label">Cache Hit Rate</div>
+                    <div class="metric-value" id="kpiCacheHitRate">0%</div>
+                    <div class="text-muted small">Cached vs total queries</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Secondary KPI Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-label">Alerts Enriched</div>
+                    <div class="metric-value" id="kpiAlertsEnriched">0</div>
+                    <div class="text-muted small">Total alerts processed</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-label">Total IOCs Processed</div>
+                    <div class="metric-value" id="kpiTotalIocs">0</div>
+                    <div class="text-muted small">Individual indicators</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card warning">
+                    <div class="metric-label">Error Rate</div>
+                    <div class="metric-value" id="kpiErrorRate">0%</div>
+                    <div class="text-muted small">Failed operations</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-label">API Success Rate</div>
+                    <div class="metric-value" id="kpiApiSuccessRate">100%</div>
+                    <div class="text-muted small">OpenCTI API calls</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enrichment Metrics Section -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="metric-card">
+                    <h5><i class="bi bi-activity"></i> Enrichment Performance</h5>
+                    <div class="chart-container">
+                        <canvas id="enrichmentChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="metric-card">
+                    <h5><i class="bi bi-list-check"></i> Enrichment Summary</h5>
+                    <table class="table table-metrics">
+                        <tbody>
+                            <tr>
+                                <td>Successful</td>
+                                <td class="text-success text-end" id="enrichSuccess">0</td>
+                            </tr>
+                            <tr>
+                                <td>Failed</td>
+                                <td class="text-danger text-end" id="enrichFailed">0</td>
+                            </tr>
+                            <tr>
+                                <td>Skipped (Cached)</td>
+                                <td class="text-info text-end" id="enrichSkipped">0</td>
+                            </tr>
+                            <tr>
+                                <td>Matches Found</td>
+                                <td class="text-primary text-end" id="enrichMatches">0</td>
+                            </tr>
+                            <tr>
+                                <td>Min Time</td>
+                                <td class="text-end" id="enrichMinTime">0ms</td>
+                            </tr>
+                            <tr>
+                                <td>Max Time</td>
+                                <td class="text-end" id="enrichMaxTime">0ms</td>
+                            </tr>
+                            <tr>
+                                <td>Avg Time</td>
+                                <td class="text-end" id="enrichAvgTime">0ms</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cache Metrics Section -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <h5><i class="bi bi-database"></i> Cache Performance</h5>
+                    <div class="chart-container">
+                        <canvas id="cacheChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <h5><i class="bi bi-speedometer2"></i> Cache Statistics</h5>
+                    <table class="table table-metrics">
+                        <tbody>
+                            <tr>
+                                <td>Cache Hits</td>
+                                <td class="text-success text-end" id="cacheHits">0</td>
+                            </tr>
+                            <tr>
+                                <td>Cache Misses</td>
+                                <td class="text-warning text-end" id="cacheMisses">0</td>
+                            </tr>
+                            <tr>
+                                <td>Hit Rate</td>
+                                <td class="text-end" id="cacheHitRate">0%</td>
+                            </tr>
+                            <tr>
+                                <td>Current Size</td>
+                                <td class="text-end" id="cacheSize">0 / 1000</td>
+                            </tr>
+                            <tr>
+                                <td>Evictions</td>
+                                <td class="text-end" id="cacheEvictions">0</td>
+                            </tr>
+                            <tr>
+                                <td>Clears</td>
+                                <td class="text-end" id="cacheClears">0</td>
+                            </tr>
+                            <tr>
+                                <td>TTL</td>
+                                <td class="text-end" id="cacheTtl">300s</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Metrics Section -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <h5><i class="bi bi-cloud-upload"></i> API Performance</h5>
+                    <div class="chart-container">
+                        <canvas id="apiChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="metric-card">
+                    <h5><i class="bi bi-server"></i> API Statistics</h5>
+                    <table class="table table-metrics">
+                        <tbody>
+                            <tr>
+                                <td>Total Calls</td>
+                                <td class="text-end" id="apiTotal">0</td>
+                            </tr>
+                            <tr>
+                                <td>Successful</td>
+                                <td class="text-success text-end" id="apiSuccess">0</td>
+                            </tr>
+                            <tr>
+                                <td>Failed</td>
+                                <td class="text-danger text-end" id="apiFailed">0</td>
+                            </tr>
+                            <tr>
+                                <td>Timeouts</td>
+                                <td class="text-warning text-end" id="apiTimeouts">0</td>
+                            </tr>
+                            <tr>
+                                <td>Rate Limited</td>
+                                <td class="text-info text-end" id="apiRateLimits">0</td>
+                            </tr>
+                            <tr>
+                                <td>Avg Response Time</td>
+                                <td class="text-end" id="apiAvgTime">0ms</td>
+                            </tr>
+                            <tr>
+                                <td>Success Rate</td>
+                                <td class="text-end" id="apiSuccessRate">100%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Historical Trends -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="metric-card">
+                    <h5><i class="bi bi-graph-up"></i> 24-Hour Trends</h5>
+                    <div class="form-row mb-3">
+                        <div class="col-md-3">
+                            <select class="form-control" id="timeRangeSelect" onchange="loadMetrics()">
+                                <option value="1h">Last 1 Hour</option>
+                                <option value="6h">Last 6 Hours</option>
+                                <option value="24h" selected>Last 24 Hours</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 400px;">
+                        <canvas id="historyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Endpoint Breakdown -->
+        <div class="row">
+            <div class="col-12">
+                <div class="metric-card">
+                    <h5><i class="bi bi-list-ul"></i> API Endpoint Breakdown</h5>
+                    <div id="endpointStats">
+                        <p class="text-muted">No endpoint data available</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global chart instances
+        let enrichmentChart, cacheChart, apiChart, historyChart;
+
+        // Fetch metrics from API
+        async function fetchMetrics(timeRange = 'all') {
+            try {
+                const response = await fetch('/api/opencti/metrics?time_range=' + timeRange);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch metrics');
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching metrics:', error);
+                return null;
+            }
+        }
+
+        // Update KPI cards
+        function updateKPIs(metrics) {
+            const kpi = metrics.kpi || {};
+            
+            document.getElementById('kpiTotalEnrichments').textContent = 
+                (kpi.total_enrichments || 0).toLocaleString();
+            document.getElementById('kpiSuccessRate').textContent = 
+                (kpi.success_rate || 0).toFixed(1) + '%';
+            document.getElementById('kpiAvgTime').textContent = 
+                (kpi.avg_enrichment_time_ms || 0).toFixed(0) + 'ms';
+            document.getElementById('kpiCacheHitRate').textContent = 
+                (kpi.cache_hit_rate || 0).toFixed(1) + '%';
+            document.getElementById('kpiAlertsEnriched').textContent = 
+                (kpi.alerts_enriched || 0).toLocaleString();
+            document.getElementById('kpiTotalIocs').textContent = 
+                (kpi.total_iocs_processed || 0).toLocaleString();
+            document.getElementById('kpiErrorRate').textContent = 
+                (kpi.error_rate || 0).toFixed(1) + '%';
+            document.getElementById('kpiApiSuccessRate').textContent = 
+                (kpi.api_success_rate || 0).toFixed(1) + '%';
+        }
+
+        // Update enrichment metrics
+        function updateEnrichmentMetrics(metrics) {
+            const enrich = metrics.enrichment || {};
+            
+            document.getElementById('enrichSuccess').textContent = 
+                (enrich.successful_enrichments || 0).toLocaleString();
+            document.getElementById('enrichFailed').textContent = 
+                (enrich.failed_enrichments || 0).toLocaleString();
+            document.getElementById('enrichSkipped').textContent = 
+                (enrich.skipped_enrichments || 0).toLocaleString();
+            document.getElementById('enrichMatches').textContent = 
+                (enrich.total_matches_found || 0).toLocaleString();
+            document.getElementById('enrichMinTime').textContent = 
+                ((enrich.min_enrichment_time_seconds || 0) * 1000).toFixed(0) + 'ms';
+            document.getElementById('enrichMaxTime').textContent = 
+                ((enrich.max_enrichment_time_seconds || 0) * 1000).toFixed(0) + 'ms';
+            document.getElementById('enrichAvgTime').textContent = 
+                ((enrich.avg_enrichment_time_seconds || 0) * 1000).toFixed(0) + 'ms';
+        }
+
+        // Update cache metrics
+        function updateCacheMetrics(metrics) {
+            const cache = metrics.cache || {};
+            
+            document.getElementById('cacheHits').textContent = 
+                (cache.cache_hits || 0).toLocaleString();
+            document.getElementById('cacheMisses').textContent = 
+                (cache.cache_misses || 0).toLocaleString();
+            document.getElementById('cacheHitRate').textContent = 
+                (cache.hit_rate_percent || 0).toFixed(1) + '%';
+            document.getElementById('cacheSize').textContent = 
+                (cache.current_cache_size || 0) + ' / ' + (cache.max_cache_size || 1000);
+            document.getElementById('cacheEvictions').textContent = 
+                (cache.cache_evictions || 0).toLocaleString();
+            document.getElementById('cacheClears').textContent = 
+                (cache.cache_clears || 0).toLocaleString();
+            document.getElementById('cacheTtl').textContent = 
+                (cache.cache_ttl_seconds || 300) + 's';
+        }
+
+        // Update API metrics
+        function updateAPIMetrics(metrics) {
+            const api = metrics.api || {};
+            
+            document.getElementById('apiTotal').textContent = 
+                (api.api_calls_total || 0).toLocaleString();
+            document.getElementById('apiSuccess').textContent = 
+                (api.api_calls_successful || 0).toLocaleString();
+            document.getElementById('apiFailed').textContent = 
+                (api.api_calls_failed || 0).toLocaleString();
+            document.getElementById('apiTimeouts').textContent = 
+                (api.api_timeout_errors || 0).toLocaleString();
+            document.getElementById('apiRateLimits').textContent = 
+                (api.api_rate_limit_hits || 0).toLocaleString();
+            document.getElementById('apiAvgTime').textContent = 
+                ((api.avg_api_time_seconds || 0) * 1000).toFixed(0) + 'ms';
+            document.getElementById('apiSuccessRate').textContent = 
+                (api.api_success_rate_percent || 0).toFixed(1) + '%';
+
+            // Update endpoint breakdown
+            updateEndpointStats(api.endpoint_stats || {});
+        }
+
+        // Update endpoint statistics table
+        function updateEndpointStats(endpointStats) {
+            const container = document.getElementById('endpointStats');
+            
+            if (Object.keys(endpointStats).length === 0) {
+                container.innerHTML = '<p class="text-muted">No endpoint data available</p>';
+                return;
+            }
+
+            let html = '<table class="table table-metrics table-striped">';
+            html += '<thead><tr><th>Endpoint</th><th>Total</th><th>Success</th><th>Failed</th><th>Success Rate</th></tr></thead>';
+            html += '<tbody>';
+            
+            for (const [endpoint, stats] of Object.entries(endpointStats)) {
+                const successRate = stats.total > 0 
+                    ? ((stats.success / stats.total) * 100).toFixed(1) 
+                    : '0.0';
+                
+                html += '<tr>';
+                html += '<td>' + endpoint + '</td>';
+                html += '<td>' + stats.total.toLocaleString() + '</td>';
+                html += '<td class="text-success">' + stats.success.toLocaleString() + '</td>';
+                html += '<td class="text-danger">' + stats.failed.toLocaleString() + '</td>';
+                html += '<td>' + successRate + '%</td>';
+                html += '</tr>';
+            }
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // Initialize charts
+        function initCharts() {
+            // Enrichment chart
+            const enrichCtx = document.getElementById('enrichmentChart').getContext('2d');
+            enrichmentChart = new Chart(enrichCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Successful', 'Failed', 'Skipped'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: ['#28a745', '#dc3545', '#17a2b8']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            // Cache chart
+            const cacheCtx = document.getElementById('cacheChart').getContext('2d');
+            cacheChart = new Chart(cacheCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Hits', 'Misses'],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: ['#28a745', '#ffc107']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            // API chart
+            const apiCtx = document.getElementById('apiChart').getContext('2d');
+            apiChart = new Chart(apiCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Successful', 'Failed'],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: ['#28a745', '#dc3545']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' }
+                    }
+                }
+            });
+
+            // History chart
+            const historyCtx = document.getElementById('historyChart').getContext('2d');
+            historyChart = new Chart(historyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Enrichments',
+                            data: [],
+                            borderColor: '#17a2b8',
+                            backgroundColor: 'rgba(23, 162, 184, 0.1)',
+                            yAxisID: 'y',
+                            fill: true
+                        },
+                        {
+                            label: 'Cache Hit Rate (%)',
+                            data: [],
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            yAxisID: 'y1',
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Enrichments' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            min: 0,
+                            max: 100,
+                            title: { display: true, text: 'Hit Rate (%)' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Update charts with data
+        function updateCharts(metrics) {
+            const enrich = metrics.enrichment || {};
+            const cache = metrics.cache || {};
+            const api = metrics.api || {};
+
+            // Update enrichment chart
+            enrichmentChart.data.datasets[0].data = [
+                enrich.successful_enrichments || 0,
+                enrich.failed_enrichments || 0,
+                enrich.skipped_enrichments || 0
+            ];
+            enrichmentChart.update();
+
+            // Update cache chart
+            cacheChart.data.datasets[0].data = [
+                cache.cache_hits || 0,
+                cache.cache_misses || 0
+            ];
+            cacheChart.update();
+
+            // Update API chart
+            apiChart.data.datasets[0].data = [
+                api.api_calls_successful || 0,
+                api.api_calls_failed || 0
+            ];
+            apiChart.update();
+        }
+
+        // Update history chart
+        function updateHistoryChart(metrics) {
+            const history = metrics.history || [];
+            
+            if (history.length === 0) {
+                historyChart.data.labels = [];
+                historyChart.data.datasets[0].data = [];
+                historyChart.data.datasets[1].data = [];
+                historyChart.update();
+                return;
+            }
+
+            const labels = history.map(h => {
+                const date = new Date(h.timestamp);
+                return date.toLocaleTimeString();
+            });
+
+            const enrichments = history.map(h => 
+                h.enrichment?.total_enrichments || 0
+            );
+            const hitRates = history.map(h => 
+                h.cache?.hit_rate_percent || 0
+            );
+
+            historyChart.data.labels = labels;
+            historyChart.data.datasets[0].data = enrichments;
+            historyChart.data.datasets[1].data = hitRates;
+            historyChart.update();
+        }
+
+        // Main load function
+        async function loadMetrics() {
+            const timeRange = document.getElementById('timeRangeSelect').value;
+            const metrics = await fetchMetrics(timeRange);
+            
+            if (!metrics) {
+                console.error('Failed to load metrics');
+                return;
+            }
+
+            updateKPIs(metrics);
+            updateEnrichmentMetrics(metrics);
+            updateCacheMetrics(metrics);
+            updateAPIMetrics(metrics);
+            updateCharts(metrics);
+            updateHistoryChart(metrics);
+
+            // Update last updated time
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = 
+                'Last updated: ' + now.toLocaleTimeString();
+        }
+
+        // Refresh button handler
+        function refreshMetrics() {
+            loadMetrics();
+        }
+
+        // Auto-refresh every 30 seconds
+        let autoRefreshInterval = setInterval(loadMetrics, 30000);
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            loadMetrics();
+        });
+    </script>
+</body>
+</html>

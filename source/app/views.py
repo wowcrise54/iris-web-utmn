@@ -67,6 +67,7 @@ from app.blueprints.profile.profile_routes import profile_blueprint
 from app.blueprints.reports.reports_route import reports_blueprint
 from app.blueprints.search.search_routes import search_blueprint
 from app.blueprints.statistics.statistics_routes import stats_blueprint
+from app.blueprints.rest.opencti_routes import opencti_routes_blueprint
 from app.models.authorization import User
 from app.post_init import run_post_init
 
@@ -115,6 +116,7 @@ app.register_blueprint(custom_dashboard_blueprint)
 
 app.register_blueprint(api_blueprint)
 app.register_blueprint(demo_blueprint)
+app.register_blueprint(opencti_routes_blueprint)
 
 try:
 
