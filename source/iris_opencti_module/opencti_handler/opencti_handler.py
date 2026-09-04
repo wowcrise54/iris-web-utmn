@@ -25,7 +25,7 @@ from iris_opencti_module.opencti_handler.opencti_insights import alert_recommend
 from iris_opencti_module.opencti_handler.opencti_insights import calculate_verdict
 from iris_opencti_module.opencti_handler.opencti_insights import graph_fingerprint
 from iris_opencti_module.opencti_handler.opencti_insights import normalize_graph
-from iris_opencti_module.opencti_handler.history import EnrichmentHistory
+from iris_opencti_module.opencti_handler.history import get_enrichment_history
 
 
 class OpenCTIHandler:
@@ -37,13 +37,19 @@ class OpenCTIHandler:
         self.log = logger
         self.client = self._build_client()
         
-        # Initialize enrichment history tracker
+        # Initialize enrichment history tracker.
+        # Use the process-wide shared history store so the TTL/dedup window
+        # survives across handler instances: previously each OpenCTIHandler
+        # built a brand-new in-memory EnrichmentHistory, so the advertised
+        # "skip IOCs enriched within the last N hours" never worked across
+        # requests/tasks (every enrichment re-queried OpenCTI for the same
+        # IOCs). The singleton is created on first use with these settings.
         history_ttl = int(mod_config.get("opencti_history_ttl_hours", 24))
         history_max_size = int(mod_config.get("opencti_history_max_size", 10000))
-        self.history = EnrichmentHistory(
-            history_ttl_hours=history_ttl,
-            max_history_size=history_max_size
-        )
+        self.history = get_enrichment_history({
+            "opencti_history_ttl_hours": history_ttl,
+            "opencti_history_max_size": history_max_size,
+        })
         self._progress_callback = None
 
     def set_progress_callback(self, callback):
@@ -166,6 +172,14 @@ class OpenCTIHandler:
     def _store_enrichment(self, ioc, enrichment, update_report=True):
         stored_enrichment = copy.deepcopy(enrichment)
         if not self.mod_config.get("opencti_store_raw_enrichment", True):
+            # Keep the raw match payloads out of the stored enrichment, but
+            # remember the match IDs: handle_alert_graphs derives its root
+            # nodes from stored matches, so stripping them entirely made the
+            # graph feature fail with "enrich first" right after a successful
+            # enrichment. match_ids keeps the graph root set intact.
+            stored_enrichment["match_ids"] = [
+                m.get("id") for m in (enrichment.get("matches") or []) if m.get("id")
+            ]
             stored_enrichment["matches"] = []
         ioc_enrichment = copy.deepcopy(ioc.ioc_enrichment or {})
         ioc_enrichment["opencti"] = stored_enrichment
@@ -241,17 +255,24 @@ class OpenCTIHandler:
                 f"Skipping enrichment for {ioc.ioc_value} - "
                 f"recent {history_result['cached_status']} found in history"
             )
-            # Apply cached result to the IOC
+            # Apply cached result to the IOC. Rebuild the payload through the
+            # same builder the full path uses so the stored enrichment keeps
+            # its 'verdict' and 'last_success_utc' keys: previously this branch
+            # stored a bare dict without them, which made alert_recommendation
+            # (which reads enrichment['verdict']) drop the IOC as if it had no
+            # verdict and destabilized the graph fingerprint (last_success_utc
+            # -> None).
             cached_record = history_result["record"]
-            enrichment = {
-                "query_value": ioc.ioc_value,
-                "status": cached_record.get("status", "no_match"),
-                "match_count": cached_record.get("match_count", 0),
-                "matches": cached_record.get("matches", []),
-                "generated_tags": cached_record.get("generated_tags", []),
-                "provider": "OpenCTI",
-                "last_lookup_utc": cached_record.get("timestamp"),
-            }
+            cached_matches = cached_record.get("matches", []) or []
+            enrichment = build_enrichment_payload(
+                ioc.ioc_value,
+                cached_matches,
+                status=cached_record.get("status", "no_match"),
+                last_attempt_utc=cached_record.get("timestamp"),
+                last_success_utc=cached_record.get("timestamp"),
+                generated_tags=cached_record.get("generated_tags", []),
+            )
+            enrichment["verdict"] = calculate_verdict(cached_matches)
             self._store_enrichment(ioc, enrichment)
             return InterfaceStatus.I2Success(message="Skipped - cached result"), []
 
@@ -508,12 +529,23 @@ class OpenCTIHandler:
         for alert in data:
             if not isinstance(alert, Alert):
                 continue
-            root_ids = {
-                match.get("id")
-                for ioc in alert.iocs
-                for match in self._previous_enrichment(ioc).get("matches", [])
-                if match.get("id")
-            }
+            # Root ids come from both full stored matches and match_ids: with
+            # opencti_store_raw_enrichment=False only match_ids are kept, and a
+            # mixed alert (some IOCs with full matches, some match_ids-only)
+            # must not lose the latter.
+            root_ids = set()
+            for ioc in alert.iocs:
+                prev = self._previous_enrichment(ioc)
+                root_ids.update(
+                    match.get("id")
+                    for match in prev.get("matches", [])
+                    if match.get("id")
+                )
+                root_ids.update(
+                    match_id
+                    for match_id in prev.get("match_ids", [])
+                    if match_id
+                )
             if not root_ids:
                 return InterfaceStatus.I2Error(message="Сначала выполните обогащение IOC alert")
             root_nodes = [
@@ -522,6 +554,16 @@ class OpenCTIHandler:
                 for match in self._previous_enrichment(ioc).get("matches", [])
                 if match.get("id") in root_ids
             ]
+            # Roots that exist only as match_ids (raw enrichment disabled) have
+            # no stored payload - synthesize a minimal node so they still show
+            # up as is_root in the graph.
+            seen_root_ids = {node.get("id") for node in root_nodes}
+            for ioc in alert.iocs:
+                prev = self._previous_enrichment(ioc)
+                for match_id in prev.get("match_ids", []):
+                    if match_id and match_id not in seen_root_ids:
+                        root_nodes.append({"id": match_id})
+                        seen_root_ids.add(match_id)
 
             payloads = []
             first_level = self._fetch_graph_level(root_ids, 200)

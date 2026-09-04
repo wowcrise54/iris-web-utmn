@@ -1,33 +1,58 @@
-flask/
-*.pyc
-dev
-node_modules
-source/app/database.db
-source/app/build
-yarn.lock
-yarn-error.log
-*.psd
-env/
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
 venv/
-test/
+.venv/
+venv1/
+env/
+
+# --- Logs & runtime artifacts ---
+*.log
+nohup.out
+celerybeat-schedule*
+.docker-backend.log
+run_nv_test.py
+
+# --- Databases ---
+*.db
+*.sqlite3
+source/app/database.db
+flask/
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.model
 source/app/config.priv.ini
 source/app/config.test.ini
-.idea/
-libesedb-*/
-orcparser/
-venv1/
-.DS_Store
-.env*
-.venv/
-.vscode/
-*.code-workspace
-nohup.out
-celerybeat-schedule.db
-.scannerwork/
+certificates/web_certificates/*.pem
+!certificates/web_certificates/iris_dev_*
+
+# --- Node / frontend build ---
+node_modules/
+yarn.lock
+yarn-error.log
 source/app/static/assets/dist/
 source/app/static/assets/img/graph/*
 !source/app/static/assets/img/graph/*.png
-run_nv_test.py
-!certificates/web_certificates/iris_dev_*
-certificates/web_certificates/*.pem
+
+# --- IDE & OS ---
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# --- Misc (upstream + local) ---
+test/
+dev
+*.psd
+libesedb-*/
+orcparser/
+.scannerwork/
 /backups/
+iris-server/

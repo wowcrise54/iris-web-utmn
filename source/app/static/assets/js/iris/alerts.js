@@ -878,6 +878,8 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
       }
   }
 
+  const openctiSummary = openCTIAlertMatchSummary(alert);
+
   return `
 <div class="card alert-card full-height alert-card-selectable ${alert_color}" id="alertCard-${alert.alert_id}">
   <div class="card-body">
@@ -913,6 +915,7 @@ function renderAlert(alert, expanded=false, modulesOptionsAlertReq,
                         <h6 class="text-uppercase fw-bold mb-1 mt-1 ml-3 alert-m-title alert-m-title-${colorSeverity}" data-toggle="collapse" data-target="#additionalDetails-${alert.alert_id}" onclick="fetchSmartRelations(${alert.alert_id});">
                             ${alert.alert_title}
                             <span class="text-${colorSeverity} pl-3"></span>
+                            ${openctiSummary}
                             <div class="d-flex mb-3">
                                
                                 <span title="Alert IDs" class=""><small class="text-muted"><i>#${alert.alert_id} - ${alert.alert_uuid}</i></small></span>
@@ -1613,9 +1616,13 @@ function renderEnrichmentCell(enrichment) {
     let status = '';
     if (opencti) {
         const statusConfig = {
-            match: ['badge-success', 'Совпадение'],
+            // A match means the IOC was CONFIRMED in OpenCTI threat intel -
+            // that is bad news for the analyst, so it reads as danger, not
+            // success. "Not found" is neutral; green is reserved for
+            // "clean / no threat" states.
+            match: ['badge-danger', 'Совпадение'],
             no_match: ['badge-secondary', 'Не найдено'],
-            error: ['badge-danger', 'Ошибка'],
+            error: ['badge-dark', 'Ошибка'],
         };
         const config = statusConfig[opencti.status] || ['badge-light', 'Не проверено'];
         const count = Number(opencti.match_count || 0);
@@ -1636,6 +1643,36 @@ function renderEnrichmentCell(enrichment) {
               onclick="showEnrichmentFromButton(this)">
         Подробнее
       </button>`;
+}
+
+// Compact, always-visible OpenCTI match indicator for the alert card
+// header. The key security fact ("N of M IOCs confirmed in threat intel")
+// must be glanceable without expanding the card, so it lives in the title
+// row instead of only inside the collapsible details.
+function openCTIAlertMatchSummary(alert) {
+    const iocs = alert.iocs || [];
+    const results = iocs
+        .map((ioc) => openCTIEnrichment(ioc.ioc_enrichment))
+        .filter(Boolean);
+    if (!results.length) {
+        return '';
+    }
+    const matches = results.filter((item) => item.status === 'match').length;
+    const running = (alert.alert_context && alert.alert_context.opencti &&
+        alert.alert_context.opencti.progress &&
+        alert.alert_context.opencti.progress.status === 'running');
+    if (running) {
+        return ` <span class="badge badge-pill badge-info ml-2" title="OpenCTI-обогащение выполняется">
+          <i class="fas fa-spinner fa-spin mr-1"></i>OpenCTI…</span>`;
+    }
+    if (!matches) {
+        return ` <span class="badge badge-pill badge-light ml-2"
+          title="Все ${results.length} IOC проверено OpenCTI, точных совпадений нет">
+          <i class="far fa-circle-check mr-1"></i>OpenCTI чисто</span>`;
+    }
+    return ` <span class="badge badge-pill badge-danger ml-2"
+      title="${matches} из ${results.length} IOC подтверждено в OpenCTI">
+      <i class="fas fa-bug mr-1"></i>OpenCTI: ${matches} из ${results.length}</span>`;
 }
 
 function renderOpenCTIAlertSummary(iocs, alertContext, alertId) {
@@ -1672,20 +1709,23 @@ function renderOpenCTIAlertSummary(iocs, alertContext, alertId) {
         ${graph ? `<button class="btn btn-sm btn-info ml-1" onclick="showOpenCTIGraph(${alertId})">Открыть граф</button>` : ''}
         ${errorIocIds.length ? `<button class="btn btn-sm btn-outline-danger ml-1"
           onclick="retryOpenCTIIocs(${alertId}, [${errorIocIds.join(',')}])">Повторить ошибки (${errorIocIds.length})</button>` : ''}
-        ${recommendation ? `<button class="btn btn-sm btn-warning ml-1"
+        ${recommendation ? `<button class="btn btn-sm btn-dark ml-1"
           onclick="applyOpenCTIRecommendation(${alertId}, '${escapeOpenCTI(recommendation.severity)}', ${Number(recommendation.risk_score || 0)})">
-          Применить ${escapeOpenCTI(recommendation.severity)} (${Number(recommendation.risk_score || 0)})
+          Применить рекомендацию
         </button>` : ''}
       </div>
       ${graph && graph.stale ? '<div class="alert alert-warning py-1 mt-2 mb-0">Граф устарел после обновления enrichment.</div>' : ''}`;
+    const railColor = matches
+        ? 'var(--color-danger-500, #ef4444)'
+        : 'var(--color-neutral-300, #d1d5db)';
     return `
-      <div class="card border-info mb-3">
+      <div class="opencti-alert-summary border-0 shadow-sm mb-3" style="border-left:4px solid ${railColor}">
         <div class="card-body py-2">
           <strong><i class="fas fa-project-diagram mr-2"></i>OpenCTI</strong>
           <span class="badge badge-pill badge-light ml-2">Проверено: ${results.length}</span>
-          <span class="badge badge-pill badge-success ml-1">Найдено: ${matches}</span>
-          <span class="badge badge-pill badge-secondary ml-1">Без совпадений: ${noMatches}</span>
-          ${errors ? `<span class="badge badge-pill badge-danger ml-1">Ошибки: ${errors}</span>` : ''}
+          ${matches ? `<span class="badge badge-pill badge-danger ml-1">Совпадения: ${matches}</span>` : '<span class="badge badge-pill badge-light ml-1">Совпадений: 0</span>'}
+          ${noMatches ? `<span class="badge badge-pill badge-secondary ml-1">Без совпадений: ${noMatches}</span>` : ''}
+          ${errors ? `<span class="badge badge-pill badge-dark ml-1">Ошибки: ${errors}</span>` : ''}
           ${controls}
         </div>
       </div>`;
@@ -1889,7 +1929,7 @@ function renderOpenCTIEnrichment(enrichment) {
           ${lastSuccess ? `<small class="ml-2">Проверено: ${escapeOpenCTI(lastSuccess)}</small>` : ''}
         </div>`;
     }
-    const verdictCard = verdict ? `<div class="card border-warning mb-3"><div class="card-body py-2">
+    const verdictCard = verdict ? `<div class="card mb-3"><div class="card-body py-2" style="border-left:4px solid var(--color-warning-500,#f59e0b)">
       <strong>Вердикт: ${escapeOpenCTI(verdict.severity)}</strong>
       <span class="badge badge-warning ml-2">Риск ${Number(verdict.risk_score || 0)}</span>
       <span class="badge badge-light ml-1">${escapeOpenCTI(verdict.state || 'unknown')}</span>

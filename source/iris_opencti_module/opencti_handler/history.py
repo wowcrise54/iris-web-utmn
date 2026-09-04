@@ -10,6 +10,7 @@ This module provides:
 """
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from collections import OrderedDict
@@ -355,6 +356,7 @@ class EnrichmentHistory:
 
 # Singleton instance for use across the module
 _history_instance: Optional[EnrichmentHistory] = None
+_history_lock = threading.Lock()
 
 
 def get_enrichment_history(config: Optional[Dict[str, Any]] = None) -> EnrichmentHistory:
@@ -370,22 +372,28 @@ def get_enrichment_history(config: Optional[Dict[str, Any]] = None) -> Enrichmen
         EnrichmentHistory instance
     """
     global _history_instance
-    
+
+    # Double-checked locking: two threads racing on first use must not each
+    # construct an EnrichmentHistory (the loser's instance - and any records
+    # added to it - would be silently dropped).
     if _history_instance is None:
-        config = config or {}
-        ttl = int(config.get("opencti_history_ttl_hours", 24))
-        max_size = int(config.get("opencti_history_max_size", 10000))
-        _history_instance = EnrichmentHistory(
-            history_ttl_hours=ttl,
-            max_history_size=max_size
-        )
-    
+        with _history_lock:
+            if _history_instance is None:
+                config = config or {}
+                ttl = int(config.get("opencti_history_ttl_hours", 24))
+                max_size = int(config.get("opencti_history_max_size", 10000))
+                _history_instance = EnrichmentHistory(
+                    history_ttl_hours=ttl,
+                    max_history_size=max_size
+                )
+
     return _history_instance
 
 
 def reset_enrichment_history() -> None:
     """Reset the singleton history instance (useful for testing)."""
     global _history_instance
-    if _history_instance:
-        _history_instance.clear_all()
-    _history_instance = None
+    with _history_lock:
+        if _history_instance:
+            _history_instance.clear_all()
+        _history_instance = None

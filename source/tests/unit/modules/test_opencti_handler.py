@@ -7,6 +7,10 @@ from app.models.alerts import Alert
 from app.models.models import Ioc
 from iris_opencti_module.opencti_handler.opencti_client import OpenCTIClientError
 from iris_opencti_module.opencti_handler.opencti_handler import OpenCTIHandler
+from iris_opencti_module.opencti_handler.history import (
+    get_enrichment_history,
+    reset_enrichment_history,
+)
 
 
 def observable_payload(value, description=None, labels=None, external_references=None):
@@ -43,7 +47,15 @@ def observable_payload(value, description=None, labels=None, external_references
 
 class TestOpenCTIHandler(TestCase):
     def setUp(self):
+        # OpenCTIHandler.__new__ skips __init__; restore the attributes the
+        # pipeline needs (notably the shared enrichment history) explicitly.
+        reset_enrichment_history()
         self.handler = OpenCTIHandler.__new__(OpenCTIHandler)
+        self.handler.history = get_enrichment_history({
+            "opencti_history_ttl_hours": 24,
+            "opencti_history_max_size": 1000,
+        })
+        self.handler._progress_callback = None
         self.handler.mod_config = {
             "opencti_url": "http://opencti:8080",
             "opencti_public_url": "http://127.0.0.1:4000",

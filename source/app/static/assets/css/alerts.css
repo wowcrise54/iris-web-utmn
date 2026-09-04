@@ -1,6 +1,8 @@
 .alert-card {
     position: relative;
-    border-radius: 35px;
+    /* Use the token scale instead of a bespoke 35px so the card stays in
+       step with the minimalist design system (max token is --radius-2xl). */
+    border-radius: var(--radius-2xl, 1rem);
     margin-bottom: 10px;
 }
 
@@ -123,7 +125,7 @@
 
 .similar-alert-graph {
     background-color: #f2f2f2;
-    border-radius: 25px;
+    border-radius: var(--radius-xl, 0.75rem);
 }
 
 .hidden {

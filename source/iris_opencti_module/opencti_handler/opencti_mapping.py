@@ -74,6 +74,15 @@ def canonicalize_ioc_value(value, ioc_type=None):
     ):
         return normalized.lower()
 
+    # IRIS defines hash type names beyond HASH_TYPE_BY_LENGTH (sha3-224/256/
+    # 384/512, sha512/224/256, imphash, authentihash, pehash, ssdeep, tlsh,
+    # cdhash, hassh-*, ...). Hashes are case-insensitive, so canonicalize any
+    # hex-looking value to lowercase: without this an uppercase query hash
+    # (e.g. an uppercase SHA3-256) never equals a lowercase OpenCTI match and
+    # is_exact_ioc_match drops a real match.
+    if re.fullmatch(r"[0-9a-fA-F]+", normalized):
+        return normalized.lower()
+
     if normalized_type in {"domain", "hostname"}:
         return normalized.lower().rstrip(".")
 
@@ -197,8 +206,13 @@ def extract_value_from_pattern(pattern):
     if not pattern:
         return None, None
 
+    # Recognize the full set of STIX file-hash algorithms IRIS/OpenCTI use,
+    # including SHA3-224/256/384/512, SHA-512/224|256 and the fuzzy/special
+    # hashes (IMPHASH, SSDEEP, PEHASH, AUTHENTIHASH, TLSH, CDHASH). Without
+    # these the generic quoted-token fallback below captures the algorithm
+    # name (e.g. 'SSDEEP' or 'SHA3-256') as the value instead of the hash.
     file_hash = re.search(
-        r"file:hashes\.(?:'|\")?(MD5|SHA-1|SHA-224|SHA-256|SHA-384|SHA-512)(?:'|\")?\s*=\s*(?:'|\")([^'\"]+)(?:'|\")",
+        r"file:hashes\.(?:'|\")?(MD5|SHA-?1|SHA-?224|SHA-?256|SHA-?384|SHA-?512(?:/2(?:24|56))?|SHA3-?(?:224|256|384|512)|IMPHASH|SSDEEP|PEHASH|AUTHENTIHASH|TLSH|CDHASH)(?:'|\")?\s*=\s*(?:'|\")([^'\"]+)(?:'|\")",
         pattern,
         re.IGNORECASE,
     )

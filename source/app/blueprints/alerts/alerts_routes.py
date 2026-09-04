@@ -278,9 +278,14 @@ def alerts_add_route() -> Response:
         try:
             from iris_opencti_module.IrisOpenCTIInterface import IrisOpenCTIInterface
             iris_opencti_module = IrisOpenCTIInterface()
-            module_config = iris_opencti_module.get_configuration()
-            if module_config:
-                trigger_auto_enrichment(new_alert, module_config)
+            # get_configuration_dict() returns an IrisInterfaceStatus whose
+            # data is a param_name -> value dict (already type-cast).
+            # (get_configuration() returns the raw IIStatus, not a dict.)
+            config_status = iris_opencti_module.get_configuration_dict()
+            if config_status.is_success():
+                module_config = config_status.get_data()
+                if module_config:
+                    trigger_auto_enrichment(new_alert, module_config)
         except Exception as enrich_exc:
             app.app.logger.warning(f"Auto-enrichment trigger failed: {enrich_exc}")
 

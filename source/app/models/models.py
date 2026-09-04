@@ -219,6 +219,114 @@ class CaseClassification(db.Model):
     created_by = relationship('User')
 
 
+# INCIDENT MANAGEMENT MODELS (per ТюмГУ Положение о мониторинге и реагировании)
+class IncidentCategory(db.Model):
+    """Категории инцидентов ИБ (таблица 5.1 Положения)"""
+    __tablename__ = 'incident_category'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)  # Например: "отказ систем, сервисов и сетей"
+    code = Column(Integer, unique=True, nullable=False)  # 1-8
+    description = Column(Text)
+
+    def __repr__(self):
+        return f"<IncidentCategory {self.code}: {self.name}>"
+
+
+class SystemType(db.Model):
+    """Типы систем: целевая/ключевая/вспомогательная"""
+    __tablename__ = 'system_type'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)  # целевая, ключевая, вспомогательная
+    code = Column(Integer, unique=True, nullable=False)  # 1, 2, 3
+    description = Column(Text)
+
+    def __repr__(self):
+        return f"<SystemType {self.code}: {self.name}>"
+
+
+class IncidentImportance(db.Model):
+    """Важность инцидента: высокая/средняя/низкая"""
+    __tablename__ = 'incident_importance'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)  # высокая, средняя, низкая
+    code = Column(Integer, unique=True, nullable=False)  # 1, 2, 3
+
+    def __repr__(self):
+        return f"<IncidentImportance {self.code}: {self.name}>"
+
+
+class IncidentPriority(db.Model):
+    """Приоритет инцидента 1-9 (таблица 5.2 Положения)"""
+    __tablename__ = 'incident_priority'
+
+    id = Column(Integer, primary_key=True)
+    level = Column(Integer, unique=True, nullable=False)  # 1-9
+
+    def __repr__(self):
+        return f"<IncidentPriority {self.level}>"
+
+
+class IncidentType(db.Model):
+    """Тип инцидента: преднамеренный/случайный/естественный/неизвестно"""
+    __tablename__ = 'incident_type'
+
+    id = Column(Integer, primary_key=True)
+    category = Column(Text, nullable=False)  # преднамеренный, случайный, естественный, неизвестно
+    name = Column(Text, nullable=False)  # конкретный тип
+    code = Column(Integer, nullable=False)
+
+    def __repr__(self):
+        return f"<IncidentType {self.category}: {self.name}>"
+
+
+class UndesirableEvent(db.Model):
+    """Недопустимые события"""
+    __tablename__ = 'undesirable_event'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+
+    def __repr__(self):
+        return f"<UndesirableEvent {self.name}>"
+
+
+class ProtagonistMotivation(db.Model):
+    """Мотивация причастных лиц"""
+    __tablename__ = 'protagonist_motivation'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)
+    code = Column(Integer, unique=True, nullable=False)
+
+    def __repr__(self):
+        return f"<ProtagonistMotivation {self.code}: {self.name}>"
+
+
+class Playbook(db.Model):
+    """Плейбуки для реагирования на инциденты"""
+    __tablename__ = 'playbook'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, nullable=False)
+    description = Column(Text)
+    category_id = Column(ForeignKey('incident_category.id'))
+    content = Column(Text)  # JSON или markdown с шагами
+    is_active = Column(Boolean, default=True)
+    created_by = Column(ForeignKey('user.id'))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    category = relationship('IncidentCategory')
+    creator = relationship('User')
+
+    def __repr__(self):
+        return f"<Playbook {self.name}>"
+
+
 class EvidenceTypes(db.Model):
     __tablename__ = 'evidence_type'
 

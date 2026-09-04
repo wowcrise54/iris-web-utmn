@@ -1528,8 +1528,7 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing Case objects.
 
     This schema defines the fields to include when serializing and deserializing Case objects.
-    It includes fields for the case name, description, SOC ID, customer ID, organizations, protagonists, tags, CSRF token,
-    initial date, and classification ID.
+    Includes incident management fields per Tyumen State University Position.
 
     """
     case_name: str = auto_field('name', required=True, validate=Length(min=2), allow_none=False)
@@ -1543,6 +1542,51 @@ class CaseSchema(ma.SQLAlchemyAutoSchema):
     classification_id: Optional[int] = auto_field('classification_id', required=False, allow_none=True)
     reviewer_id: Optional[int] = auto_field('reviewer_id', required=False, allow_none=True)
     severity_id: Optional[int] = auto_field('severity_id', required=False, allow_none=True)
+    
+    # Incident management fields (Tyumen State University Position)
+    incident_category_id: Optional[int] = auto_field('incident_category_id', required=False, allow_none=True)
+    system_type_id: Optional[int] = auto_field('system_type_id', required=False, allow_none=True)
+    importance_id: Optional[int] = auto_field('importance_id', required=False, allow_none=True)
+    priority_id: Optional[int] = auto_field('priority_id', required=False, allow_none=True)
+    incident_type_id: Optional[int] = auto_field('incident_type_id', required=False, allow_none=True)
+    undesirable_event_id: Optional[int] = auto_field('undesirable_event_id', required=False, allow_none=True)
+    is_undesirable_event: bool = auto_field('is_undesirable_event', required=False)
+    
+    # Response phase dates
+    investigation_start_date: Optional[datetime.datetime] = auto_field('investigation_start_date', required=False, allow_none=True)
+    investigation_end_date: Optional[datetime.datetime] = auto_field('investigation_end_date', required=False, allow_none=True)
+    impact_end_date: Optional[datetime.datetime] = auto_field('impact_end_date', required=False, allow_none=True)
+    investigation_completion_date: Optional[datetime.datetime] = auto_field('investigation_completion_date', required=False, allow_none=True)
+    
+    # Reporter info
+    reporter_name: Optional[str] = auto_field('reporter_name', required=False, allow_none=True)
+    reporter_phone: Optional[str] = auto_field('reporter_phone', required=False, allow_none=True)
+    reporter_email: Optional[str] = auto_field('reporter_email', required=False, allow_none=True)
+    reporter_location: Optional[str] = auto_field('reporter_location', required=False, allow_none=True)
+    reporter_organization: Optional[str] = auto_field('reporter_organization', required=False, allow_none=True)
+    
+    # Incident timing
+    incident_occurrence_date: Optional[datetime.datetime] = auto_field('incident_occurrence_date', required=False, allow_none=True)
+    incident_discovery_date: Optional[datetime.datetime] = auto_field('incident_discovery_date', required=False, allow_none=True)
+    incident_report_date: Optional[datetime.datetime] = auto_field('incident_report_date', required=False, allow_none=True)
+    incident_duration_seconds: Optional[int] = auto_field('incident_duration_seconds', required=False, allow_none=True)
+    
+    # Response tracking
+    response_phase: Optional[str] = auto_field('response_phase', required=False, allow_none=True)
+    playbook_id: Optional[int] = auto_field('playbook_id', required=False, allow_none=True)
+    
+    # Additional fields
+    affected_assets_info: Optional[str] = auto_field('affected_assets_info', required=False, allow_none=True)
+    business_impact_description: Optional[str] = auto_field('business_impact_description', required=False, allow_none=True)
+    vulnerability_info: Optional[str] = auto_field('vulnerability_info', required=False, allow_none=True)
+    perpetrator_description: Optional[str] = auto_field('perpetrator_description', required=False, allow_none=True)
+    corrective_measures_org: Optional[str] = auto_field('corrective_measures_org', required=False, allow_none=True)
+    corrective_measures_tech: Optional[str] = auto_field('corrective_measures_tech', required=False, allow_none=True)
+    investigation_report_path: Optional[str] = auto_field('investigation_report_path', required=False, allow_none=True)
+    investigator_name: Optional[str] = auto_field('investigator_name', required=False, allow_none=True)
+    motivation_id: Optional[int] = auto_field('motivation_id', required=False, allow_none=True)
+    resolution_actions_taken: Optional[str] = auto_field('resolution_actions_taken', required=False, allow_none=True)
+    resolution_actions_planned: Optional[str] = auto_field('resolution_actions_planned', required=False, allow_none=True)
 
     class Meta:
         model = Cases

@@ -1,0 +1,246 @@
+<!-- Modal for Incident Management Fields (per Tyumen State University Position) -->
+<div class="modal fade" id="incidentManagementModal" tabindex="-1" role="dialog" aria-labelledby="incidentManagementModalLabel">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="incidentManagementModalLabel">
+          <i class="fa-solid fa-shield-halved mr-2"></i>Карточка данных об инциденте
+        </h5>
+        <small class="text-muted ml-2">Положение о мониторинге событий и реагировании на инциденты ИБ</small>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      </div>
+      <div class="modal-body">
+        <form id="incidentManagementForm">
+
+          <!-- Phase tracker -->
+          <h6 class="text-muted mb-2">Этапы реагирования</h6>
+          <div id="incidentPhaseTracker" class="mb-3"></div>
+          <input type="hidden" id="response_phase" name="response_phase" value="">
+
+          <hr class="my-3">
+
+          <!-- Section 1: Classification -->
+          <h6 class="text-muted mb-3">Категоризация инцидента</h6>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="incident_category" class="form-label">Категория инцидента <span class="text-muted">(таблица 5.1)</span></label>
+              <select class="form-select" id="incident_category" name="incident_category_id">
+                <option value="">— Выберите категорию —</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label for="system_type" class="form-label">Тип системы</label>
+              <select class="form-select" id="system_type" name="system_type_id">
+                <option value="">— Выберите тип системы —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="importance" class="form-label">Важность инцидента</label>
+              <select class="form-select" id="importance" name="importance_id">
+                <option value="">Автоматически</option>
+              </select>
+              <small class="text-muted">Рассчитывается автоматически по таблице 5.1; может быть скорректирована экспертной оценкой</small>
+            </div>
+            <div class="col-md-6">
+              <label for="priority" class="form-label">Приоритет инцидента</label>
+              <select class="form-select" id="priority" name="priority_id">
+                <option value="">Автоматически</option>
+              </select>
+              <small class="text-muted">Рассчитывается автоматически по таблице 5.2 (1 — наивысший, 9 — низший)</small>
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="incident_type" class="form-label">Тип инцидента</label>
+              <select class="form-select" id="incident_type" name="incident_type_id">
+                <option value="">— Выберите тип —</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <div class="form-check mt-4">
+                <input class="form-check-input" type="checkbox" id="is_undesirable_event" name="is_undesirable_event">
+                <label class="form-check-label" for="is_undesirable_event">
+                  Недопустимое событие
+                </label>
+              </div>
+              <select class="form-select mt-2" id="undesirable_event" name="undesirable_event_id" disabled>
+                <option value="">Выберите тип недопустимого события…</option>
+              </select>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Section 2: Reporter Information -->
+          <h6 class="text-muted mb-3">Информация о сообщающем лице</h6>
+
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label for="reporter_name" class="form-label">ФИО</label>
+              <input type="text" class="form-control" id="reporter_name" name="reporter_name">
+            </div>
+            <div class="col-md-4">
+              <label for="reporter_phone" class="form-label">Телефон</label>
+              <input type="text" class="form-control" id="reporter_phone" name="reporter_phone">
+            </div>
+            <div class="col-md-4">
+              <label for="reporter_email" class="form-label">Эл. почта</label>
+              <input type="email" class="form-control" id="reporter_email" name="reporter_email">
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="reporter_location" class="form-label">Местоположение (корпус, кабинет)</label>
+              <input type="text" class="form-control" id="reporter_location" name="reporter_location">
+            </div>
+            <div class="col-md-6">
+              <label for="reporter_organization" class="form-label">Организация / подразделение</label>
+              <input type="text" class="form-control" id="reporter_organization" name="reporter_organization">
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Section 3: Incident Timing -->
+          <h6 class="text-muted mb-3">Хронология инцидента</h6>
+
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label for="incident_occurrence_date" class="form-label">Дата и время возникновения</label>
+              <input type="datetime-local" class="form-control" id="incident_occurrence_date" name="incident_occurrence_date">
+            </div>
+            <div class="col-md-4">
+              <label for="incident_discovery_date" class="form-label">Дата и время обнаружения</label>
+              <input type="datetime-local" class="form-control" id="incident_discovery_date" name="incident_discovery_date">
+            </div>
+            <div class="col-md-4">
+              <label for="incident_report_date" class="form-label">Дата и время сообщения</label>
+              <input type="datetime-local" class="form-control" id="incident_report_date" name="incident_report_date">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="incident_duration" class="form-label">Длительность инцидента (минуты)</label>
+            <input type="number" class="form-control" style="max-width: 160px" id="incident_duration" name="incident_duration" placeholder="В минутах">
+            <input type="hidden" id="incident_duration_seconds" name="incident_duration_seconds">
+            <small class="text-muted">Автоматически переводится в секунды</small>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Section 4: Investigation -->
+          <h6 class="text-muted mb-3">Расследование</h6>
+
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <label for="investigation_start_date" class="form-label">Начало расследования</label>
+              <input type="datetime-local" class="form-control" id="investigation_start_date" name="investigation_start_date">
+            </div>
+            <div class="col-md-4">
+              <label for="investigation_end_date" class="form-label">Окончание воздействия</label>
+              <input type="datetime-local" class="form-control" id="investigation_end_date" name="investigation_end_date">
+            </div>
+            <div class="col-md-4">
+              <label for="investigation_completion_date" class="form-label">Завершение расследования</label>
+              <input type="datetime-local" class="form-control" id="investigation_completion_date" name="investigation_completion_date">
+            </div>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="investigator_name" class="form-label">ФИО лица (лиц), проводившего расследование</label>
+              <input type="text" class="form-control" id="investigator_name" name="investigator_name">
+            </div>
+            <div class="col-md-6">
+              <label for="motivation" class="form-label">Мотивация причастных лиц</label>
+              <select class="form-select" id="motivation" name="motivation_id">
+                <option value="">— Не установлено —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="investigation_report_path" class="form-label">Ссылка и место хранения отчёта о расследовании</label>
+            <input type="text" class="form-control" id="investigation_report_path" name="investigation_report_path" placeholder="Путь к файлу или URL">
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Section 5: Resolution -->
+          <h6 class="text-muted mb-3">Разрешение инцидента</h6>
+
+          <div class="mb-3">
+            <label for="resolution_actions_taken" class="form-label">Действия, предпринятые для разрешения инцидента</label>
+            <textarea class="form-control" id="resolution_actions_taken" name="resolution_actions_taken" rows="2"
+                      placeholder="Например: «подручными средствами», «внутреннее расследование», «внешнее расследование с привлечением…»"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="resolution_actions_planned" class="form-label">Действия, запланированные для разрешения инцидента</label>
+            <textarea class="form-control" id="resolution_actions_planned" name="resolution_actions_planned" rows="2"></textarea>
+          </div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="corrective_measures_org" class="form-label">Организационные меры</label>
+              <textarea class="form-control" id="corrective_measures_org" name="corrective_measures_org" rows="3"
+                        placeholder="Меры по снижению рисков, предотвращению подобных нарушений в будущем"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label for="corrective_measures_tech" class="form-label">Технические меры</label>
+              <textarea class="form-control" id="corrective_measures_tech" name="corrective_measures_tech" rows="3"></textarea>
+            </div>
+          </div>
+
+          <hr class="my-3">
+
+          <!-- Section 6: Additional Information -->
+          <h6 class="text-muted mb-3">Дополнительная информация</h6>
+
+          <div class="mb-3">
+            <label for="affected_assets_info" class="form-label">Поражённые активы</label>
+            <textarea class="form-control" id="affected_assets_info" name="affected_assets_info" rows="2"
+                      placeholder="Имя, IP-адрес, ПО (наименование и версия), аппаратура, файлы…"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="business_impact_description" class="form-label">Влияние на бизнес-процессы</label>
+            <textarea class="form-control" id="business_impact_description" name="business_impact_description" rows="2"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="vulnerability_info" class="form-label">Идентифицированные уязвимости</label>
+            <textarea class="form-control" id="vulnerability_info" name="vulnerability_info" rows="2"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="perpetrator_description" class="form-label">Описание нарушителя</label>
+            <textarea class="form-control" id="perpetrator_description" name="perpetrator_description" rows="2"></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label for="playbook" class="form-label">Плейбук</label>
+            <select class="form-select" id="playbook" name="playbook_id">
+              <option value="">— Плейбук не назначен —</option>
+            </select>
+          </div>
+
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Закрыть</button>
+        <button type="button" class="btn btn-outline-primary mr-2" id="exportIncidentPdf"
+                title="Сформировать PDF с заполненной карточкой инцидента (Приложение № 4)">
+          <i class="fa-solid fa-file-pdf mr-1"></i>Экспорт в PDF
+        </button>
+        <button type="button" class="btn btn-primary" id="saveIncidentData">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>

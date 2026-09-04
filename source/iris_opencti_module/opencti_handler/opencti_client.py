@@ -387,18 +387,28 @@ class OpenCTIClient:
     def _execute_query(self, query: str, variables: dict = None) -> dict:
         """Execute GraphQL query with retry logic and exponential backoff"""
         last_error = None
-        
+
         for attempt in range(self.retry_attempts):
             try:
                 return self._make_request(query, variables)
             except OpenCTIClientError as e:
                 last_error = e
-                
-                # Don't retry on authentication or validation errors
-                if "unauthorized" in str(e).lower() or "validation" in str(e).lower():
-                    logger.warning(f"Authentication/validation error, not retrying: {e}")
+
+                # Don't retry on errors that will not heal themselves:
+                # authentication/authorization failures, GraphQL validation
+                # errors, and HTTP 403. (403 messages read "Forbidden", which
+                # the old "unauthorized" check missed, so auth-403s were
+                # pointlessly retried with backoff.)
+                message = str(e).lower()
+                if (
+                    "unauthorized" in message
+                    or "forbidden" in message
+                    or "validation" in message
+                    or "graphql_error" in message
+                ):
+                    logger.warning(f"Non-retryable error, not retrying: {e}")
                     raise
-                
+
                 if attempt < self.retry_attempts - 1:
                     delay = self.retry_delay * (2 ** attempt)  # Exponential backoff
                     logger.warning(
@@ -409,7 +419,7 @@ class OpenCTIClient:
                 else:
                     logger.error(f"All {self.retry_attempts} attempts failed: {e}")
                     raise
-        
+
         raise last_error
 
     def _make_request(self, query: str, variables: dict = None) -> dict:
@@ -433,8 +443,12 @@ class OpenCTIClient:
         except Exception as exc:
             raise OpenCTIClientError(str(exc)) from exc
 
+        # GraphQL returns HTTP 200 with an "errors" array for schema/argument
+        # problems. Mark the error so the retry loop can skip retrying a
+        # deterministic query failure (otherwise it burns the full retry
+        # budget on every call).
         if payload.get("errors"):
-            raise OpenCTIClientError(str(payload["errors"]))
+            raise OpenCTIClientError(f"graphql_error: {payload['errors']}")
 
         return payload.get("data") or {}
 
@@ -459,12 +473,15 @@ class OpenCTIClient:
             Results are cached to improve performance for repeated queries.
             Cache key includes the query value and type for proper deduplication.
         """
-        # Check cache first
-        cached = self.cache.get(value, "indicator")
+        # Check cache first. The key includes the requested result count so a
+        # query for first=5 is not served a cached first=20 payload (and vice
+        # versa) from a different call for the same IOC value.
+        cache_type = f"indicator:{first}"
+        cached = self.cache.get(value, cache_type)
         if cached:
             logger.info(f"Cache hit for IOC: {value}")
             return cached
-        
+
         # Execute query with retry logic
         variables = {"search": value, "first": first}
         try:
@@ -472,7 +489,12 @@ class OpenCTIClient:
         except OpenCTIClientError as exc:
             if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
                 raise
-            
+
+            # Schema changed (e.g. OpenCTI 6 vs 7): drop every cached result
+            # for this value (all query_type/first variants) so a stale,
+            # differently-shaped payload is not served until TTL expires.
+            self.cache.invalidate_value(value)
+
             # Try fallback queries
             result = None
             for query in (self._LEGACY_SEARCH_QUERY, self._MINIMAL_SEARCH_QUERY):
@@ -482,15 +504,15 @@ class OpenCTIClient:
                 except OpenCTIClientError as exc:
                     if "Cannot query field" not in str(exc) and "Unknown argument" not in str(exc):
                         raise
-            
+
             # Last resort: bare query
             if result is None:
                 result = self.query(self._BARE_SEARCH_QUERY, variables)
-        
+
         # Cache the result
-        self.cache.set(value, result, "indicator")
+        self.cache.set(value, result, cache_type)
         logger.debug(f"Cached result for IOC: {value}")
-        
+
         return result
 
     def get_related_entities(self, object_id, first=20):
@@ -508,6 +530,13 @@ class OpenCTIClient:
             return self.query(self._SIGHTINGS_QUERY, {"ids": [object_id], "first": first})
         except OpenCTIClientError as exc:
             if "Cannot query field" in str(exc) or "Unknown argument" in str(exc):
+                # The sightings query is not supported by this OpenCTI version.
+                # Log it so the degradation is visible in the logs instead of
+                # silently producing zero sightings for every IOC.
+                logger.warning(
+                    f"Sightings query not supported by this OpenCTI schema "
+                    f"(object {object_id}); returning empty sightings: {exc}"
+                )
                 return {"stixSightingRelationships": {"edges": []}}
             raise
 

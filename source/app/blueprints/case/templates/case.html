@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="/static/assets/css/select2.css">
 <link rel="stylesheet" href="/static/assets/css/bootstrap-multiselect.min.css">
 <link rel="stylesheet" href="/static/assets/css/bootstrap-select.min.css">
+<link rel="stylesheet" href="/static/assets/css/incident-management.css">
 {% endblock stylesheets %}
 {% block content %}
 {% if current_user.is_authenticated %}
@@ -55,6 +56,28 @@
                                 </div>
                             </div>
                              </div>
+                        </div>
+                    </div>
+                    <div class="row mt-1 mb--2 incident-header-row">
+                        <div class="ml-2 col">
+                            <div class="row ml-1">
+                                {% set incident_phase_names = {'registration': 'Регистрация', 'containment': 'Сдерживание', 'eradication': 'Ликвидация', 'recovery': 'Восстановление', 'closure': 'Подведение итогов'} %}
+                                {% if case.response_phase == 'false_positive' %}
+                                <h5 title="Инцидент признан ложноположительным"><a class="incident-false-positive" data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}"><i class="fa-solid fa-circle-xmark mr-1"></i>Ложноположительный</a></h5>
+                                {% elif case.response_phase %}
+                                <h5 title="Текущий этап реагирования на инцидент"><span class="btn-rounded badge-pill hidden-caret btn-sm btn-light" data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}" style="cursor:pointer;"><i class="fa-solid fa-person-shelter mr-1"></i> {{ incident_phase_names.get(case.response_phase, case.response_phase) }}</span></h5>
+                                {% endif %}
+                                {% if case.priority %}
+                                <h5 title="Приоритет инцидента по таблице 5.2 (1 — наивысший)"><span class="incident-badge incident-priority-{{ case.priority.level }}" data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}"><i class="fa-solid fa-gauge-high mr-1"></i>P{{ case.priority.level }}</span></h5>
+                                {% endif %}
+                                {% if case.importance %}
+                                {% set importance_class = {'1': 'incident-importance-high', '2': 'incident-importance-medium', '3': 'incident-importance-low'} %}
+                                <h5 title="Важность инцидента по таблице 5.1"><span class="incident-badge {{ importance_class.get(case.importance.code|string, '') }}" data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}">{{ case.importance.name }}</span></h5>
+                                {% endif %}
+                                {% if case.incident_category %}
+                                <h5 title="Категория инцидента по Положению"><span class="btn-rounded badge-pill hidden-caret btn-sm btn-light" data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}" style="cursor:pointer;"><i class="fa-solid fa-tags mr-1"></i>К{{ case.incident_category.code }}</span></h5>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                     <div class="row mt-2 mb--2">
@@ -288,6 +311,7 @@
                     </div><!-- /.modal-content -->
                 </div><!-- /.modal-dialog -->
             </div>
+            {% include 'modals/incident_management.html' %}
             <div class="modal bg-shadow-gradient" tabindex="-1" role="dialog" id="modal_ac_additional" data-backdrop="true">
             </div>
             <div class="modal bg-shadow-gradient" tabindex="-1" role="dialog" id="modal_case_review" data-backdrop="static" data-keyboard="false">
@@ -335,6 +359,7 @@
 <script src="/static/assets/js/iris/case.summary.js"></script>
 <script src="/static/assets/js/plugin/select/bootstrap-select.min.js"></script>
 <script src="/static/assets/js/plugin/select/bootstrap-multiselect.min.js"></script>
+<script src="/static/assets/js/iris/case.incident.js"></script>
 
 <script>
     $('#modal_select_report').selectpicker();

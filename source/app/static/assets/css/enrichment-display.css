@@ -1,0 +1,262 @@
+/**
+ * Minimalist UI - OpenCTI Enrichment Display Styles
+ * Clean, card-based layout for enrichment data
+ */
+
+/* Enrichment Container */
+.enrichment-container {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+/* Base Card Styles */
+.card.enrichment-progress,
+.card.enrichment-recommendation,
+.card.enrichment-matched,
+.card.enrichment-errors {
+  background: var(--card-background);
+  border-radius: var(--card-border-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  transition: box-shadow var(--transition-base);
+}
+
+.card.enrichment-progress:hover,
+.card.enrichment-recommendation:hover,
+.card.enrichment-matched:hover,
+.card.enrichment-errors:hover {
+  box-shadow: var(--card-hover-shadow);
+}
+
+/* Card Header / Body / Title
+   Scoped to .enrichment-container: bare .card-header/.card-body/.card-title
+   rules here previously leaked onto every live card in the app (including
+   the alert card, which uses .card-body). Only the enrichment container
+   should pick these up. */
+.enrichment-container .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-neutral-50);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.enrichment-container .card-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* Card Body */
+.enrichment-container .card-body {
+  padding: var(--space-4);
+}
+
+/* Progress Stats */
+.progress-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.stat-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-value {
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+  color: var(--color-primary-600);
+}
+
+/* Progress Meta */
+.progress-meta {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Recommendation Section */
+.reasons-section,
+.ioc-section,
+.risk-section {
+  margin-bottom: var(--space-4);
+}
+
+.reasons-section:last-child,
+.ioc-section:last-child,
+.risk-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-2);
+}
+
+/* Reasons List */
+.reasons-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.reason-item {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-neutral-50);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  border-left: 3px solid var(--color-primary-600);
+}
+
+.reason-item:last-child {
+  margin-bottom: 0;
+}
+
+/* IOC Tags */
+.ioc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Risk Meter */
+.risk-meter {
+  position: relative;
+  height: 32px;
+  background: var(--color-neutral-100);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.risk-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-success-500), var(--color-warning-500), var(--color-danger-500));
+  border-radius: var(--radius-full);
+  transition: width var(--transition-base);
+}
+
+.risk-value {
+  position: absolute;
+  right: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-primary);
+}
+
+/* Matched Data */
+.matched-data {
+  background: var(--color-neutral-900);
+  color: var(--color-neutral-50);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: var(--text-xs);
+  overflow-x: auto;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Errors List */
+.errors-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.error-item {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-danger-50);
+  border-left: 3px solid var(--color-danger-600);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-danger-700);
+}
+
+.error-item:last-child {
+  margin-bottom: 0;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: var(--space-8) var(--space-4);
+  background: var(--color-neutral-50);
+  border-radius: var(--card-border-radius);
+  border: 2px dashed var(--color-border);
+}
+
+.empty-state p {
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .progress-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+  
+  .risk-meter {
+    height: 28px;
+  }
+  
+  .risk-value {
+    font-size: var(--text-xs);
+  }
+}
+
+/* Dark Mode */
+body.dark-mode .card.enrichment-progress,
+body.dark-mode .card.enrichment-recommendation,
+body.dark-mode .card.enrichment-matched,
+body.dark-mode .card.enrichment-errors {
+  background: var(--color-neutral-800);
+}
+
+body.dark-mode .card-header {
+  background: var(--color-neutral-700);
+  border-bottom-color: var(--color-neutral-600);
+}
+
+body.dark-mode .matched-data {
+  background: var(--color-neutral-900);
+  color: var(--color-neutral-100);
+}
+
+body.dark-mode .error-item {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--color-danger-400);
+}
+
+body.dark-mode .reason-item {
+  background: var(--color-neutral-700);
+}

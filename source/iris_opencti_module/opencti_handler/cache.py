@@ -39,6 +39,11 @@ class OpenCTICache:
         self.ttl = ttl
         self._cache = OrderedDict()
         self._timestamps = {}
+        # query_value -> set of cache keys. Cache keys are truncated hashes,
+        # so without this index a value's entries cannot be found again (the
+        # schema-fallback invalidation in opencti_client needs to drop every
+        # query_type variant of a value, not just one).
+        self._value_keys = {}
         self._hits = 0
         self._misses = 0
         
@@ -103,6 +108,7 @@ class OpenCTICache:
             self._cache.move_to_end(key)
             self._cache[key] = result
             self._timestamps[key] = time.time()
+            self._value_keys.setdefault(query_value, set()).add(key)
             logger.debug(f"Updated cache entry for key: {key}")
             return
         
@@ -111,10 +117,19 @@ class OpenCTICache:
             oldest = next(iter(self._cache))
             del self._cache[oldest]
             del self._timestamps[oldest]
+            # Remove the evicted key from the value->keys index too, and drop
+            # the value's set once it's empty - otherwise _value_keys grows
+            # without bound (one empty set per distinct IOC ever queried).
+            for value, value_keys in list(self._value_keys.items()):
+                if oldest in value_keys:
+                    value_keys.discard(oldest)
+                    if not value_keys:
+                        del self._value_keys[value]
             logger.debug(f"Evicted oldest entry: {oldest}")
             
         self._cache[key] = result
         self._timestamps[key] = time.time()
+        self._value_keys.setdefault(query_value, set()).add(key)
         logger.debug(f"Stored cache entry for key: {key}")
         
     def delete(self, query_value: str, query_type: str = None):
@@ -122,19 +137,39 @@ class OpenCTICache:
         
         Args:
             query_value: The IOC value to remove from cache
-            query_type: Optional type of query for key generation
+            query_type: Optional type of query to remove
         """
         key = self._get_key(query_value, query_type)
         if key in self._cache:
             del self._cache[key]
             del self._timestamps[key]
+            value_keys = self._value_keys.get(query_value)
+            if value_keys is not None:
+                value_keys.discard(key)
+                if not value_keys:
+                    self._value_keys.pop(query_value, None)
             logger.debug(f"Deleted cache entry for key: {key}")
+        
+    def invalidate_value(self, query_value: str) -> int:
+        """Drop every cached entry for ``query_value`` across all query types.
+
+        Used by the OpenCTI client on schema drift (OpenCTI 6 vs 7): payloads
+        cached under other query_type/first variants for the same value would
+        otherwise keep being served in the old shape until TTL expires.
+        Returns the number of entries removed.
+        """
+        keys = list(self._value_keys.pop(query_value, ()))
+        for key in keys:
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)
+        return len(keys)
         
     def clear(self):
         """Clear entire cache."""
         logger.info("Clearing entire OpenCTI cache")
         self._cache.clear()
         self._timestamps.clear()
+        self._value_keys.clear()
         self._hits = 0
         self._misses = 0
         

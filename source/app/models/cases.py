@@ -70,6 +70,51 @@ class Cases(db.Model):
     review_status_id = Column(ForeignKey('review_status.id'), nullable=True)
     severity_id = Column(ForeignKey('severities.severity_id'), nullable=True)
 
+    # INCIDENT MANAGEMENT FIELDS (per ТюмГУ Положение)
+    incident_category_id = Column(ForeignKey('incident_category.id'), nullable=True)
+    system_type_id = Column(ForeignKey('system_type.id'), nullable=True)
+    importance_id = Column(ForeignKey('incident_importance.id'), nullable=True)
+    priority_id = Column(ForeignKey('incident_priority.id'), nullable=True)
+    incident_type_id = Column(ForeignKey('incident_type.id'), nullable=True)
+    undesirable_event_id = Column(ForeignKey('undesirable_event.id'), nullable=True)
+    is_undesirable_event = Column(Boolean, default=False)  # Да/Нет недопустимое событие
+    
+    # Dates for incident response phases
+    investigation_start_date = Column(DateTime, nullable=True)
+    investigation_end_date = Column(DateTime, nullable=True)
+    impact_end_date = Column(DateTime, nullable=True)
+    investigation_completion_date = Column(DateTime, nullable=True)
+    
+    # Reporter information
+    reporter_name = Column(Text)
+    reporter_phone = Column(Text)
+    reporter_email = Column(Text)
+    reporter_location = Column(Text)
+    reporter_organization = Column(Text)
+    
+    # Incident timing
+    incident_occurrence_date = Column(DateTime, nullable=True)
+    incident_discovery_date = Column(DateTime, nullable=True)
+    incident_report_date = Column(DateTime, nullable=True)
+    incident_duration_seconds = Column(Integer, nullable=True)
+    
+    # Response tracking
+    response_phase = Column(Text, default='registration')  # registration, containment, eradication, recovery, closure, false_positive
+    playbook_id = Column(ForeignKey('playbook.id'), nullable=True)
+
+    # Additional fields
+    affected_assets_info = Column(Text)
+    business_impact_description = Column(Text)
+    vulnerability_info = Column(Text)
+    perpetrator_description = Column(Text)
+    corrective_measures_org = Column(Text)  # организационные меры
+    corrective_measures_tech = Column(Text)  # технические меры
+    investigation_report_path = Column(Text)  # ссылка и место хранения отчета о расследовании
+    investigator_name = Column(Text)  # ФИО лица (лиц), проводившего расследование
+    motivation_id = Column(ForeignKey('protagonist_motivation.id'), nullable=True)
+    resolution_actions_taken = Column(Text)  # действия, предпринятые для разрешения инцидента
+    resolution_actions_planned = Column(Text)  # действия, запланированные для разрешения инцидента
+
     modification_history = Column(JSON)
 
     client = relationship('Client')
@@ -78,6 +123,14 @@ class Cases(db.Model):
     classification = relationship('CaseClassification')
     reviewer = relationship('User', foreign_keys=[reviewer_id])
     severity = relationship('Severity')
+    incident_category = relationship('IncidentCategory')
+    system_type = relationship('SystemType')
+    importance = relationship('IncidentImportance')
+    priority = relationship('IncidentPriority')
+    incident_type = relationship('IncidentType')
+    undesirable_event = relationship('UndesirableEvent')
+    playbook = relationship('Playbook')
+    motivation = relationship('ProtagonistMotivation')
 
     alerts = relationship('Alert', secondary="alert_case_association", back_populates='cases', viewonly=True)
 

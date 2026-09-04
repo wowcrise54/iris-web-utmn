@@ -24,6 +24,13 @@
                                                                                     <span aria-hidden="true"><i class="fa-solid fa-upload mr-1"></i>Pipelines</span>
                                                 </button>
                                         </li>
+                                        <li class="nav-item">
+                                                <button class="btn btn-sm btn-light float-left ml-2" id="incident_card_btn"
+                                                        data-toggle="modal" data-target="#incidentManagementModal" data-case-id="{{ case.case_id }}"
+                                                        title="Карточка данных об инциденте (Положение о мониторинге событий и реагировании на инциденты ИБ)">
+                                                    <span aria-hidden="true"><i class="fa-solid fa-shield-halved mr-1"></i>Incident card</span>
+                                                </button>
+                                        </li>
                                         <li class="nav-item ml-auto">
                                                                                     {% if case.review_status.status_name == "Not reviewed" or not case.review_status %}
                                                 <button class="btn btn-sm btn-light float-left ml-2" id="request_review">

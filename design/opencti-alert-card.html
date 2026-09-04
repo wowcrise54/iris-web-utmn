@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Карточка алёрта — OpenCTI дизайн (P0+P1)</title>
+<style>
+  /* === Токены из design-tokens.css репо === */
+  :root {
+    --color-primary-600:#2563eb; --color-primary-500:#3b82f6;
+    --color-success-500:#22c55e; --color-warning-500:#f59e0b;
+    --color-danger-500:#ef4444;
+    --color-neutral-50:#f9fafb; --color-neutral-100:#f3f4f6; --color-neutral-200:#e5e7eb;
+    --color-neutral-300:#d1d5db; --color-neutral-500:#6b7280; --color-neutral-700:#374151;
+    --color-neutral-800:#1f2937; --color-neutral-900:#111827;
+    --text-xs:.75rem; --text-sm:.875rem; --text-base:1rem;
+    --font-weight-medium:500; --font-weight-semibold:600; --font-weight-bold:700;
+    --radius-xl:.75rem; --radius-2xl:1rem; --radius-full:9999px;
+    --shadow-sm:0 1px 3px 0 rgba(0,0,0,.1),0 1px 2px -1px rgba(0,0,0,.1);
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:20px;
+    background:#eef1f5; /* фон страницы IRIS */
+    font-family:'Inter','Segoe UI',Roboto,sans-serif;
+    color:var(--color-neutral-900);
+  }
+  .toolbar { display:flex; gap:16px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .seg { display:inline-flex; border:1px solid var(--color-neutral-300); border-radius:8px; overflow:hidden; background:#fff; }
+  .seg button { border:0; background:transparent; padding:7px 14px; font-size:13px; cursor:pointer; color:#374151; font-family:inherit; }
+  .seg button.on { background:var(--color-neutral-800); color:#fff; }
+  .toolbar .lbl { font-size:12px; color:var(--color-neutral-500); text-transform:uppercase; letter-spacing:.04em; }
+
+  /* === Карточка алёрта (атлас-стили из репо) === */
+  .alert-card {
+    position:relative;
+    background:#fff;
+    margin-bottom:10px;
+    box-shadow:var(--shadow-sm);
+    border:1px solid var(--color-neutral-200);
+  }
+  .alert-card.before { border-radius:35px; }   /* было */
+  .alert-card.after  { border-radius:var(--radius-2xl); } /* стало: --radius-2xl (16px) */
+  .card-body { padding:18px 22px; }
+
+  .avatar {
+    width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+    color:#fff;font-size:15px;flex:none;
+  }
+  .bg-high { background:#FFAD46; color:#5b3a00; }
+  .alert-title { font-size:15px; font-weight:var(--font-weight-bold); text-transform:uppercase; margin:0; cursor:pointer; color:#212529; }
+  .id-muted { font-size:12px; color:var(--color-neutral-500); }
+
+  /* Bootstrap-пилюли (цвета бустрап 4 из атлантиса) */
+  .badge { display:inline-block; padding:4px 10px; font-size:11px; font-weight:600; border-radius:var(--radius-full); line-height:1.2; vertical-align:middle; white-space:nowrap; }
+  .badge-light{ background:#f1f3f5; color:#495057; }
+  .badge-secondary{ background:#6c757d; color:#fff; }
+  .badge-danger{ background:#dc3545; color:#fff; }
+  .badge-dark{ background:#343a40; color:#fff; }
+  .badge-success{ background:#28a745; color:#fff; }
+  .badge-info{ background:#17a2b8; color:#fff; }
+  .badge-warning{ background:#ffc107; color:#212529; }
+
+  .hdr { display:flex; gap:12px; align-items:flex-start; }
+  .hdr .body { flex:1; }
+  .title-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .actions-right { display:flex; gap:6px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+  .icon-btn { border:0; background:transparent; color:#868e96; cursor:pointer; font-size:15px; padding:4px 6px; }
+  .btn { border:1px solid transparent; border-radius:6px; padding:5px 12px; font-size:12.5px; cursor:pointer; font-family:inherit; font-weight:500; }
+  .btn-sm { padding:4px 10px; font-size:12px; }
+  .btn-alert-primary{ background:#445169; color:#fff; }
+  .btn-alert-danger{ background:#E9727D; color:#fff; }
+  .btn-outline-dark{ background:#fff; color:#343a40; border-color:#343a40; }
+  .btn-outline-primary{ background:#fff; color:#007bff; border-color:#007bff; }
+  .btn-info{ background:#17a2b8; color:#fff; }
+  .btn-dark{ background:#343a40; color:#fff; }
+  .btn-warning{ background:#ffc107; color:#212529; }
+  .desc { color:#495057; font-size:13.5px; margin:12px 0 0; line-height:1.55; }
+
+  .separator { border-top:1px solid var(--color-neutral-200); margin:16px 0; }
+  .sec-title { font-size:15px; font-weight:var(--font-weight-bold); margin:0 0 10px; }
+
+  /* === OpenCTI-стрип === */
+  .opencti-strip { border-radius:8px; padding:10px 14px; margin-bottom:14px; background:#fff; }
+  /* BEFORE: полная синяя рамка (border-info бустрап) */
+  .opencti-strip.before { border:1px solid #17a2b8; }
+  /* AFTER: без рамки, тень + левой рейл */
+  .opencti-strip.after { border:0; box-shadow:var(--shadow-sm); border-left-width:4px; border-left-style:solid; }
+  .strip-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .strip-title { font-weight:var(--font-weight-bold); font-size:13.5px; display:flex; align-items:center; gap:7px; }
+  .strip-controls { display:flex; gap:6px; margin-top:9px; flex-wrap:wrap; align-items:center; }
+  .stale-note { background:#fff3cd; color:#856404; font-size:11.5px; border-radius:4px; padding:3px 8px; }
+
+  .progress { height:18px; background:var(--color-neutral-200); border-radius:var(--radius-full); overflow:hidden; margin-top:8px; }
+  .progress-bar { height:100%; background:#007bff; color:#fff; font-size:11px; line-height:18px; text-align:center;
+    background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+    background-size:1rem 1rem; animation:pb 1s linear infinite; }
+  @keyframes pb { from{background-position:1rem 0} to{background-position:0 0} }
+  .cur-ioc { font-size:11.5px; color:var(--color-neutral-500); margin-top:4px; }
+
+  /* === Таблица IOC === */
+  table.ioc { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.ioc th { text-align:left; color:var(--color-neutral-500); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.03em; padding:6px 8px; border-bottom:1px solid var(--color-neutral-200); }
+  table.ioc td { padding:7px 8px; border-bottom:1px solid var(--color-neutral-100); vertical-align:middle; }
+  .ioc-val { font-family:'JetBrains Mono',Consolas,monospace; font-size:12px; }
+  .enr-cell { display:flex; flex-direction:column; gap:3px; }
+  .enr-date { font-size:10.5px; color:var(--color-neutral-500); }
+  .more-btn { border:0; background:transparent; color:#868e96; cursor:pointer; font-size:13px; padding:2px 4px; }
+
+  .spinner { display:inline-block; width:11px; height:11px; border:2px solid rgba(255,255,255,.4); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .notes { margin-top:16px; font-size:12px; color:#495057; background:#fff; border:1px solid var(--color-neutral-200); border-radius:10px; padding:12px 16px; line-height:1.6; }
+  .notes b { color:#212529; }
+  .notes .ch { color:#b91c1c; font-weight:600; }
+  .notes .add { color:#15803d; font-weight:600; }
+  .tag-old { background:#fee2e2; color:#991b1b; border-radius:4px; padding:1px 6px; font-size:11px; font-weight:600; }
+  .tag-new { background:#dcfce7; color:#166534; border-radius:4px; padding:1px 6px; font-size:11px; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="lbl">Вариант</span>
+    <div class="seg" id="segVariant">
+      <button data-v="before">До (было)</button>
+      <button data-v="after" class="on">После (P0+P1)</button>
+    </div>
+    <span class="lbl">Состояние</span>
+    <div class="seg" id="segState">
+      <button data-s="match" class="on">Совпадения 2/5</button>
+      <button data-s="clean">Чисто</button>
+      <button data-s="running">Выполняется</button>
+    </div>
+  </div>
+
+  <div id="cardHost"></div>
+
+  <div class="notes">
+    <b>Что изменилось (P0+P1):</b>
+    <span class="ch">1</span> зелёный «Найдено/Совпадение» → <b>красный</b> (матч по IOC = подтверждённая угроза, а не «всё ок»); ошибки → тёмные.
+    <span class="ch">2</span> главный счётчик поднял в заголовок — <b>виден без раскрытия карточки</b> (раньше только под collapse).
+    <span class="ch">3</span> синяя рамка `border-info` → нейтральная карточка + <b>левый рейл</b> (красный при совпадениях, серый — чисто).
+    <span class="ch">4</span> radius 35px → <b>16px</b> (токен `--radius-2xl`).
+    <span class="ch">5</span> «Применить [severity] (N)» (янтарный, без пояснения) → <b>«Применить рекомендацию»</b> (тёмная; swal-подтверждение уже было).
+    <span class="ch">6</span> CSS enrichment-макро скоуплен под `.enrichment-container` (больше не перекрашивает живые карточки).
+  </div>
+
+<script>
+const state = { variant:'after', s:'match' };
+
+function iocTable(variant) {
+  // enrichment-клетки: DO = зелёный match, ПОСЛЕ = красный match, тёмный error
+  const cell = (status, count, date) => {
+    if (!status) return '';
+    let cls;
+    if (status === 'match') cls = variant === 'after' ? 'badge-danger' : 'badge-success';
+    else if (status === 'error') cls = variant === 'after' ? 'badge-dark' : 'badge-danger';
+    else cls = 'badge-secondary';
+    const label = status === 'match' ? 'Совпадение' : status === 'error' ? 'Ошибка' : 'Не найдено';
+    return `<div class="enr-cell">
+      <span class="badge ${cls}">${label}</span>
+      ${count ? `<span class="badge badge-light">${count}</span>` : ''}
+      ${date ? `<span class="enr-date">${date}</span>` : ''}
+      <button class="more-btn">Подробнее ▾</button>
+    </div>`;
+  };
+  return `<table class="ioc">
+    <thead><tr><th>Value</th><th>Тип</th><th>Enrichment</th></tr></thead>
+    <tbody>
+      <tr><td class="ioc-val">203.0.113.42</td><td>IPv4</td><td>${cell('match',2,'04.09 08:12')}</td></tr>
+      <tr><td class="ioc-val">c2-beacon.example.net</td><td>Domain</td><td>${cell('no_match',0,'04.09 08:12')}</td></tr>
+      <tr><td class="ioc-val">a1b2c3…9f0e (sha256)</td><td>SHA256</td><td>${cell('error',0,'')}&nbsp;</td></tr>
+      <tr><td class="ioc-val">10.40.7.21</td><td>IPv4</td><td>${cell('no_match',0,'04.09 08:11')}</td></tr>
+    </tbody>
+  </table>`;
+}
+
+function headerBadge(s, variant) {
+  if (variant === 'before') return '';
+  if (s === 'running') return `<span class="badge badge-info" title="OpenCTI-обогащение выполняется"><span class="spinner" style="vertical-align:-1px"></span>&nbsp;OpenCTI…</span>`;
+  if (s === 'clean') return `<span class="badge badge-light" title="Все IOC проверено, точных совпадений нет">✓ OpenCTI чисто</span>`;
+  return `<span class="badge badge-danger" title="2 из 5 IOC подтверждено в OpenCTI">🛈 OpenCTI: 2 из 5</span>`;
+}
+
+function strip(s, variant) {
+  const after = variant === 'after';
+  if (s === 'running') {
+    return `<div class="opencti-strip ${variant}" style="${after ? 'border-left-color:#17a2b8' : ''}">
+      <div class="strip-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5 10 16M17 7.5 14 16M7.5 6h9"/></svg>OpenCTI</div>
+      <div class="progress"><div class="progress-bar" style="width:60%">3/5</div></div>
+      <div class="cur-ioc">Сейчас: a1b2c3…9f0e (sha256)</div>
+    </div>`;
+  }
+  const match = s === 'match';
+  const rail = after ? (match ? 'var(--color-danger-500)' : 'var(--color-neutral-300)') : '';
+  const style = after ? `border-left-color:${rail}` : '';
+  const badges = match
+    ? (after
+        ? `<span class="badge badge-light">Проверено: 5</span><span class="badge badge-danger">Совпадения: 2</span><span class="badge badge-secondary">Без совпадений: 3</span>`
+        : `<span class="badge badge-light">Проверено: 5</span><span class="badge badge-success">Найдено: 2</span><span class="badge badge-secondary">Без совпадений: 3</span>`)
+    : (after
+        ? `<span class="badge badge-light">Проверено: 5</span><span class="badge badge-light">Совпадений: 0</span><span class="badge badge-secondary">Без совпадений: 5</span>`
+        : `<span class="badge badge-light">Проверено: 5</span><span class="badge badge-success">Найдено: 0</span><span class="badge badge-secondary">Без совпадений: 5</span>`);
+  const controls = match
+    ? `<button class="btn btn-sm btn-outline-primary">⬡ Построить граф OpenCTI</button>
+       <button class="btn btn-sm btn-info">Открыть граф</button>
+       <button class="btn btn-sm btn-outline-danger">Повторить ошибки (1)</button>
+       ${after ? `<button class="btn btn-sm btn-dark">Применить рекомендацию</button>`
+               : `<button class="btn btn-sm btn-warning">Применить High (78)</button>`}`
+    : `<button class="btn btn-sm btn-outline-primary">⬡ Построить граф OpenCTI</button>`;
+  return `<div class="opencti-strip ${variant}" style="${style}">
+    <div class="strip-head">
+      <span class="strip-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7 7.5 10 16M17 7.5 14 16M7.5 6h9"/></svg>OpenCTI</span>
+      ${badges}
+    </div>
+    <div class="strip-controls">${controls}</div>
+  </div>`;
+}
+
+function render() {
+  const { variant, s } = state;
+  const after = variant === 'after';
+  const card = `
+  <div class="alert-card ${variant}">
+    <div class="card-body">
+      <div class="hdr">
+        <div class="avatar bg-high">🔥</div>
+        <div class="body">
+          <div class="title-row">
+            <h6 class="alert-title">C2 beacon detected from workstation FIN-WS-042</h6>
+            ${headerBadge(s, variant)}
+          </div>
+          <div class="id-muted">#1042 · a1f9…c77e &nbsp;·&nbsp; high</div>
+          <div class="actions-right">
+            <button class="icon-btn" title="Комментарии">💬 2</button>
+            <button class="icon-btn" title="Редактировать">✎</button>
+            <button class="icon-btn">⋮</button>
+          </div>
+          <div class="actions-right" style="margin-top:8px">
+            <button class="btn btn-sm btn-alert-primary">Merge</button>
+            <button class="btn btn-sm btn-alert-primary">Assign ▾</button>
+            <button class="btn btn-sm btn-alert-primary">Set status ▾</button>
+            <button class="btn btn-sm btn-alert-danger">Close with note</button>
+            <button class="btn btn-sm btn-alert-danger">Close</button>
+          </div>
+          <p class="desc">Outbound TLS beacon to 203.0.113.42 every 60 s, JA3 не соответствует установленным политикам. Подозрение на C2-канал (кампания «Karakurt», IOCs из OpenCTI).</p>
+        </div>
+      </div>
+      <div class="separator"></div>
+      ${strip(s, variant)}
+      <h3 class="sec-title">IOCs</h3>
+      ${iocTable(variant)}
+    </div>
+  </div>`;
+  document.getElementById('cardHost').innerHTML = card;
+}
+
+document.querySelectorAll('#segVariant button').forEach(b => b.onclick = () => {
+  state.variant = b.dataset.v;
+  document.querySelectorAll('#segVariant button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+document.querySelectorAll('#segState button').forEach(b => b.onclick = () => {
+  state.s = b.dataset.s;
+  document.querySelectorAll('#segState button').forEach(x => x.classList.toggle('on', x === b));
+  render();
+});
+render();
+</script>
+</body>
+</html>

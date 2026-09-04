@@ -1,0 +1,132 @@
+{% macro render_opencti_enrichment(enrichment_data) %}
+{% if not enrichment_data %}
+  <div class="empty-state">
+    <p class="text-muted">No enrichment data available</p>
+  </div>
+{% else %}
+  <div class="enrichment-container">
+    
+    {% if enrichment_data.progress %}
+    <!-- Progress Card -->
+    <div class="card enrichment-progress">
+      <div class="card-header">
+        <span class="card-title">🔄 Enrichment Progress</span>
+        <span class="badge badge-{{ 'success' if enrichment_data.progress.status == 'success' else 'warning' }}">
+          {{ enrichment_data.progress.status|capitalize }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="progress-stats">
+          <div class="stat-item">
+            <span class="stat-label">Total Items</span>
+            <span class="stat-value">{{ enrichment_data.progress.total or 0 }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Processed</span>
+            <span class="stat-value">{{ enrichment_data.progress.processed or 0 }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Matches</span>
+            <span class="stat-value">{{ (enrichment_data.progress.total or 0) - (enrichment_data.progress.no_match or 0) }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">No Match</span>
+            <span class="stat-value">{{ enrichment_data.progress.no_match or 0 }}</span>
+          </div>
+        </div>
+        {% if enrichment_data.progress.completed_at %}
+        <div class="progress-meta">
+          <small class="text-muted">
+            Completed: {{ enrichment_data.progress.completed_at.strftime('%Y-%m-%d %H:%M:%S') if enrichment_data.progress.completed_at else 'N/A' }}
+          </small>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% if enrichment_data.recommendation %}
+    <!-- Recommendation Card -->
+    <div class="card enrichment-recommendation">
+      <div class="card-header">
+        <span class="card-title">🎯 OpenCTI Recommendation</span>
+        <span class="badge badge-{{ 'success' if enrichment_data.recommendation.severity == 'Informational' else 'warning' if enrichment_data.recommendation.severity == 'Low' else 'danger' if enrichment_data.recommendation.severity == 'High' else 'secondary' }}">
+          {{ enrichment_data.recommendation.severity or 'N/A' }}
+        </span>
+      </div>
+      <div class="card-body">
+        
+        {% if enrichment_data.recommendation.reasons %}
+        <div class="reasons-section">
+          <h4 class="section-title">Reasons</h4>
+          <ul class="reasons-list">
+            {% for reason in enrichment_data.recommendation.reasons %}
+            <li class="reason-item">
+              {% if reason is string %}
+                {{ reason }}
+              {% else %}
+                <strong>{{ reason.get('type', 'N/A') }}:</strong> {{ reason.get('message', '') }}
+              {% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        {% if enrichment_data.recommendation.source_ioc_ids %}
+        <div class="ioc-section">
+          <h4 class="section-title">Source IOC IDs</h4>
+          <div class="ioc-tags">
+            {% for ioc_id in enrichment_data.recommendation.source_ioc_ids %}
+            <span class="badge badge-primary">#{{ ioc_id }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if enrichment_data.recommendation.risk_score is not none %}
+        <div class="risk-section">
+          <h4 class="section-title">Risk Score</h4>
+          <div class="risk-meter">
+            <div class="risk-bar" style="width: {{ enrichment_data.recommendation.risk_score }}%"></div>
+            <span class="risk-value">{{ enrichment_data.recommendation.risk_score }}%</span>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    </div>
+    {% endif %}
+
+    {% if enrichment_data.matched %}
+    <!-- Matched IOC Card -->
+    <div class="card enrichment-matched">
+      <div class="card-header">
+        <span class="card-title">✅ Matched IOC</span>
+      </div>
+      <div class="card-body">
+        <pre class="matched-data">{{ enrichment_data.matched|tojson(indent=2) }}</pre>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if enrichment_data.errors %}
+    <!-- Errors Card -->
+    <div class="card enrichment-errors">
+      <div class="card-header">
+        <span class="card-title">⚠️ Errors</span>
+        <span class="badge badge-danger">{{ enrichment_data.errors|length }} error(s)</span>
+      </div>
+      <div class="card-body">
+        <ul class="errors-list">
+          {% for error in enrichment_data.errors %}
+          <li class="error-item">{{ error }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+{% endif %}
+{% endmacro %}

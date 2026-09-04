@@ -67,12 +67,15 @@ def run_migrations_online():
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
+    # SQLAlchemy 2.0 requires an explicit transaction context: without it the
+    # migration connection is closed (and its implicit transaction rolled back)
+    # before the DDL is committed. Using connectable.begin() commits the whole
+    # migration on success and rolls it back on failure.
+    with connectable.begin() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )
 
-        #with context.begin_transaction(): -- Fixes stuck transaction. Need more info on that
         context.run_migrations()
 
 

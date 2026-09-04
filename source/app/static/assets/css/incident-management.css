@@ -1,0 +1,147 @@
+/* Incident management UI (per Tyumen State University Position) */
+
+/* ---- Priority / importance badges (case page header) ---- */
+.incident-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+    line-height: 1;
+}
+.incident-badge:hover { filter: brightness(0.92); }
+
+/* Priority levels 1-9 (lower is more severe) */
+.incident-priority-1, .incident-priority-2 { background: #d64545; }
+.incident-priority-3, .incident-priority-4 { background: #e87a2e; }
+.incident-priority-5, .incident-priority-6 { background: #d9a417; color: #3a2f00; }
+.incident-priority-7, .incident-priority-8 { background: #5b9bd5; }
+.incident-priority-9 { background: #7a8a99; }
+
+.incident-importance-high { background: #d64545; }
+.incident-importance-medium { background: #e87a2e; }
+.incident-importance-low { background: #5b9bd5; }
+
+/* False positive status badge */
+.incident-false-positive {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #6c757d;
+    color: #fff;
+    cursor: pointer;
+    line-height: 1;
+}
+
+/* ---- Response phase tracker (modal) ---- */
+.incident-phases {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 4px;
+    padding: 10px;
+    border: 1px solid rgba(120, 130, 140, 0.25);
+    border-radius: 8px;
+    background: rgba(120, 130, 140, 0.06);
+}
+
+.incident-phase {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.incident-phase .phase-arrow {
+    width: 14px;
+    height: 2px;
+    background: rgba(120, 130, 140, 0.35);
+    margin-right: 4px;
+}
+
+.phase-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border: 1px solid rgba(120, 130, 140, 0.35);
+    border-radius: 20px;
+    background: transparent;
+    color: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.phase-step:hover {
+    border-color: currentColor;
+    background: rgba(120, 130, 140, 0.08);
+}
+
+.phase-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(120, 130, 140, 0.25);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.incident-phase.active .phase-step {
+    border-color: #4a90d9;
+    background: rgba(74, 144, 217, 0.12);
+    font-weight: 700;
+}
+
+.incident-phase.active .phase-index {
+    background: #4a90d9;
+    color: #fff;
+}
+
+.incident-phase.done .phase-step {
+    opacity: 0.55;
+}
+
+.incident-phase.done .phase-index {
+    background: #5cb85c;
+    color: #fff;
+}
+
+.incident-phase.done .phase-name::after {
+    content: " ✓";
+}
+
+.incident-phase.fp .phase-step {
+    border-color: #6c757d;
+    background: rgba(108, 117, 125, 0.12);
+    font-weight: 700;
+}
+
+.incident-phase.fp .phase-index {
+    background: #6c757d;
+    color: #fff;
+}
+
+/* ---- Modal form tweaks ---- */
+#incidentManagementModal .form-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+}
+
+#incidentManagementModal .form-label .text-muted {
+    font-weight: 400;
+}

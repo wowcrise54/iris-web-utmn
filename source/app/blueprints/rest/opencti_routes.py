@@ -14,7 +14,7 @@ from app import db, socket_io
 from app.models.alerts import Alert
 from app.util import ac_api_requires, response_success, response_error
 from app.business.errors import BusinessProcessingError
-from iris_opencti_module.opencti_handler.auto_enrich import enrich_alert_task
+from iris_opencti_module.opencti_handler.auto_enrich import enrich_alert_task, get_opencti_module_config
 from iris_opencti_module.opencti_handler.metrics import metrics
 
 log = logging.getLogger(__name__)
@@ -95,10 +95,13 @@ class OpenCTINamespace(Namespace):
             log.error(f"Error leaving enrichment room for alert {alert_id}: {e}")
 
 
-# Register the namespace with socket_io
-# Temporarily disabled due to namespace issue
-# opencti_namespace = OpenCTINamespace()
-# socket_io.on_namespace(opencti_namespace)
+# Register the namespace with socket_io.
+# The JS client (opencti_enrichment.js) connects to the /opencti namespace and
+# joins per-alert enrichment rooms here, so the namespace must be registered
+# for real-time progress to reach the browser (progress still works via the
+# REST /opencti/progress polling path as a fallback).
+opencti_namespace = OpenCTINamespace()
+socket_io.on_namespace(opencti_namespace)
 
 
 @opencti_routes_blueprint.route('/opencti/enrich/<int:alert_id>', methods=['POST'])
@@ -135,20 +138,12 @@ def trigger_enrichment(alert_id):
         if not alert.iocs:
             return response_error('Alert has no IOCs to enrich'), 400
         
-        # Get module configuration
-        from sqlalchemy import select, Table
-        iris_module_table = Table(
-            'iris_module',
-            db.Model.metadata,
-            autoload_with=db.engine
-        )
-        
-        result = db.session.execute(
-            select(iris_module_table.c.module_config)
-            .where(iris_module_table.c.module_name == 'iris_opencti_module')
-        )
-        row = result.first()
-        mod_config = row[0] if row else {}
+        # Get module configuration as a canonical param_name->value dict.
+        # Reuse the shared helper (it queries the ORM model and normalizes the
+        # DB's list-of-params into a dict). The previous inline code redeclared
+        # Table('iris_module') on db.Model.metadata, which collides with the
+        # already-mapped IrisModule model and raises InvalidRequestError.
+        mod_config = get_opencti_module_config()
         
         # Check if auto-enrichment is already enabled (will run automatically)
         if mod_config.get('opencti_auto_enrich_alerts'):

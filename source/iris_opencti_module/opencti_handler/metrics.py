@@ -316,7 +316,10 @@ class MetricsCollector:
         """Aggregate metrics into time series."""
         with self._lock:
             snapshot = {
-                "timestamp": datetime.utcnow(),
+                # Store as an ISO string (same shape get_metrics() at the
+                # time_range filter parses with fromisoformat); a raw datetime
+                # here made that filter raise TypeError -> 500 after 60s.
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "enrichment": self.enrichment.to_dict(),
                 "cache": self.cache.to_dict(),
                 "api": self.api.to_dict(),
@@ -454,8 +457,45 @@ class MetricsCollector:
             logger.info("OpenCTI metrics reset")
 
 
-# Global metrics collector instance
-metrics = MetricsCollector()
+_metrics_collector = None
+
+
+def _get_metrics() -> MetricsCollector:
+    """Lazily create the global metrics collector.
+
+    The collector starts a daemon aggregation thread on construction.
+    Creating it at import time (the previous behavior) leaked that thread in
+    every process that imported metrics.py (e.g. the web app) even though the
+    enrichment path never recorded anything. Lazy init starts the thread only
+    in processes that actually use the metrics.
+    """
+    global _metrics_collector, metrics
+    if _metrics_collector is None:
+        _metrics_collector = MetricsCollector()
+        # Rebind the public name to the real collector so subsequent accesses
+        # (and identity checks) go straight to it.
+        metrics = _metrics_collector
+    return _metrics_collector
+
+
+class _LazyMetrics:
+    """Transparent lazy proxy around the global metrics collector.
+
+    ``opencti_routes.py`` does ``from ...metrics import metrics`` and calls
+    ``metrics.get_summary()`` etc. The collector must not be constructed at
+    import time (it would start a daemon aggregation thread in every
+    importing process), but the import must keep working, so this proxy
+    creates the singleton on first attribute access and forwards everything
+    to it afterwards.
+    """
+
+    def __getattr__(self, name):
+        return getattr(_get_metrics(), name)
+
+
+# Global metrics collector (a lazy proxy; the real singleton is created on
+# first use).
+metrics = _LazyMetrics()
 
 
 class MetricsContextManager:
