@@ -250,6 +250,67 @@ class TestsRestUsers(TestCase):
         response = user.get(f'api/v2/manage/users/{identifier}')
         self.assertEqual(403, response.status_code)
 
+    def test_lookup_user_by_id_is_available_to_non_admin_with_reduced_fields(self):
+        identifier = self._subject.create_dummy_user().get_identifier()
+        caller = self._subject.create_dummy_user()
+
+        response = caller.get(f'/api/v2/users/lookup/id/{identifier}')
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({'user_id', 'user_login', 'user_name'}, set(response.json()))
+
+    def test_lookup_user_by_login_is_available_to_non_admin_with_reduced_fields(self):
+        target = self._subject.create_dummy_user()
+        caller = self._subject.create_dummy_user()
+        target_data = self._subject.get(
+            f'/api/v2/manage/users/{target.get_identifier()}'
+        ).json()
+
+        response = caller.get(
+            f'/api/v2/users/lookup/login/{target_data["user_login"]}'
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual({'user_id', 'user_login', 'user_name'}, set(response.json()))
+
+    def test_get_users_should_filter_by_user_ids_and_sort(self):
+        first_id = self._subject.create_dummy_user().get_identifier()
+        second_id = self._subject.create_dummy_user().get_identifier()
+
+        response = self._subject.get('/api/v2/manage/users', {
+            'user_ids': f'{first_id},{second_id}',
+            'sort': 'asc',
+            'per_page': 200,
+        })
+
+        self.assertEqual(200, response.status_code)
+        filtered_ids = [user['user_id'] for user in response.json()['data']]
+        self.assertEqual([first_id, second_id], filtered_ids)
+
+    def test_get_users_should_filter_by_customer(self):
+        customer_id = self._subject.create_dummy_customer()
+        included = self._subject.create_dummy_user()
+        excluded = self._subject.create_dummy_user()
+        self._subject.create(
+            f'/manage/users/{included.get_identifier()}/customers/update',
+            {'customers_membership': [customer_id]},
+        )
+
+        response = self._subject.get('/api/v2/manage/users', {
+            'customer_id': customer_id,
+            'per_page': 200,
+        })
+
+        self.assertEqual(200, response.status_code)
+        filtered_ids = {user['user_id'] for user in response.json()['data']}
+        self.assertIn(included.get_identifier(), filtered_ids)
+        self.assertNotIn(excluded.get_identifier(), filtered_ids)
+
+    def test_get_users_should_reject_invalid_sort(self):
+        response = self._subject.get('/api/v2/manage/users', {'sort': 'sideways'})
+
+        self.assertEqual(400, response.status_code)
+
     def test_get_user_should_not_return_user_password(self):
         body = {
             'user_name': 'new_user',

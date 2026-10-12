@@ -128,7 +128,7 @@
 							<button
 								type="button"
 								class="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-								aria-label={`Delete ${preset.filter_name}`}
+								aria-label={`${irisT("Delete", $irisLocale)} ${preset.filter_name}`}
 								onclick={(e) => {
 									e.stopPropagation();
 									onDelete(preset.filter_id);

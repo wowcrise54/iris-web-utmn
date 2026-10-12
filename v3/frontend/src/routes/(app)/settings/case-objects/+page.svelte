@@ -524,7 +524,7 @@
 </script>
 
 <svelte:head>
-	<title>Case Objects</title>
+	<title>{irisT("Case Objects", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

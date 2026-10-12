@@ -23,6 +23,8 @@
 </script>
 
 <script lang="ts" generics="T">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
 	import type { Snippet } from 'svelte';
 	import type { KanbanColumn } from './kanban-types';
 
@@ -281,7 +283,7 @@
 					role="button"
 					tabindex="0"
 					draggable="true"
-					aria-label={`${itemLabel} ${id}`}
+					aria-label={`${irisT(itemLabel, $irisLocale)} ${id}`}
 					data-kanban-card={id}
 					class={[
 						'cursor-grab rounded-md border bg-card text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing',

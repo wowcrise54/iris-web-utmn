@@ -96,9 +96,8 @@ def manage_users_list():
     return response_success('', data=users)
 
 
-# TODO: partially covered by GET /api/v2/manage/users, which only takes
-# page/per_page/search. The `user_ids`, `customer_id` and `sort` filters have
-# no v2 counterpart — add them to `Users.search` before deprecating this route.
+# Equivalent filters are available on GET /api/v2/manage/users.
+# Keep this route until known legacy consumers have migrated.
 @manage_users_rest_blueprint.route('/manage/users/filter', methods=['GET'])
 @ac_api_requires(Permissions.server_administrator)
 def manage_users_filter():
@@ -475,11 +474,9 @@ def view_delete_user(cur_id):
 
 
 # Unrestricted section - non admin available
-# TODO: no v2 equivalent for non-admins. GET /api/v2/manage/users/{identifier}
-# is the same lookup but gated on Permissions.server_administrator, whereas
-# this route is open to any authenticated user — that is the whole point of the
-# reduced (login/id/name only) payload. Port it as a public-side route before
-# deprecating, e.g. next to GET /api/v2/users/mentionable.
+# Equivalent: GET /api/v2/users/lookup/id/{identifier}, with the same reduced
+# login/id/name payload for any authenticated user. Keep this route until known
+# legacy consumers have migrated.
 @manage_users_rest_blueprint.route('/manage/users/lookup/id/<int:cur_id>', methods=['GET'])
 @ac_api_requires()
 def exists_user_restricted(cur_id):
@@ -497,10 +494,9 @@ def exists_user_restricted(cur_id):
     return response_success(data=output)
 
 
-# TODO: no v2 equivalent for non-admins — same gap as the lookup-by-id route
-# above. Worth noting this one is not actually "restricted": it hands the
-# caller's email and active flag to any authenticated user. Port the id/name/
-# login triple only; drop the rest rather than carrying it into v2.
+# Equivalent: GET /api/v2/users/lookup/login/{login}. The v2 response is
+# deliberately reduced to login/id/name and does not carry this route's email,
+# UUID, or active flag. Keep this route until known legacy consumers migrate.
 @manage_users_rest_blueprint.route('/manage/users/lookup/login/<string:login>', methods=['GET'])
 @ac_api_requires()
 def lookup_name_restricted(login):

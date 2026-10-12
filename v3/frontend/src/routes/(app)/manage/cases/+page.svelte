@@ -530,7 +530,7 @@
 </script>
 
 <svelte:head>
-	<title>Manage cases</title>
+	<title>{irisT("Manage cases", $irisLocale)}</title>
 </svelte:head>
 
 <!--
@@ -857,7 +857,7 @@
 														variant="ghost"
 														size="sm"
 														class="h-7 w-7 p-0"
-														aria-label={`Actions for case #${c.case_id}`}
+														aria-label={`${irisT("Actions for case", $irisLocale)} #${c.case_id}`}
 													>
 														<MoreHorizontalIcon size={14} />
 													</Button>
@@ -926,7 +926,7 @@
 	caseId={pendingCloseCase?.case_id ?? 0}
 	initialNote={pendingCloseCase?.closing_note}
 	message={pendingCloseCase
-		? `Close case #${pendingCloseCase.case_id} "${pendingCloseCase.case_name}"? Related alerts will be closed too.`
+		? irisT("Close case #{id} \"{name}\"? Related alerts will be closed too.", $irisLocale, { id: pendingCloseCase.case_id, name: pendingCloseCase.case_name })
 		: undefined}
 	onConfirm={confirmCloseCase}
 />

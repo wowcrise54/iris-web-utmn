@@ -247,7 +247,7 @@
 </script>
 
 <svelte:head>
-	<title>Clustering Rules</title>
+	<title>{irisT("Clustering Rules", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full min-h-0 w-full flex-col gap-4 p-4">
@@ -515,7 +515,7 @@
 	bind:open={deleteOpen}
 	title={irisT("Delete rule?", $irisLocale)}
 	message={ruleToDelete
-		? `Delete rule "${ruleToDelete.rule_name}"? This cannot be undone.`
+		? irisT("Delete rule \"{name}\"? This cannot be undone.", $irisLocale, { name: ruleToDelete.rule_name })
 		: irisT("Delete this rule?", $irisLocale)}
 	confirmText="Delete"
 	confirmButtonVariant="destructive"
@@ -525,7 +525,7 @@
 <ConfirmationDialog
 	bind:open={backfillOpen}
 	title={irisT("Back-fill previous alerts?", $irisLocale)}
-	message={`Apply this rule to matching alerts from the last ${sampleDays} day${sampleDays === 1 ? '' : 's'}. Alerts already grouped into an alert cluster are skipped, and the stacking window / group-by keys keep the operation idempotent — re-running produces no duplicates.`}
+	message={irisT("Apply this rule to matching alerts from the last {days} days. Alerts already grouped into an alert cluster are skipped. The stacking window and grouping keys prevent duplicates on repeated runs.", $irisLocale, { days: sampleDays })}
 	confirmText="Back-fill"
 	confirmButtonVariant="default"
 	onConfirm={runBackfill}

@@ -135,7 +135,7 @@
 </script>
 
 <svelte:head>
-	<title>{organisationName ? `${organisationName} Login` : irisT("Log In", $irisLocale)}</title>
+	<title>{organisationName ? `${organisationName} ${irisT("Login", $irisLocale)}` : irisT("Log In", $irisLocale)}</title>
 	{#if authSettings.demo_mode && env.PUBLIC_PLAUSIBLE_DOMAIN}
 		<script
 			defer

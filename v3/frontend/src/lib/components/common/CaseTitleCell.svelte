@@ -28,7 +28,7 @@
 		type="button"
 		class="w-fit max-w-full truncate text-left text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
 		onclick={() => onOpen(row)}
-		title="Quick peek at case #{row.case_id}"
+		title={`${irisT("Quick peek at case", $irisLocale)} #${row.case_id}`}
 	>
 		{row.case_name}
 	</button>

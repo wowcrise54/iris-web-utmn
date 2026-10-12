@@ -592,9 +592,9 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Delete IOCs", $irisLocale)}
-	message="Delete {selectedCount} selected IOC{selectedCount === 1
-		? ''
-		: 's'}? This cannot be undone."
+	message={`${irisT("Delete", $irisLocale)} ${selectedCount} ${irisT(selectedCount === 1
+		? "selected IOC? This cannot be undone."
+		: "selected IOCs? This cannot be undone.", $irisLocale)}`}
 	confirmText="Delete"
 	onConfirm={deleteSelected}
 />

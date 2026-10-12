@@ -5,8 +5,8 @@ import { handleErrorWithSentry, sentryHandle } from '@sentry/sveltekit';
 import { API_BASE_URL } from '$lib/config/api.config';
 import {
 	forwardedOrigin,
+	isRequestOriginAllowed,
 	isServedOrigin,
-	normaliseOrigin,
 	parseAllowedOrigins
 } from '$lib/config/origins';
 import { env } from '$env/dynamic/public';
@@ -28,8 +28,8 @@ import {
 // Server-side Sentry init reads its DSN from IRIS_UI_SENTRY_DSN in
 // the process env. Set it in the deployment env for the Node adapter
 // to phone home on `handle` / `handleError`. Client-side init still
-// reads from the backend runtime-config so the browser DSN is
-// dynamic; this env var is only for the SvelteKit server layer.
+// reads from the backend runtime-config; that browser DSN must match
+// this trusted env value to be accepted by /monitoring/envelope.
 initSentry({
 	enabled: Boolean(privateEnv.IRIS_UI_SENTRY_DSN),
 	dsn: privateEnv.IRIS_UI_SENTRY_DSN ?? null,
@@ -333,10 +333,7 @@ const csrfHandle: Handle = async ({ event, resolve }) => {
 	if (isMutating) {
 		const origin = event.request.headers.get('origin');
 		if (origin !== null) {
-			const normalised = normaliseOrigin(origin);
-			const sameOrigin = normalised !== null && normalised === normaliseOrigin(event.url.origin);
-
-			if (!sameOrigin && !isServedOrigin(normalised, ALLOWED_ORIGINS)) {
+			if (!isRequestOriginAllowed(origin, event.url.origin, ALLOWED_ORIGINS)) {
 				return new Response(
 					JSON.stringify({ message: 'Cross-Site POST submissions are forbidden' }),
 					{
@@ -512,9 +509,14 @@ const irisHandle: Handle = async ({ event, resolve }) => {
 
 // Sentry's server handler wraps everything with an active span so
 // `handleError` events land with the request context attached.
-const localeHandle: Handle = ({ event, resolve }) => resolve(event, {
-	transformPageChunk: ({ html }) => html.replace('<html lang="en">', `<html lang="${normalizeLocale(event.cookies.get('iris_ui_locale'))}">`)
-});
+const localeHandle: Handle = ({ event, resolve }) =>
+	resolve(event, {
+		transformPageChunk: ({ html }) =>
+			html.replace(
+				'<html lang="en">',
+				`<html lang="${normalizeLocale(event.cookies.get('iris_ui_locale'))}">`
+			)
+	});
 export const handle: Handle = sequence(localeHandle, sentryHandle(), csrfHandle, irisHandle);
 
 const fallbackHandleError: HandleServerError = ({ error, event }) => {

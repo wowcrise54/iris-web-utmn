@@ -24,7 +24,7 @@
 </script>
 
 <svelte:head>
-	<title>War room #{page.params.war_room_id} - Notes</title>
+	<title>{irisT("War room", $irisLocale)} #{page.params.war_room_id} - {irisT("Notes", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col items-center gap-2 bg-white pt-8 text-lg dark:bg-black/80">

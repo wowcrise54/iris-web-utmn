@@ -50,10 +50,12 @@ from app.models.alerts import AlertResolutionStatus
 from app.models.alerts import AlertStatus
 from app.models.alerts import Severity
 from app.models.assets import AnalysisStatus
+from app.models.assets import CompromiseStatus
 from app.models.alert_clusters import AlertClusterStatus
 from app.models.iocs import Tlp
 from app.models.models import EventCategory
 from app.models.models import TaskStatus
+from app.models.cases import CaseStatus
 from app.schema.marshables import AlertResolutionSchema
 from app.schema.marshables import AlertStatusSchema
 from app.schema.marshables import AnalysisStatusSchema
@@ -206,6 +208,28 @@ task_statuses_blueprint = _build_readonly_blueprint(
 # A single parent blueprint groups them under /api/v2/manage so the
 # `manage.py` registration line stays a single import per family.
 taxonomies_blueprint = Blueprint('taxonomies_rest_v2', __name__)
+
+
+def _enum_statuses(enum_type):
+    return [
+        {'value': member.value, 'name': member.name.replace('_', ' ').capitalize()}
+        for member in enum_type
+    ]
+
+
+@taxonomies_blueprint.get('/compromise-statuses')
+@ac_api_requires()
+@api_doc(tags=['ManageTaxonomies'], summary='List asset compromise statuses')
+def list_compromise_statuses() -> Response:
+    return response_api_success(_enum_statuses(CompromiseStatus))
+
+
+@taxonomies_blueprint.get('/outcome-statuses')
+@ac_api_requires()
+@api_doc(tags=['ManageTaxonomies'], summary='List case outcome statuses')
+def list_outcome_statuses() -> Response:
+    return response_api_success(_enum_statuses(CaseStatus))
+
 
 taxonomies_blueprint.register_blueprint(severities_blueprint)
 taxonomies_blueprint.register_blueprint(tlp_blueprint)

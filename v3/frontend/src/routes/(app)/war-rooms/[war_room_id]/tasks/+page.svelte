@@ -1480,7 +1480,7 @@
 								type="button"
 								class="text-muted-foreground hover:text-foreground"
 								onclick={() => removeTag(tag)}
-								aria-label={`Remove tag ${tag}`}
+								aria-label={`${irisT("Remove tag", $irisLocale)} ${tag}`}
 							>
 								<X class="h-3 w-3" />
 							</button>

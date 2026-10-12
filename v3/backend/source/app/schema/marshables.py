@@ -2796,6 +2796,11 @@ class CaseSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
     case_customer = ma.Nested(CustomerSchema, attribute='client', dump_only=True)
     review_status = ma.Nested(ReviewStatusSchema, dump_only=True)
 
+    def get_status_name(self, obj):
+        return CaseStatus(obj.status_id).name
+
+    status_name = ma.Method('get_status_name', dump_only=True)
+
     class Meta:
         model = Cases
         include_fk = True

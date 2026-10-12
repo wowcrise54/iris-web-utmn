@@ -499,7 +499,7 @@
 </script>
 
 <svelte:head>
-	<title>Report Templates</title>
+	<title>{irisT("Report Templates", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

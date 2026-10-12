@@ -93,6 +93,6 @@
 {:else}
 	<div
 		class="h-32 w-48 animate-pulse rounded-md border bg-muted/60"
-		aria-label={`Loading ${filename}`}
+		aria-label={`${irisT("Loading", $irisLocale)} ${filename}`}
 	></div>
 {/if}

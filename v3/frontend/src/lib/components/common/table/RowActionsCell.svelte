@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
 	import { PencilIcon, SparklesIcon } from 'lucide-svelte';
 
 	// Per-row actions for the IOC/asset tables. Both handlers are
@@ -19,8 +21,8 @@
 		<button
 			type="button"
 			class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-30"
-			title={hasEnrichment ? enrichmentLabel : 'No enrichment'}
-			aria-label={enrichmentLabel}
+			title={irisT(hasEnrichment ? enrichmentLabel : 'No enrichment', $irisLocale)}
+			aria-label={irisT(enrichmentLabel, $irisLocale)}
 			disabled={!hasEnrichment}
 			onclick={(e) => {
 				e.stopPropagation();
@@ -35,8 +37,8 @@
 		<button
 			type="button"
 			class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-			title={editLabel}
-			aria-label={editLabel}
+			title={irisT(editLabel, $irisLocale)}
+			aria-label={irisT(editLabel, $irisLocale)}
 			onclick={(e) => {
 				e.stopPropagation();
 				onEdit?.();

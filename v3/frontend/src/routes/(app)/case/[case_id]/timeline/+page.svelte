@@ -848,7 +848,7 @@
 </script>
 
 <svelte:head>
-	<title>#{page.params.case_id} - Timeline</title>
+	<title>#{page.params.case_id} - {irisT("Timeline", $irisLocale)}</title>
 </svelte:head>
 
 <CaseWorkspace>
@@ -997,7 +997,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Are you sure?", $irisLocale)}
-	message={`You are about to delete this timeline ${selected.size > 1 ? 'events' : 'event'} forever. This cannot be reverted. All associated data will be deleted.`}
+	message={irisT(selected.size === 1 ? "The selected timeline event will be permanently deleted. This cannot be undone." : "The selected timeline events will be permanently deleted. This cannot be undone.", $irisLocale)}
 	onConfirm={commitDeleteEvents}
 	onCancel={() => (showConfirmDelete = false)}
 />

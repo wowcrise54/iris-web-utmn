@@ -2720,6 +2720,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/v2/cases/{case_identifier}/datastore/filter:
+    get:
+      operationId: datastore_filter_get
+      summary: Filter the datastore tree
+      tags:
+      - CaseDatastore
+      security:
+      - ApiKey: []
+      parameters:
+      - name: case_identifier
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+        description: URL-encoded datastore filter object
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/v2/cases/{case_identifier}/datastore/folders:
     get:
       operationId: datastore_list_folders_get
@@ -7886,6 +7915,21 @@ paths:
           $ref: '#/components/responses/ApiError'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v2/manage/compromise-statuses:
+    get:
+      operationId: list_compromise_statuses_get
+      summary: List asset compromise statuses
+      tags:
+      - ManageTaxonomies
+      security:
+      - ApiKey: []
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/v2/manage/custom-attributes:
     get:
       operationId: list_custom_attributes_get
@@ -8111,6 +8155,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Customer'
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/manage/customers/{identifier}/cases:
+    get:
+      operationId: get_customer_cases_get
+      summary: List a customer cases and statistics
+      tags:
+      - ManageCustomers
+      security:
+      - ApiKey: []
+      parameters:
+      - name: identifier
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Success
         '400':
           $ref: '#/components/responses/ApiError'
         '403':
@@ -9573,6 +9640,21 @@ paths:
           $ref: '#/components/responses/ApiError'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /api/v2/manage/outcome-statuses:
+    get:
+      operationId: list_outcome_statuses_get
+      summary: List case outcome statuses
+      tags:
+      - ManageTaxonomies
+      security:
+      - ApiKey: []
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/v2/manage/report-templates:
     get:
       operationId: list_report_templates_get
@@ -10000,6 +10082,39 @@ paths:
       - ManageUsers
       security:
       - ApiKey: []
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: per_page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: user_ids
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Comma-separated user IDs
+      - name: customer_id
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: sort
+        in: query
+        required: false
+        schema:
+          type: string
+        description: 'ID sort direction: ''asc'' or ''desc'''
       responses:
         '200':
           description: Success
@@ -11730,6 +11845,52 @@ paths:
         required: true
         schema:
           type: integer
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/users/lookup/id/{identifier}:
+    get:
+      operationId: lookup_user_by_id_get
+      summary: Look up a user by ID
+      tags:
+      - Users
+      security:
+      - ApiKey: []
+      parameters:
+      - name: identifier
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/users/lookup/login/{login}:
+    get:
+      operationId: lookup_user_by_login_get
+      summary: Look up a user by login
+      tags:
+      - Users
+      security:
+      - ApiKey: []
+      parameters:
+      - name: login
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Success
@@ -18426,6 +18587,7 @@ components:
           $ref: '#/components/schemas/Customer'
         review_status:
           $ref: '#/components/schemas/ReviewStatus'
+        status_name: {}
         close_date:
           type:
           - string

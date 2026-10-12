@@ -265,7 +265,7 @@
 													e.stopPropagation();
 													void remove(rev.revision_number);
 												}}
-												aria-label={`Delete revision ${rev.revision_number}`}
+												aria-label={`${irisT("Delete revision", $irisLocale)} ${rev.revision_number}`}
 											>
 												<Trash2Icon class="size-3" />
 											</button>

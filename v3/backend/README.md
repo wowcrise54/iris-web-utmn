@@ -2,9 +2,10 @@
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](./LICENSE.txt)
 
-The Python/Flask backend of [IRIS](https://github.com/dfir-iris/iris-web) — an open-source
-collaborative platform for incident response teams. It serves the REST API, owns the Postgres
-schema, and runs the Celery workers behind it.
+The Python/FastAPI backend of [IRIS](https://github.com/dfir-iris/iris-web) — an open-source
+collaborative platform for incident response teams. FastAPI owns the native ASGI transport and
+registers the existing synchronous, Flask-shaped blueprint handlers through compatibility
+adapters. The backend serves the REST API, owns the Postgres schema, and runs the Celery workers.
 
 > **Looking to run IRIS?** You are in the wrong repository.
 > Go to **[dfir-iris/iris-web](https://github.com/dfir-iris/iris-web)** and follow its
@@ -22,14 +23,14 @@ production-ready.
 | Repository | Contents |
 | --- | --- |
 | [`iris-web`](https://github.com/dfir-iris/iris-web) | Meta-repo. `docker-compose.yml`, `.env.example`, deployment docs, end-to-end CI. **Start here.** |
-| `iris-backend` (this one) | Flask REST API, Celery workers, Postgres schema and migrations. |
+| `iris-backend` (this one) | FastAPI/ASGI REST transport, compatibility handlers, Celery workers, Postgres schema and migrations. |
 | [`iris-frontend`](https://github.com/dfir-iris/iris-frontend) | SvelteKit UI. |
 
 ## What is in this repository
 
 ```
-source/app/            the Flask application
-  blueprints/          HTTP surface; rest/v2/ is the current REST API.
+source/app/            the FastAPI application and compatibility layer
+  blueprints/          Synchronous compatibility handlers; rest/v2/ is the current REST API.
                        Authorization decorators live here and only here.
   business/            domain processing, one module per domain
   datamgmt/            persistence; the only layer that talks to the DB engine
@@ -125,7 +126,7 @@ End-to-end tests against the UI are not here — they live in `iris-web/.github/
 ## Database migrations
 
 Any schema change needs an Alembic revision. They are applied automatically when the app boots,
-before gunicorn binds, which is why a cold start is slow.
+before Uvicorn binds, which is why a cold start is slow.
 
 ```bash
 cd source && alembic -c app/alembic.ini revision -m "what changed"

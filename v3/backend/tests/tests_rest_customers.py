@@ -21,6 +21,7 @@ from iris import Iris
 from iris import IRIS_PERMISSION_CUSTOMERS_WRITE
 from iris import ADMINISTRATOR_USER_IDENTIFIER
 from iris import IRIS_INITIAL_CUSTOMER_IDENTIFIER
+from iris import IRIS_PERMISSION_CUSTOMERS_READ
 
 _IDENTIFIER_FOR_NONEXISTENT_OBJECT = 123456789
 
@@ -159,3 +160,24 @@ class TestsRestCustomers(TestCase):
     def test_search_customers_should_return_200(self):
         response = self._subject.get('/api/v2/manage/customers')
         self.assertEqual(200, response.status_code)
+
+    def test_get_customer_cases_should_return_cases_and_statistics(self):
+        customer_id = self._subject.create_dummy_customer()
+        case_id = self._subject.create_dummy_case(customer_id)
+
+        response = self._subject.get(
+            f'/api/v2/manage/customers/{customer_id}/cases'
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(case_id, response.json()['cases'][0]['case_id'])
+        self.assertEqual(1, response.json()['stats']['cases_total'])
+        self.assertEqual(1, response.json()['stats']['open_cases'])
+
+    def test_get_customer_cases_should_require_customer_access(self):
+        customer_id = self._subject.create_dummy_customer()
+        caller = self._subject.create_dummy_user([IRIS_PERMISSION_CUSTOMERS_READ])
+
+        response = caller.get(f'/api/v2/manage/customers/{customer_id}/cases')
+
+        self.assertEqual(403, response.status_code)

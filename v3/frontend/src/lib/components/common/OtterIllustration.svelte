@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+
+	const irisLocale = useLocale();
+
 	// An otter bobbing in the water, holding up a sign. Drawn inline rather
 	// than shipped as an image so the sign text can change per use and the
 	// palette follows the theme where it has to (the water).
@@ -15,7 +19,9 @@
 	viewBox="0 40 240 160"
 	class={className}
 	role="img"
-	aria-label={sign ? `An otter holding a sign reading ${sign}` : 'An otter'}
+	aria-label={sign
+		? `${irisT("An otter holding a sign reading", $irisLocale)} ${sign}`
+		: irisT("An otter", $irisLocale)}
 >
 	<!-- Body, mostly under water -->
 	<ellipse cx="120" cy="168" rx="46" ry="46" fill="#8b5e3c" />

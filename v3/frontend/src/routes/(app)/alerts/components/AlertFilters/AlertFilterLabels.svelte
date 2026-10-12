@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	import { XIcon } from 'lucide-svelte';
 	import type { AlertResolution } from '$lib/services/alert-resolutions.service';
 	import type { AlertStatus } from '$lib/services/alert-status.service';
@@ -7,6 +8,7 @@
 	import type { Customer } from '$lib/services/customers.service';
 	import type { MentionableUser } from '$lib/services/users.service';
 	import { isNarrowingFilter, type Filters } from '.';
+	const irisLocale = useLocale();
 
 	type Props = {
 		value: Filters;
@@ -137,7 +139,7 @@
 					<button
 						type="button"
 						class="text-muted-foreground transition-colors hover:text-foreground"
-						aria-label={`Remove filter ${item.value}`}
+						aria-label={`${irisT("Remove filter", $irisLocale)} ${item.value}`}
 						onclick={() => onRemove(item.key)}
 					>
 						<XIcon class="size-3" />

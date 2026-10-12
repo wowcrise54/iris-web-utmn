@@ -487,9 +487,9 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Delete Tasks", $irisLocale)}
-	message="Delete {selectedCount} selected task{selectedCount === 1
-		? ''
-		: 's'}? This cannot be undone."
+	message={`${irisT("Delete", $irisLocale)} ${selectedCount} ${irisT(selectedCount === 1
+		? "selected task? This cannot be undone."
+		: "selected tasks? This cannot be undone.", $irisLocale)}`}
 	confirmText="Delete"
 	onConfirm={deleteSelected}
 />

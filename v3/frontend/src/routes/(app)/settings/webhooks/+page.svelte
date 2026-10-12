@@ -230,7 +230,7 @@
 </script>
 
 <svelte:head>
-	<title>Webhooks</title>
+	<title>{irisT("Webhooks", $irisLocale)}</title>
 </svelte:head>
 
 {#if editor}
@@ -362,7 +362,7 @@
 											checked={webhook.enabled}
 											disabled={toggling[webhook.id]}
 											onCheckedChange={(v: boolean) => toggleEnabled(webhook, v)}
-											aria-label={`Enable ${webhook.name}`}
+											aria-label={`${irisT("Enable", $irisLocale)} ${webhook.name}`}
 										/>
 									</td>
 									<td class="max-w-0 px-3 py-2">
@@ -474,7 +474,7 @@
 	bind:open={confirmDeleteOpen}
 	title={irisT("Delete webhook?", $irisLocale)}
 	message={pendingDelete
-		? `"${pendingDelete.name}" and its delivery log will be permanently deleted.`
+		? irisT("\"{name}\" and its delivery log will be permanently deleted.", $irisLocale, { name: pendingDelete.name })
 		: ''}
 	confirmText="Delete"
 	confirmButtonVariant="destructive"
@@ -484,7 +484,7 @@
 <ConfirmationDialog
 	bind:open={confirmImportOpen}
 	title={irisT("Import the IrisWebHooks module configuration?", $irisLocale)}
-	message="Each hook of the module becomes a disabled native webhook. The module itself is left untouched. Hooks with the same name as an existing webhook are skipped."
+	message={irisT("Each hook of the module becomes a disabled native webhook. The module itself is left untouched. Hooks with the same name as an existing webhook are skipped.", $irisLocale)}
 	confirmText="Import"
 	confirmButtonVariant="default"
 	onConfirm={runImport}

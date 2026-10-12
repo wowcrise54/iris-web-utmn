@@ -127,10 +127,8 @@ def export_case(caseid):
     return response_success('', data=cases_export_to_json(caseid))
 
 
-# TODO: partially covered by GET /api/v2/cases/{identifier}, which dumps
-# CaseSchemaForAPIV2 — that schema has no `protagonists` (Cases has no such
-# relationship, so the field is dropped on dump) and no `status_name`. Port
-# those two onto the v2 read before deprecating this route.
+# Equivalent fields are returned by GET /api/v2/cases/{identifier}.
+# Keep this route until known legacy consumers have migrated.
 @case_rest_blueprint.route('/case/meta', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 @ac_api_requires()

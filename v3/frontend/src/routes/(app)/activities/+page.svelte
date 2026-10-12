@@ -328,7 +328,7 @@
 </script>
 
 <svelte:head>
-	<title>Activities</title>
+	<title>{irisT("Activities", $irisLocale)}</title>
 </svelte:head>
 
 <!--

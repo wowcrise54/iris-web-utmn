@@ -255,7 +255,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmUnlink}
 	title={irisT("Are you sure?", $irisLocale)}
-	message={`Unlink alert #${alert.alert_id} from case #${unlinkCaseId}`}
+	message={irisT("Unlink alert #{id} from case #{caseId}", $irisLocale, { id: alert.alert_id, caseId: unlinkCaseId ?? '' })}
 	onConfirm={unlink}
 	onCancel={hideUnlink}
 />

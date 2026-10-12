@@ -601,7 +601,7 @@
 </script>
 
 <svelte:head>
-	<title>Editing {name || 'dashboard'}</title>
+	<title>{irisT("Editing", $irisLocale)} {name || irisT("dashboard", $irisLocale)}</title>
 </svelte:head>
 
 <div class="mx-auto flex w-full max-w-screen-2xl flex-col gap-4 p-6">

@@ -170,7 +170,7 @@
 								class="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-30"
 								onclick={() => removeOption(i)}
 								disabled={options.length <= MIN_OPTIONS}
-								aria-label={`Remove option ${i + 1}`}
+								aria-label={`${irisT("Remove option", $irisLocale)} ${i + 1}`}
 							>
 								<X class="h-3.5 w-3.5" />
 							</button>

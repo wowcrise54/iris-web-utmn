@@ -87,7 +87,7 @@
 		-->
 		<span
 			class="inline-flex items-center gap-0.5 rounded border border-amber-500/40 bg-amber-500/10 px-1 py-px text-2xs font-medium text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-400"
-			title={`Seen in ${count} other case${count === 1 ? '' : 's'}`}
+			title={`${irisT("Seen in", $irisLocale)} ${count} ${irisT(count === 1 ? "other case" : "other cases", $irisLocale)}`}
 		>
 			<HistoryIcon size={10} />
 			<span class="tabular-nums">{count}</span>
@@ -96,14 +96,14 @@
 		<Popover.Root>
 			<Popover.Trigger
 				class="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-500/20 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-400 dark:hover:bg-amber-400/20"
-				aria-label={`Seen in ${count} other case${count === 1 ? '' : 's'}`}
+				aria-label={`${irisT("Seen in", $irisLocale)} ${count} ${irisT(count === 1 ? "other case" : "other cases", $irisLocale)}`}
 			>
 				<HistoryIcon size={12} />
 				<span class="tabular-nums">{count}</span>
 			</Popover.Trigger>
 			<Popover.Content align="start" class="w-80 p-0">
 				<div class="border-b px-3 py-2 text-xs font-semibold">
-					{irisT("This", $irisLocale)} {objectLabel} {irisT("was seen in", $irisLocale)} {count} {irisT("other case", $irisLocale)}{count === 1 ? '' : 's'}
+					{irisT("This", $irisLocale)} {irisT(objectLabel, $irisLocale)} {irisT("was seen in", $irisLocale)} {count} {irisT(count === 1 ? "other case" : "other cases", $irisLocale)}
 				</div>
 				<ul class="max-h-72 overflow-y-auto py-1">
 					{#each rows ?? [] as row (row.case_id)}

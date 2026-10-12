@@ -269,7 +269,7 @@
 										<button
 											type="button"
 											class="shrink-0 rounded p-0.5 hover:bg-muted"
-											aria-label={`Filter ${col.header}`}
+											aria-label={`${irisT("Filter by", $irisLocale)} ${col.header}`}
 											onclick={() => toggleFilter(col.key as string)}
 										>
 											<FilterIcon class="size-3" />
@@ -279,7 +279,7 @@
 									<button
 										type="button"
 										class="shrink-0 rounded p-0.5 hover:bg-muted"
-										aria-label={`Sort ${col.header}`}
+										aria-label={`${irisT("Sort by", $irisLocale)} ${col.header}`}
 										onclick={() => toggleSort(col.key as string)}
 									>
 										{#if sort?.id === col.key && sort?.dir === 'asc'}
@@ -305,7 +305,7 @@
 
 									<button
 										class="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-										aria-label={`Clear filter ${col.header}`}
+										aria-label={`${irisT("Clear filter", $irisLocale)} ${col.header}`}
 										onclick={() => clearFilter(col.key as string)}
 									>
 										<XIcon class="size-3" />

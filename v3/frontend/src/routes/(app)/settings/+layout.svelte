@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { type Snippet } from 'svelte';
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	import type { LayoutData } from './$types';
 
+	const irisLocale = useLocale();
 	let { data: _data, children }: { data: LayoutData; children: Snippet } = $props();
 </script>
 
 <svelte:head>
-	<title>Settings</title>
+	<title>{irisT("Settings", $irisLocale)}</title>
 </svelte:head>
 
 <!--

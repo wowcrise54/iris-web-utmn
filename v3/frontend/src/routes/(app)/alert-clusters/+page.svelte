@@ -193,7 +193,7 @@
 </script>
 
 <svelte:head>
-	<title>Alert Clusters</title>
+	<title>{irisT("Alert Clusters", $irisLocale)}</title>
 </svelte:head>
 
 <!--

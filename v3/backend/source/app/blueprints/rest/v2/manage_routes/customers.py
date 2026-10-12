@@ -29,6 +29,7 @@ from app.blueprints.rest.endpoints import response_api_paginated
 from app.blueprints.rest.endpoints import response_api_deleted
 from app.blueprints.access_controls import ac_api_requires
 from app.blueprints.access_controls import ac_current_user_has_permission
+from app.blueprints.access_controls import ac_current_user_has_customer_access
 from app.models.authorization import Permissions
 from app.schema.marshables import ContactSchema
 from app.schema.marshables import CustomerSchema
@@ -38,8 +39,10 @@ from app.models.errors import BusinessProcessingError
 from app.business.customers import customers_create_with_user
 from app.business.customers import customers_filter
 from app.business.customers import customers_get
+from app.business.customers import customers_list_cases
 from app.business.customers import customers_update
 from app.business.customers import customers_delete
+from app.business.customer_statistics import customer_cases_payload
 from app.business.customers_contacts import customers_contacts_create
 from app.business.customers_contacts import customers_contacts_delete
 from app.business.customers_contacts import customers_contacts_get
@@ -93,6 +96,15 @@ class CustomersOperations:
             return response_api_success(result)
         except ObjectNotFoundError:
             return response_api_not_found()
+
+    def cases(self, identifier):
+        try:
+            customers_get(identifier)
+        except ObjectNotFoundError:
+            return response_api_not_found()
+        if not ac_current_user_has_customer_access(identifier):
+            return response_api_error('Permission denied', status=403)
+        return response_api_success(customer_cases_payload(customers_list_cases(identifier)))
 
     def update(self, identifier):
         try:
@@ -228,6 +240,13 @@ def create_customer():
          summary='Get a customer')
 def get_customer(identifier):
     return customers_operations.read(identifier)
+
+
+@customers_blueprint.get('/<int:identifier>/cases')
+@ac_api_requires(Permissions.customers_read)
+@api_doc(tags=['ManageCustomers'], summary='List a customer cases and statistics')
+def get_customer_cases(identifier):
+    return customers_operations.cases(identifier)
 
 
 @customers_blueprint.put('/<int:identifier>')

@@ -372,8 +372,15 @@ describe('activityEntries', () => {
 	it('converts the unix-second key into a date and clock time', () => {
 		timezone.set('UTC');
 		const [newest] = activityEntries(history, 1);
-		expect(newest.time).toBe(shortDateTime(1756633920 * 1000));
-		expect(newest.time).toMatch(/Aug 31.*09:52/);
+		const expected = new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+			hourCycle: 'h23',
+			timeZone: 'UTC'
+		}).format(new Date('2025-08-31T09:52:00Z'));
+		expect(newest.time).toBe(expected);
 	});
 
 	it('is empty for a missing or non-object history', () => {

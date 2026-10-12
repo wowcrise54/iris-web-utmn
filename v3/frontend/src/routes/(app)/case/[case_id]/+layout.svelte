@@ -512,8 +512,8 @@
 		confirmText={closingNoteMode === 'close' ? irisT("Close case", $irisLocale) : irisT("Save note", $irisLocale)}
 		showIcon={closingNoteMode === 'close'}
 		message={closingNoteMode === 'close'
-			? `Case ID ${cases.currentCaseId()} will be closed and will not appear in contexts anymore. Related alerts will be closed too.`
-			: `Record why case ID ${cases.currentCaseId()} was closed. Leave it empty to remove the note.`}
+			? irisT("Case #{id} will be closed. Related alerts will be closed too.", $irisLocale, { id: cases.currentCaseId() ?? '' })
+			: irisT("Record why case #{id} was closed. Leave it empty to remove the note.", $irisLocale, { id: cases.currentCaseId() ?? '' })}
 		onConfirm={submitClosingNote}
 		onOpenChange={(open) => {
 			if (!open) cases.ui.closingNoteDialog = null;

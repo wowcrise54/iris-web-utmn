@@ -32,7 +32,7 @@
 </script>
 
 <svelte:head>
-	<title>MFA Verify</title>
+	<title>{irisT("MFA Verify", $irisLocale)}</title>
 </svelte:head>
 
 <div

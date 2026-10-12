@@ -538,7 +538,7 @@
 </script>
 
 <svelte:head>
-	<title>#{page.params.case_id} - Graph</title>
+	<title>#{page.params.case_id} - {irisT("Graph", $irisLocale)}</title>
 </svelte:head>
 
 <CaseWorkspace>

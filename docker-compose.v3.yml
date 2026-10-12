@@ -75,6 +75,9 @@ services:
       BODY_SIZE_LIMIT: Infinity
       NODE_ENV: production
       IRIS_ALLOW_ORIGIN: https://localhost:${V3_HTTPS_PORT:-18545}
+      IRIS_UI_SENTRY_DSN: ${IRIS_UI_SENTRY_DSN:-}
+      IRIS_UI_ENVELOPE_ALLOW_PRIVATE: ${IRIS_UI_ENVELOPE_ALLOW_PRIVATE:-0}
+      IRIS_UI_ENVELOPE_INSECURE_TLS: ${IRIS_UI_ENVELOPE_INSECURE_TLS:-0}
     networks: [v3]
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:5173/login', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]

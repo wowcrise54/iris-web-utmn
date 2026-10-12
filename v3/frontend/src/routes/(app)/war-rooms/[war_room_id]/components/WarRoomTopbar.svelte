@@ -471,7 +471,7 @@
 				<DropdownMenuTrigger>
 					<span
 						class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors hover:brightness-110 {chip.cls}"
-						aria-label={`State: ${chip.label}. Click to change.`}
+						aria-label={`${irisT("State:", $irisLocale)} ${chip.label}. ${irisT("Click to change.", $irisLocale)}`}
 					>
 						<RadioTowerIcon size={12} />
 						<span>{chip.label}</span>
@@ -507,7 +507,7 @@
 					{#if currentSeverity}
 						<span
 							class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors hover:brightness-110 {severityChip.cls}"
-							aria-label={`Criticality: ${currentSeverity.severity_name}. Click to change.`}
+							aria-label={`${irisT("Criticality:", $irisLocale)} ${currentSeverity.severity_name}. ${irisT("Click to change.", $irisLocale)}`}
 						>
 							<AlertOctagon size={12} />
 							<span>{currentSeverity.severity_name}</span>

@@ -1,157 +1,220 @@
-// Same-origin tunnel for the browser Sentry SDK. GlitchTip is hosted
-// on a different origin than the SPA, so client-side `Sentry.init`
-// POSTs envelopes here instead of directly to GlitchTip and this
-// handler forwards them server-side. Avoids the browser's SOP/CORS
-// block on the ingest endpoint without needing to touch the GlitchTip
-// CORS config.
-//
-// Envelope wire format (Sentry SDK):
-//   <json header with "dsn">\n<item header>\n<item payload>\n...
-// We read the first line to extract the DSN, then forward the whole
-// body verbatim to the DSN's ingest URL. The upstream host is pinned
-// to the DSN embedded in runtime-config (which the backend controls),
-// so this endpoint can't be turned into an open relay to arbitrary
-// hosts.
-
+// Browser error reports may only reach the operator-configured HTTPS ingest service.
 import type { RequestHandler } from './$types';
-import { env as privateEnv } from '$env/dynamic/private';
+import { env } from '$env/dynamic/private';
 import { request as httpsRequest } from 'node:https';
-import { request as httpRequest } from 'node:http';
+import { lookup } from 'node:dns/promises';
+import { BlockList, isIP } from 'node:net';
 
-interface DsnParts {
-	ingestUrl: string;
-	host: string;
-	publicKey: string;
-}
+const MAX_ENVELOPE_BYTES = 1024 * 1024;
+const MAX_RESPONSE_BYTES = 64 * 1024;
+const TIMEOUT_MS = 10_000;
 
-function parseDsn(dsn: string): DsnParts | null {
+function parseDsn(value: unknown) {
+	if (typeof value !== 'string') return null;
 	try {
-		const u = new URL(dsn);
-		// Sentry DSN: https://<publicKey>@<host>/<projectId>
-		const projectId = u.pathname.replace(/^\//, '');
-		const publicKey = u.username;
-		if (!projectId || !publicKey) return null;
+		const url = new URL(value);
+		const rawPath = value.match(/^https:\/\/[^/?#]+(\/[^?#]*)?$/i)?.[1];
+		const path = url.pathname.match(/^(.*)\/([0-9]+)$/);
+		if (
+			url.protocol !== 'https:' ||
+			!/^[a-zA-Z0-9_-]+$/.test(url.username) ||
+			url.password ||
+			url.search ||
+			url.hash ||
+			!path ||
+			rawPath !== url.pathname
+		)
+			return null;
 		return {
-			ingestUrl: `${u.protocol}//${u.host}/api/${projectId}/envelope/`,
-			host: u.host,
-			publicKey
+			dsn: url.href,
+			publicKey: url.username,
+			url: new URL(`${url.origin}${path[1]}/api/${path[2]}/envelope/`)
 		};
 	} catch {
 		return null;
 	}
 }
 
-function allowedHosts(): Set<string> | null {
-	// If IRIS_UI_SENTRY_DSN is set, pin the tunnel to that DSN's host.
-	// When unset (browser DSN comes from backend runtime-config only),
-	// we skip the allowlist — the DSN is still operator-controlled.
-	const dsn = privateEnv.IRIS_UI_SENTRY_DSN;
-	if (!dsn) return null;
-	const parsed = parseDsn(dsn);
-	if (!parsed) return null;
-	return new Set([parsed.host]);
+const nonPublic = new BlockList();
+for (const [address, prefix] of [
+	['0.0.0.0', 8],
+	['10.0.0.0', 8],
+	['100.64.0.0', 10],
+	['127.0.0.0', 8],
+	['169.254.0.0', 16],
+	['172.16.0.0', 12],
+	['192.0.0.0', 24],
+	['192.0.2.0', 24],
+	['192.88.99.0', 24],
+	['192.168.0.0', 16],
+	['198.18.0.0', 15],
+	['198.51.100.0', 24],
+	['203.0.113.0', 24],
+	['224.0.0.0', 3]
+] as const)
+	nonPublic.addSubnet(address, prefix, 'ipv4');
+const globalV6 = new BlockList();
+globalV6.addSubnet('2000::', 3, 'ipv6');
+// Special-purpose, documentation and transition ranges are not public ingest destinations.
+for (const [address, prefix] of [
+	['2001::', 23],
+	['2001:db8::', 32],
+	['2002::', 16],
+	['3fff::', 20]
+] as const)
+	nonPublic.addSubnet(address, prefix, 'ipv6');
+
+function isPublicAddress(address: string): boolean {
+	const family = isIP(address);
+	if (family === 4) return !nonPublic.check(address, 'ipv4');
+	return family === 6 && globalV6.check(address, 'ipv6') && !nonPublic.check(address, 'ipv6');
 }
 
-// Escape hatch for GlitchTip installs whose TLS cert isn't trusted by
-// Node (self-signed, private CA, or Traefik serving its default cert
-// while Let's Encrypt provisioning is pending). Set
-// IRIS_UI_ENVELOPE_INSECURE_TLS=1 to skip certificate verification for
-// the tunnel forward. Off by default — flip on ONLY when you accept
-// that a MITM could see/inject error report payloads (which may
-// contain sensitive DFIR case content).
-const insecureTls = privateEnv.IRIS_UI_ENVELOPE_INSECURE_TLS === '1';
-
-interface UpstreamResponse {
-	status: number;
-	contentType: string;
-	body: Buffer;
+async function readEnvelope(request: Request): Promise<Buffer> {
+	if (Number(request.headers.get('content-length')) > MAX_ENVELOPE_BYTES) {
+		throw new RangeError('envelope too large');
+	}
+	const reader = request.body?.getReader();
+	if (!reader) return Buffer.alloc(0);
+	let timer: ReturnType<typeof setTimeout>;
+	const timeout = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			reject(new Error('envelope read timed out'));
+			void reader.cancel().catch(() => {});
+		}, TIMEOUT_MS);
+	});
+	try {
+		return await Promise.race([
+			timeout,
+			(async () => {
+				const chunks: Buffer[] = [];
+				let size = 0;
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					size += value.byteLength;
+					if (size > MAX_ENVELOPE_BYTES) {
+						void reader.cancel().catch(() => {});
+						throw new RangeError('envelope too large');
+					}
+					chunks.push(Buffer.from(value));
+				}
+				return Buffer.concat(chunks);
+			})()
+		]);
+	} finally {
+		clearTimeout(timer!);
+		reader.releaseLock();
+	}
 }
 
-function forwardEnvelope(
-	ingestUrl: string,
-	publicKey: string,
-	body: string
-): Promise<UpstreamResponse> {
-	return new Promise((resolve, reject) => {
-		const url = new URL(ingestUrl);
-		const isHttps = url.protocol === 'https:';
-		const request = isHttps ? httpsRequest : httpRequest;
-		// GlitchTip (and modern Sentry) reject envelopes with 403 Denied
-		// when the request lacks the sentry auth. The DSN's publicKey
-		// inside the envelope's JSON header is not enough — the ingest
-		// endpoint expects `X-Sentry-Auth` on the HTTP request itself.
-		// The browser SDK sends it directly to the ingest URL; when we
-		// tunnel through this endpoint, the browser POSTs the raw
-		// envelope to us and we must re-attach the header before
-		// forwarding upstream.
-		const sentryAuth =
-			`Sentry sentry_version=7, ` +
-			`sentry_client=iris-envelope-tunnel/1, ` +
-			`sentry_key=${publicKey}`;
-		const req = request(
+function forwardEnvelope(target: NonNullable<ReturnType<typeof parseDsn>>, body: Buffer) {
+	return new Promise<{ status: number; contentType: string; body: Buffer }>((resolve, reject) => {
+		const allowPrivate = env.IRIS_UI_ENVELOPE_ALLOW_PRIVATE === '1';
+		const hostname = target.url.hostname.replace(/^\[|\]$/g, '');
+		if (isIP(hostname) && !allowPrivate && !isPublicAddress(hostname)) {
+			reject(new Error('non-public ingest address'));
+			return;
+		}
+		const req = httpsRequest(
 			{
 				method: 'POST',
-				hostname: url.hostname,
-				port: url.port || (isHttps ? 443 : 80),
-				path: `${url.pathname}${url.search}`,
+				hostname,
+				port: target.url.port || 443,
+				path: target.url.pathname,
+				rejectUnauthorized: env.IRIS_UI_ENVELOPE_INSECURE_TLS !== '1',
+				// Validate at the actual socket lookup: no second resolution or DNS rebinding window.
+				lookup: (host, options, callback) => {
+					lookup(host, { all: true })
+						.then((addresses) => {
+							if (
+								!addresses.length ||
+								(!allowPrivate && addresses.some((a) => !isPublicAddress(a.address)))
+							) {
+								throw new Error('non-public ingest address');
+							}
+							const address = addresses.find((a) => !options.family || a.family === options.family);
+							if (!address) throw new Error('no matching ingest address');
+							if (options.all) callback(null, [address]);
+							else callback(null, address.address, address.family);
+						})
+						.catch((err) => callback(err, '', 0));
+				},
 				headers: {
 					'Content-Type': 'application/x-sentry-envelope',
-					'Content-Length': Buffer.byteLength(body).toString(),
-					'X-Sentry-Auth': sentryAuth
-				},
-				// Only takes effect on https requests; ignored on http.
-				rejectUnauthorized: !insecureTls
+					'Content-Length': String(body.length),
+					'X-Sentry-Auth': `Sentry sentry_version=7, sentry_client=iris-envelope-tunnel/1, sentry_key=${target.publicKey}`
+				}
 			},
 			(res) => {
 				const chunks: Buffer[] = [];
-				res.on('data', (chunk: Buffer) => chunks.push(chunk));
-				res.on('end', () =>
+				let size = 0;
+				res.on('error', reject);
+				res.on('aborted', () => req.destroy(new Error('ingest response aborted')));
+				res.on('data', (chunk: Buffer) => {
+					size += chunk.length;
+					if (size > MAX_RESPONSE_BYTES) req.destroy(new Error('ingest response too large'));
+					else chunks.push(chunk);
+				});
+				res.on('end', () => {
+					clearTimeout(timer);
 					resolve({
 						status: res.statusCode ?? 502,
 						contentType: res.headers['content-type'] ?? 'application/json',
 						body: Buffer.concat(chunks)
-					})
-				);
-				res.on('error', reject);
+					});
+				});
 			}
 		);
-		req.on('error', reject);
-		req.write(body);
-		req.end();
+		const timer = setTimeout(() => req.destroy(new Error('ingest timed out')), TIMEOUT_MS);
+		req.on('error', (err) => {
+			clearTimeout(timer);
+			reject(err);
+		});
+		req.on('close', () => clearTimeout(timer));
+		req.end(body);
 	});
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	const body = await request.text();
-	const newline = body.indexOf('\n');
-	if (newline === -1) return new Response('bad envelope', { status: 400 });
-
-	let header: { dsn?: string };
+	const target = parseDsn(env.IRIS_UI_SENTRY_DSN);
+	if (!target) return new Response('ingest not configured', { status: 503 });
+	let body: Buffer;
 	try {
-		header = JSON.parse(body.slice(0, newline)) as { dsn?: string };
+		body = await readEnvelope(request);
+	} catch (err) {
+		return new Response('invalid envelope body', { status: err instanceof RangeError ? 413 : 408 });
+	}
+	const newline = body.indexOf(10);
+	if (newline === -1) return new Response('bad envelope', { status: 400 });
+	let header: unknown;
+	try {
+		header = JSON.parse(body.subarray(0, newline).toString('utf8'));
 	} catch {
 		return new Response('bad envelope header', { status: 400 });
 	}
-	if (!header.dsn) return new Response('missing dsn', { status: 400 });
-
-	const parsed = parseDsn(header.dsn);
-	if (!parsed) return new Response('bad dsn', { status: 400 });
-
-	const allow = allowedHosts();
-	if (allow && !allow.has(parsed.host)) {
-		return new Response('dsn host not allowed', { status: 403 });
+	if (
+		!header ||
+		typeof header !== 'object' ||
+		!('dsn' in header) ||
+		typeof header.dsn !== 'string' ||
+		!header.dsn
+	) {
+		return new Response('missing dsn', { status: 400 });
 	}
-
+	const submitted = parseDsn(header.dsn);
+	if (!submitted || submitted.dsn !== target.dsn)
+		return new Response('dsn not allowed', { status: 403 });
 	try {
-		const upstream = await forwardEnvelope(parsed.ingestUrl, parsed.publicKey, body);
-		return new Response(new Uint8Array(upstream.body), {
-			status: upstream.status,
-			headers: { 'Content-Type': upstream.contentType }
-		});
-	} catch (err) {
+		const upstream = await forwardEnvelope(target, body);
 		return new Response(
-			`upstream fetch failed: ${err instanceof Error ? err.message : String(err)}`,
-			{ status: 502 }
+			[204, 205, 304].includes(upstream.status) ? null : new Uint8Array(upstream.body),
+			{
+				status: upstream.status,
+				headers: { 'Content-Type': upstream.contentType }
+			}
 		);
+	} catch {
+		return new Response('ingest unavailable', { status: 502 });
 	}
 };

@@ -181,7 +181,7 @@
 </script>
 
 <svelte:head>
-	<title>MCP Server — IRIS Settings</title>
+	<title>{irisT("MCP Server", $irisLocale)} — {irisT("IRIS Settings", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full min-w-0 flex-1 flex-col overflow-y-auto p-6">

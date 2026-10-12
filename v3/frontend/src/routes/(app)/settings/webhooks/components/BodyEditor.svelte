@@ -140,7 +140,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col gap-4">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<ChoiceGroup options={MODES} bind:value={form.body_mode} ariaLabel="Body mode" />
+		<ChoiceGroup options={MODES} bind:value={form.body_mode} ariaLabel={irisT("Body mode", $irisLocale)} />
 		<div class="flex flex-wrap items-center gap-2">
 			{#if form.body_mode !== 'none'}
 				<label class="text-xs text-muted-foreground" for="webhook-content-type">{irisT("Content-Type", $irisLocale)}</label>
@@ -258,7 +258,7 @@
 						</div>
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-2xs text-muted-foreground">{irisT("Insert as", $irisLocale)}</span>
-							<ChoiceGroup options={INSERT_STYLES} bind:value={insertStyle} ariaLabel="Insert as" />
+							<ChoiceGroup options={INSERT_STYLES} bind:value={insertStyle} ariaLabel={irisT("Insert as", $irisLocale)} />
 						</div>
 					</div>
 					<ul class="min-h-0 flex-1 overflow-y-auto py-1 font-mono text-2xs">
@@ -326,7 +326,7 @@
 	bind:open={confirmPresetOpen}
 	title={irisT("Replace the template?", $irisLocale)}
 	message={pendingPreset
-		? `The current template will be replaced by the ${pendingPreset.label} preset.`
+		? irisT("The current template will be replaced by the {name} preset.", $irisLocale, { name: pendingPreset.label })
 		: ''}
 	confirmText="Replace"
 	onConfirm={() => pendingPreset && usePreset(pendingPreset)}

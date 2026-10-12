@@ -262,6 +262,34 @@ def get_mentionable_users() -> Response:
     })
 
 
+def _reduced_user(user: User) -> dict:
+    return {
+        'user_id': user.id,
+        'user_login': user.user,
+        'user_name': user.name,
+    }
+
+
+@users_public_blueprint.get('/lookup/id/<int:identifier>')
+@ac_api_requires()
+@api_doc(tags=['Users'], summary='Look up a user by ID')
+def lookup_user_by_id(identifier: int) -> Response:
+    user = User.query.filter(User.id == identifier).first()
+    if user is None:
+        return response_api_not_found()
+    return response_api_success(_reduced_user(user))
+
+
+@users_public_blueprint.get('/lookup/login/<string:login>')
+@ac_api_requires()
+@api_doc(tags=['Users'], summary='Look up a user by login')
+def lookup_user_by_login(login: str) -> Response:
+    user = User.query.filter(User.user == login).first()
+    if user is None:
+        return response_api_not_found()
+    return response_api_success(_reduced_user(user))
+
+
 # ----- Self-service endpoints ------------------------------------------------
 
 me_avatar_blueprint = Blueprint('me_avatar_rest_v2', __name__, url_prefix='/me')

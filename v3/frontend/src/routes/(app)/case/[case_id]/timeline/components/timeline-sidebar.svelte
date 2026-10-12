@@ -212,7 +212,7 @@
 								<Checkbox
 									{checked}
 									onCheckedChange={() => onToggle(t.timeline_id)}
-									aria-label={`Toggle ${t.name}`}
+									aria-label={`${irisT("Toggle", $irisLocale)} ${t.name}`}
 								/>
 								{#if t.color}
 									<span
@@ -236,7 +236,7 @@
 											variant="ghost"
 											class="h-5 w-5"
 											onclick={() => startEdit(t)}
-											aria-label={`Edit ${t.name}`}
+											aria-label={`${irisT("Edit", $irisLocale)} ${t.name}`}
 										>
 											<Pencil size={10} />
 										</Button>
@@ -246,7 +246,7 @@
 												variant="ghost"
 												class="h-5 w-5 text-destructive hover:text-destructive"
 												onclick={() => onRemove(t.timeline_id)}
-												aria-label={`Delete ${t.name}`}
+												aria-label={`${irisT("Delete", $irisLocale)} ${t.name}`}
 											>
 												<Trash2 size={10} />
 											</Button>

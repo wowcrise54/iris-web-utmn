@@ -372,7 +372,7 @@
 </script>
 
 <svelte:head>
-	<title>Custom Attributes · Settings</title>
+	<title>{irisT("Custom Attributes", $irisLocale)} · {irisT("Settings", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

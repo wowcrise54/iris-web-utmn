@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
 	import { Copy, CheckCheck } from 'lucide-svelte';
 	import {
 		Tooltip,
@@ -70,7 +72,7 @@
 				)}
 				onclick={copyToClipboard}
 				{disabled}
-				aria-label={tooltipText}
+				aria-label={irisT(tooltipText, $irisLocale)}
 			>
 				{#if copied}
 					<CheckCheck {size} />
@@ -80,7 +82,7 @@
 			</button>
 		</TooltipTrigger>
 		<TooltipContent side={tooltipPosition}>
-			<p class="text-xs">{copied ? copiedText : tooltipText}</p>
+			<p class="text-xs">{irisT(copied ? copiedText : tooltipText, $irisLocale)}</p>
 		</TooltipContent>
 	</Tooltip>
 </TooltipProvider>

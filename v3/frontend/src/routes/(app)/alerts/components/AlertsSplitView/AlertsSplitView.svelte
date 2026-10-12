@@ -867,8 +867,10 @@
 			type="button"
 			class="copy-btn"
 			class:copy-btn-done={copiedKey === key}
-			title={copiedKey === key ? irisT("Copied", $irisLocale) : `Copy ${label}`}
-			aria-label={copiedKey === key ? `${label} copied` : `Copy ${label}`}
+			title={copiedKey === key ? irisT("Copied", $irisLocale) : `${irisT("Copy", $irisLocale)} ${label}`}
+			aria-label={copiedKey === key
+				? `${label} ${irisT("copied", $irisLocale)}`
+				: `${irisT("Copy", $irisLocale)} ${label}`}
 			onclick={(event) => {
 				// The queue rows and several chips are themselves clickable;
 				// copying a value must not also move the focus or open a cluster.
@@ -1016,11 +1018,11 @@
 						type="button"
 						class="queue-sort {col.cls}"
 						class:queue-sort-active={arrow !== ''}
-						aria-label="Sort by {col.label}{arrow === ''
+						aria-label={`${irisT("Sort by", $irisLocale)} ${col.label}${arrow === ''
 							? ''
 							: arrow === '▲'
-								? ' (ascending)'
-								: ' (descending)'}"
+								? ` ${irisT("(ascending)", $irisLocale)}`
+								: ` ${irisT("(descending)", $irisLocale)}`}`}
 						onclick={() => onToggleSort(col.id)}
 					>
 						<span>{col.label}</span>
@@ -1059,7 +1061,7 @@
 					class="checkbox"
 					role="checkbox"
 					aria-checked={selected[alert.alert_id] === true}
-					aria-label="Select alert {alert.alert_id}"
+					aria-label={`${irisT("Select alert", $irisLocale)} ${alert.alert_id}`}
 					data-checked={selected[alert.alert_id] === true}
 					onclick={() => onSelect(alert.alert_id, !selected[alert.alert_id])}
 				></button>
@@ -1136,8 +1138,7 @@
 									class="checkbox"
 									role="checkbox"
 									aria-checked={picked === 'all' ? true : picked === 'some' ? 'mixed' : false}
-									aria-label="{picked === 'all' ? irisT("Deselect", $irisLocale) : irisT("Select", $irisLocale)} the {unit.alerts
-										.length} alerts of {unit.cluster.cluster_title}"
+										aria-label={irisT("{action} linked alerts ({count}) in {name}", $irisLocale, { action: irisT(picked === 'all' ? "Deselect" : "Select", $irisLocale), count: unit.alerts.length, name: unit.cluster.cluster_title })}
 									data-checked={picked === 'all'}
 									data-partial={picked === 'some'}
 									disabled={unit.alerts.length === 0}

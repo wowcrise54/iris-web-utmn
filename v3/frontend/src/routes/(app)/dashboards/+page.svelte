@@ -139,7 +139,7 @@
 </script>
 
 <svelte:head>
-	<title>Dashboards</title>
+	<title>{irisT("Dashboards", $irisLocale)}</title>
 </svelte:head>
 
 <div

@@ -392,7 +392,7 @@
 </script>
 
 <svelte:head>
-	<title>My profile</title>
+	<title>{irisT("My profile", $irisLocale)}</title>
 </svelte:head>
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">

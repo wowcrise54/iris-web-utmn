@@ -322,6 +322,8 @@ class CasesOperations:
                                                               [CaseAccessLevel.read_only, CaseAccessLevel.full_access]):
                 return ac_api_return_access_denied(caseid=identifier)
             result = CaseSchemaForAPIV2().dump(case)
+            # Only detail needs this query; list serialization must not add one query per case.
+            result['protagonists'] = CaseDetailsSchema().get_protagonists(case)
             return response_api_success(result)
         except ObjectNotFoundError:
             return response_api_not_found()

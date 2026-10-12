@@ -409,7 +409,7 @@
 </script>
 
 <svelte:head>
-	<title>Import case</title>
+	<title>{irisT("Import case", $irisLocale)}</title>
 </svelte:head>
 
 <!--

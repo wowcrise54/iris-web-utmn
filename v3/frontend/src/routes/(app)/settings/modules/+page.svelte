@@ -485,7 +485,7 @@
 </script>
 
 <svelte:head>
-	<title>Modules</title>
+	<title>{irisT("Modules", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

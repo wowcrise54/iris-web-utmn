@@ -189,7 +189,7 @@
 </script>
 
 <svelte:head>
-	<title>{dashboard?.name ?? 'Dashboard'}</title>
+	<title>{dashboard?.name ?? irisT("Dashboard", $irisLocale)}</title>
 </svelte:head>
 
 <TooltipProvider>

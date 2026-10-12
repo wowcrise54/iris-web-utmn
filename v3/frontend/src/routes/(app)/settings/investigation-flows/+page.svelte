@@ -378,7 +378,7 @@
 </script>
 
 <svelte:head>
-	<title>Investigation flows</title>
+	<title>{irisT("Investigation flows", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full min-h-0 w-full flex-col gap-4 p-4">
@@ -770,7 +770,7 @@
 	bind:open={deleteOpen}
 	title={irisT("Delete flow?", $irisLocale)}
 	message={selected
-		? `Delete "${selected.flow_name}" and all its steps? This cannot be undone.`
+		? irisT("Delete \"{name}\" and all its steps? This cannot be undone.", $irisLocale, { name: selected.flow_name })
 		: irisT("Delete this flow?", $irisLocale)}
 	confirmText="Delete"
 	confirmButtonVariant="destructive"
@@ -781,7 +781,7 @@
 	bind:open={stepDeleteOpen}
 	title={irisT("Delete step?", $irisLocale)}
 	message={stepToDelete
-		? `Delete "${stepToDelete.step_title || 'Untitled step'}" and its description? This cannot be undone.`
+		? irisT("Delete \"{name}\" and its description? This cannot be undone.", $irisLocale, { name: stepToDelete.step_title || irisT("Untitled step", $irisLocale) })
 		: irisT("Delete this step?", $irisLocale)}
 	confirmText="Delete"
 	confirmButtonVariant="destructive"

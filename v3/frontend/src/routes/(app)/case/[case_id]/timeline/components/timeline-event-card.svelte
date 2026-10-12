@@ -331,7 +331,7 @@
 										<button
 											type="button"
 											class="inline-flex items-center gap-0.5 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-2xs font-medium text-blue-600 transition-colors hover:bg-blue-500/25 dark:text-blue-300"
-											aria-label="{commentsCount} {commentsCount === 1 ? 'comment' : 'comments'}"
+										aria-label={`${irisT("Comments", $irisLocale)}: ${commentsCount}`}
 											onclick={(e) => {
 												e.stopPropagation();
 												onComments(event.event_id);

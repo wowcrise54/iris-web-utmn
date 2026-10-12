@@ -224,7 +224,7 @@
 									variant="ghost"
 									size="sm"
 									class="h-7 w-7 p-0"
-									aria-label={`Actions for ${asset.name}`}
+									aria-label={`${irisT("Actions for", $irisLocale)} ${asset.name}`}
 								>
 									<MoreHorizontalIcon size={14} />
 								</Button>

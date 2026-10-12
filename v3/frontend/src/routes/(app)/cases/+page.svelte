@@ -864,7 +864,7 @@
 </script>
 
 <svelte:head>
-	<title>Overview</title>
+	<title>{irisT("Overview", $irisLocale)}</title>
 </svelte:head>
 
 <div class="ov-root">
@@ -1072,11 +1072,11 @@
 						type="button"
 						class="q-sort {col.cls}"
 						class:q-sort--active={arrow !== ''}
-						aria-label="Sort by {col.label}{arrow === ''
+						aria-label={`${irisT("Sort by", $irisLocale)} ${col.label}${arrow === ''
 							? ''
 							: arrow === '▲'
-								? ' (ascending)'
-								: ' (descending)'}"
+								? ` ${irisT("(ascending)", $irisLocale)}`
+								: ` ${irisT("(descending)", $irisLocale)}`}`}
 						onclick={() => toggleSort(col)}
 					>
 						<span>{col.label}</span>

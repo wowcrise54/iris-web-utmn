@@ -274,7 +274,7 @@
 												tagList.filter((_, ii) => ii !== i)
 											)}
 										{disabled}
-										aria-label={`Remove tag ${tag}`}
+										aria-label={`${irisT("Remove tag", $irisLocale)} ${tag}`}
 									>
 										<XIcon size={10} />
 									</button>
@@ -459,7 +459,7 @@
 																	updateItem(field.name, idx, {
 																		[f.name]: innerTags.filter((_, i) => i !== ti)
 																	})}
-																aria-label={`Remove tag ${tag}`}
+																aria-label={`${irisT("Remove tag", $irisLocale)} ${tag}`}
 															>
 																<XIcon size={10} />
 															</button>

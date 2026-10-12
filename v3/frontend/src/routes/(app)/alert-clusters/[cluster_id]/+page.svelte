@@ -459,7 +459,7 @@
 </script>
 
 <svelte:head>
-	<title>Alert Cluster #{alertClusterId}</title>
+	<title>{irisT("Alert Cluster", $irisLocale)} #{alertClusterId}</title>
 </svelte:head>
 
 <!--
@@ -1280,7 +1280,7 @@
 	<ConfirmationDialog
 		bind:open={showConfirmUnlinkCase}
 		title={irisT("Unlink alert cluster from case?", $irisLocale)}
-		message={`Alert Cluster #${cluster.cluster_id} will go back to Investigating and its ${alerts.length} alert${alerts.length === 1 ? '' : 's'} will be detached from case #${cluster.cluster_case_id} (status reset to Assigned). The case itself remains.`}
+	message={irisT("Alert Cluster #{id} will return to Investigating. Its linked alerts ({count}) will be detached from case #{caseId} and reset to Assigned. The case itself remains.", $irisLocale, { id: cluster.cluster_id, count: alerts.length, caseId: cluster.cluster_case_id ?? '' })}
 		onConfirm={unlinkFromCase}
 	/>
 {/if}

@@ -564,7 +564,7 @@
 </script>
 
 <svelte:head>
-	<title>Chatbot · Settings</title>
+	<title>{irisT("Chatbot", $irisLocale)} · {irisT("Settings", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full min-h-0 flex-col">
@@ -944,7 +944,7 @@
 											type="button"
 											class="rounded text-primary hover:underline"
 											onclick={() => openBindings(p)}
-											aria-label={`Edit customers bound to ${p.name}`}
+											aria-label={`${irisT("Edit customers bound to", $irisLocale)} ${p.name}`}
 										>
 											{p.customer_count ?? 0} {irisT("customer", $irisLocale)}{(p.customer_count ?? 0) === 1 ? '' : 's'}
 										</button>
@@ -1476,7 +1476,7 @@
 	bind:open={confirmOpen}
 	title={irisT("Delete this policy?", $irisLocale)}
 	message={pendingDelete
-		? `"${pendingDelete.name}" will be deleted. Customers bound to it will revert to the global chatbot settings.`
+		? irisT("\"{name}\" will be deleted. Customers bound to it will revert to the global chatbot settings.", $irisLocale, { name: pendingDelete.name })
 		: ''}
 	confirmText="Delete"
 	onConfirm={confirmDelete}
@@ -1486,7 +1486,7 @@
 	bind:open={eraseConfirmOpen}
 	title={irisT("Erase all chat records for this user?", $irisLocale)}
 	message={dpoUserIdInput
-		? `Every conversation, message, and egress audit row for user #${dpoUserIdInput} will be hard-deleted. This cannot be undone.`
+		? irisT("Every conversation, message, and egress audit row for user #{id} will be permanently deleted. This cannot be undone.", $irisLocale, { id: dpoUserIdInput })
 		: ''}
 	confirmText="Erase permanently"
 	onConfirm={confirmErase}

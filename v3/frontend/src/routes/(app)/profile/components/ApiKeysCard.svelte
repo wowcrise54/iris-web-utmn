@@ -318,7 +318,7 @@
 										<button
 											type="button"
 											class="rounded p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-											aria-label={`Revoke ${key.name}`}
+											aria-label={`${irisT("Revoke", $irisLocale)} ${key.name}`}
 											onclick={() => void revoke(key)}
 										>
 											<Trash2Icon size={14} />
