@@ -1,0 +1,109 @@
+# Isolated IRIS 2.4.29 upgrade validation. Always use an explicit -p project name.
+# Prepare TLS material with: python tests/upgrade_2_4_29/prepare_stack.py
+x-app: &app
+  image: ${UPGRADE_APP_IMAGE:-iris-upgrade-2-4-29-fastapi:local}
+  pull_policy: build
+  build:
+    context: ${UPGRADE_APP_CONTEXT:-.}
+    dockerfile: docker/webApp/Dockerfile
+  env_file: tests/upgrade_2_4_29/public.env
+  environment: &app-env
+    POSTGRES_PASSWORD: upgrade-test-postgres
+    POSTGRES_ADMIN_PASSWORD: upgrade-test-raptor
+    POSTGRES_SERVER: db
+    CELERY_BROKER: amqp://rabbitmq
+    IRIS_UPSTREAM_SERVER: app
+    IRIS_UPSTREAM_PORT: "8000"
+    LOG_LEVEL: info
+  volumes:
+    - ./tests/migration:/migration:ro
+    - ./tests/migration:/validation/tests/migration:ro
+    - ./source:/validation/source:ro
+    - upgrade-downloads:/home/iris/downloads
+    - upgrade-templates:/home/iris/user_templates
+    - upgrade-server-data:/home/iris/server_data
+  networks: [upgrade]
+
+services:
+  db:
+    image: iris-upgrade-db:local
+    pull_policy: build
+    build: docker/db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: upgrade-test-postgres
+      POSTGRES_ADMIN_USER: raptor
+      POSTGRES_ADMIN_PASSWORD: upgrade-test-raptor
+      POSTGRES_DB: iris_db
+    volumes:
+      - upgrade-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iris_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [upgrade]
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [upgrade]
+  app:
+    <<: *app
+    command: ["./iris-entrypoint.sh", "iriswebapp"]
+    ports:
+      - "127.0.0.1:${UPGRADE_HTTP_PORT:-18082}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    depends_on:
+      db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+  worker:
+    <<: *app
+    command: ["./wait-for-iriswebapp.sh", "app:8000", "./iris-entrypoint.sh", "iris-worker"]
+    environment:
+      <<: *app-env
+      IRIS_WORKER: "1"
+      NUMBER_OF_CHILD: "2"
+    depends_on:
+      app: {condition: service_healthy}
+  nginx:
+    image: iris-upgrade-nginx:local
+    pull_policy: build
+    build:
+      context: docker/nginx
+      args:
+        NGINX_CONF_GID: "1234"
+        NGINX_CONF_FILE: nginx.conf
+    environment:
+      IRIS_UPSTREAM_SERVER: app
+      IRIS_UPSTREAM_PORT: "8000"
+      INTERFACE_HTTPS_PORT: "8443"
+      SERVER_NAME: localhost
+      CERT_FILENAME: upgrade-cert.pem
+      KEY_FILENAME: upgrade-key.pem
+    ports:
+      - "127.0.0.1:${UPGRADE_HTTPS_PORT:-18543}:8443"
+    volumes:
+      - ./tests/upgrade_2_4_29/runtime/certs:/www/certs:ro
+    depends_on:
+      app: {condition: service_healthy}
+    networks: [upgrade]
+
+volumes:
+  upgrade-db:
+  upgrade-downloads:
+  upgrade-templates:
+  upgrade-server-data:
+networks:
+  upgrade:
+
+
+

@@ -17,11 +17,11 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from datetime import datetime
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 
 from app import db
-from app.models.models import ObjectState
+from app.models import ObjectState
 
 
 def _update_object_state(object_name, caseid, userid=None) -> ObjectState:

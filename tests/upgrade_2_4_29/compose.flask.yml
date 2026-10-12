@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: D:/Diplom/iris-upstream-2.4.29
+      dockerfile: D:/Diplom/iris-web-utmn/tests/upgrade_2_4_29/Dockerfile.flask
+    image: iris-upgrade-2-4-29-flask:local
+  worker:
+    build:
+      context: D:/Diplom/iris-upstream-2.4.29
+      dockerfile: D:/Diplom/iris-web-utmn/tests/upgrade_2_4_29/Dockerfile.flask
+    image: iris-upgrade-2-4-29-flask:local

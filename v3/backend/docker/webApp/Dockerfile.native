@@ -1,0 +1,11 @@
+FROM iris-upgrade-2-4-29-fastapi:local
+COPY source/requirements.txt /tmp/requirements-v3.txt
+COPY source/dependencies /dependencies
+RUN cd / && pip install -r /tmp/requirements-v3.txt
+RUN rm -rf /iriswebapp && mkdir /iriswebapp
+WORKDIR /iriswebapp
+COPY source .
+COPY docker/webApp/native-entrypoint.sh /iriswebapp/native-entrypoint.sh
+RUN sed -i 's/\r$//' native-entrypoint.sh && chmod +x native-entrypoint.sh
+ENV PYTHONUNBUFFERED=1 DOCKERIZED=1
+ENTRYPOINT ["./native-entrypoint.sh"]

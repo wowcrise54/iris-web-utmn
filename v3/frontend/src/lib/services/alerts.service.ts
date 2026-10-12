@@ -1,0 +1,477 @@
+import { ApiService } from './api.service';
+import type { ApiOptions, RequestResponse } from './api.service';
+import type { Alert } from '$lib/types/resources/alert';
+import type { AlertQueueUnit } from '$lib/types/resources/alert-queue-unit';
+import type { Asset } from '$lib/types/resources/asset';
+import type { Ioc } from '$lib/types/resources/ioc';
+
+export type AlertIdentifier = number;
+export type SortDir = 'asc' | 'desc';
+
+export interface FilterAlertsParams {
+	alert_title?: string;
+	alert_description?: string;
+	alert_source?: string;
+	alert_tags?: string | string[];
+	alert_status_id?: number;
+	alert_severity_id?: number;
+	alert_classification_id?: number;
+	alert_customer_id?: number;
+	alert_start_date?: string;
+	alert_end_date?: string;
+	creation_start_date?: string;
+	creation_end_date?: string;
+	alert_assets?: string | string[];
+	alert_iocs?: string | string[];
+	alert_ids?: string | number[];
+	source_reference?: string;
+	case_id?: number;
+	/**
+	 * Filter by alert cluster membership.
+	 *   * positive number → alerts attached to that alert cluster
+	 *   * -1              → alerts NOT attached to any alert cluster (orphans)
+	 */
+	cluster_id?: number;
+	alert_owner_id?: number;
+	resolution_status_id?: number;
+	page?: number;
+	per_page?: number;
+	sort?: SortDir;
+	/**
+	 * Column the queue is ordered by — 'event_time' (the default),
+	 * 'creation_time', 'title', 'severity', 'status', 'customer_name' or
+	 * 'owner'. Anything else falls back to 'event_time' server-side.
+	 */
+	order_by?: string;
+	/**
+	 * JSON-encoded list of `{field, operator, value}` conditions, evaluated
+	 * server-side via the generic filtering layer. See
+	 * `app/datamgmt/filtering.py::apply_custom_conditions`. Useful for
+	 * filters that don't have a dedicated query param — e.g. "alerts whose
+	 * status name is not in [Closed, Merged, Escalated]".
+	 */
+	custom_conditions?: string;
+	/**
+	 * Lucene-style search expression, evaluated server-side — e.g.
+	 * `is:open owner:me severity:>=High -status:Closed`. The backend is
+	 * the authority on what it means; `$lib/search/lucene` only reads it
+	 * client-side to highlight, diagnose and autocomplete. A malformed
+	 * expression comes back 400 with the offset in `data.position`.
+	 *
+	 * ANDs with every other parameter here, so it narrows and never widens.
+	 * `GET /api/v2/alerts/search-schema` lists the vocabulary.
+	 */
+	query?: string;
+}
+
+/** One searchable alias, as `GET /api/v2/alerts/search-schema` describes it. */
+export interface AlertSearchField {
+	alias: string;
+	/** Further aliases meaning exactly this field. */
+	synonyms: string[];
+	/** How values are treated — 'text', 'enum', 'date', 'macro', … */
+	kind: string;
+	description: string;
+	/** Whether the values are a closed set the client can offer. */
+	enumerable: boolean;
+	/** Whether `>=` and `[a TO b]` mean anything on this field. */
+	ordered: boolean;
+	/**
+	 * The values themselves, when they are fixed rather than rows —
+	 * today only the `is:` macros. Everything else is tenant-scoped and
+	 * the page already holds what the caller may see.
+	 */
+	values: string[];
+}
+
+/** A `query` the backend refused, and where it gave up reading it. */
+export interface AlertSearchQueryError {
+	message: string;
+	/** Character offset into the expression, or null when not attributable. */
+	position: number | null;
+}
+
+/**
+ * The search-expression complaint in a failed listing response, if that
+ * is what failed.
+ *
+ * The listing routes reject a malformed `query` with a 400 whose body is
+ * `{message, data: {position}}`. Told apart from every other 400 by that
+ * `position`: without one there is nothing to underline, and the generic
+ * API toast is the right surface.
+ */
+export const alertSearchQueryError = (
+	response: RequestResponse<unknown>
+): AlertSearchQueryError | null => {
+	if (response.ok !== false || response.status !== 400) return null;
+
+	const body = response.data;
+	if (body === null || typeof body !== 'object') return null;
+
+	const { message, data } = body as { message?: unknown; data?: unknown };
+	if (typeof message !== 'string') return null;
+
+	const position =
+		data !== null && typeof data === 'object' ? (data as { position?: unknown }).position : null;
+
+	if (typeof position !== 'number') return null;
+
+	return { message, position };
+};
+
+export interface GetRelatedAlertsParams {
+	open_alerts?: boolean;
+	closed_alerts?: boolean;
+	open_cases?: boolean;
+	closed_cases?: boolean;
+	number_of_nodes?: number;
+	days_back?: number;
+}
+
+export type FilterAlertsData = {
+	total: number;
+	alerts: Alert[];
+	last_page?: number | null;
+	current_page?: number;
+	next_page?: number | null;
+};
+
+export type FilterAlertsMessage = {
+	status: string;
+	message: string;
+	data: FilterAlertsData;
+};
+
+export type GroupedAlertsData = {
+	/** Number of *units* (clusters + unclustered alerts) — drives paging. */
+	total: number;
+	/** Number of matching alerts, for headings that count alerts. */
+	total_alerts: number;
+	data: AlertQueueUnit[];
+	last_page?: number | null;
+	current_page?: number;
+	next_page?: number | null;
+};
+
+export interface CreateAlertBody {
+	alert_title: string;
+	alert_severity_id: number;
+	alert_customer_id: number;
+	alert_classification_id: number;
+	alert_description?: string;
+	alert_source?: string;
+	alert_source_ref?: string;
+	alert_source_link?: string;
+	alert_status_id?: number;
+	alert_context?: Record<string, unknown>;
+	alert_source_event_time?: string;
+	alert_note?: string;
+	alert_tags?: string;
+	alert_owner_id?: number | null;
+	alert_resolution_status_id?: number | null;
+
+	alert_iocs?: Array<{
+		ioc_value: string;
+		ioc_description?: string;
+		ioc_tlp_id?: number;
+		ioc_type_id?: number;
+		ioc_tags?: string;
+		ioc_enrichment?: Record<string, unknown>;
+	}>;
+
+	alert_assets?: Array<{
+		asset_name: string;
+		asset_description?: string;
+		asset_type_id: number;
+		asset_ip?: string;
+		asset_domain?: string;
+		asset_tags?: string;
+		asset_enrichment?: Record<string, unknown>;
+	}>;
+
+	cases: Array<number>;
+
+	alert_source_content?: Record<string, unknown>;
+}
+
+export type UpdateAlertBody = Partial<CreateAlertBody>;
+
+/**
+ * Details an analyst documents on an alert's IOC. The server only reads
+ * these keys — identity, ownership and case attachment are not editable
+ * from an alert (see `alerts_routes/iocs.py`).
+ */
+export interface UpdateAlertIocBody {
+	ioc_value?: string;
+	ioc_type_id?: number;
+	ioc_tlp_id?: number;
+	ioc_description?: string | null;
+	ioc_tags?: string | null;
+	ioc_enrichment?: Record<string, unknown> | null;
+}
+
+/** Same contract as `UpdateAlertIocBody`, for an alert's assets. */
+export interface UpdateAlertAssetBody {
+	asset_name?: string;
+	asset_type_id?: number;
+	asset_description?: string | null;
+	asset_domain?: string | null;
+	asset_ip?: string | null;
+	asset_tags?: string | null;
+	asset_enrichment?: Record<string, unknown> | null;
+}
+
+export type RelatedAlertNode = {
+	id: string;
+	label: string;
+	title?: string;
+	group: string;
+	shape?: string;
+	icon?: {
+		face?: string;
+		code?: string;
+		color?: string;
+		weight?: string;
+	};
+	image?: string;
+	font?: string;
+};
+
+export type RelatedAlertEdge = {
+	from: string;
+	to: string;
+	dashes?: boolean;
+};
+
+export type RelatedAlert = {
+	nodes: RelatedAlertNode[];
+	edges: RelatedAlertEdge[];
+};
+
+export interface MergeAlertBody {
+	iocs_import_list?: string[];
+	assets_import_list?: string[];
+	note?: string;
+	import_as_event?: boolean;
+	target_case_id: number;
+}
+
+export interface EscalateAlertBody {
+	iocs_import_list?: string[];
+	assets_import_list?: string[];
+	note?: string;
+	import_as_event?: boolean;
+	case_tags?: string;
+	case_template_id?: string;
+	case_title?: string;
+}
+
+export type MergeAlertResponse = {
+	status: string;
+	message: string;
+	data: {
+		case_id: number;
+		case_name: string;
+		case_customer: number;
+		case_uuid: string;
+		case_description: string;
+		open_date: string;
+		status_id: number;
+		modification_history: null;
+		case_soc_id: string;
+		state_id: number;
+		close_date: null;
+		classification_id: number;
+		closing_note: null;
+		owner_id: number;
+		user_id: number;
+		custom_attributes: Record<string, unknown>;
+		reviewer_id: null;
+		review_status_id: null;
+		severity_id: number;
+	};
+};
+
+export type EscalateAlertResponse = MergeAlertResponse['data'];
+
+const toCommaSeparated = (value?: string | string[] | number[]): string | undefined => {
+	if (value == null) return undefined;
+	if (Array.isArray(value)) return value.map(String).join(',');
+	return value;
+};
+
+const parseRelatedAlert = (value: unknown): RelatedAlert => {
+	if (typeof value !== 'object' || value === null) {
+		return { nodes: [], edges: [] };
+	}
+
+	const data = value as {
+		nodes?: RelatedAlertNode[];
+		edges?: RelatedAlertEdge[];
+	};
+
+	return {
+		nodes: Array.isArray(data.nodes) ? data.nodes : [],
+		edges: Array.isArray(data.edges) ? data.edges : []
+	};
+};
+
+const toAlertListQuery = (params: FilterAlertsParams): Record<string, unknown> => ({
+	...params,
+	alert_tags: toCommaSeparated(params.alert_tags),
+	alert_assets: toCommaSeparated(params.alert_assets),
+	alert_iocs: toCommaSeparated(params.alert_iocs),
+	alert_ids: toCommaSeparated(params.alert_ids)
+});
+
+export class AlertService {
+	static async list(
+		params: FilterAlertsParams = {},
+		options: ApiOptions = {}
+	): Promise<RequestResponse<FilterAlertsMessage>> {
+		const path = ApiService.withQuery('/api/v2/alerts', toAlertListQuery(params));
+		return ApiService.get<FilterAlertsMessage>(path, options);
+	}
+
+	/**
+	 * Same filters as `list`, but clustered alerts collapse into their
+	 * cluster and pagination counts queue units rather than alerts. See
+	 * `AlertQueueUnit`.
+	 */
+	static async listGrouped(
+		params: FilterAlertsParams = {},
+		options: ApiOptions = {}
+	): Promise<RequestResponse<GroupedAlertsData>> {
+		const path = ApiService.withQuery('/api/v2/alerts/grouped', toAlertListQuery(params));
+		return ApiService.get<GroupedAlertsData>(path, options);
+	}
+
+	/**
+	 * The vocabulary behind `query`.
+	 *
+	 * Fetched rather than hard-coded so an alias the backend gained is
+	 * offered by autocomplete without a frontend release.
+	 */
+	static async searchSchema(
+		options: ApiOptions = {}
+	): Promise<RequestResponse<{ fields: AlertSearchField[] }>> {
+		return ApiService.get<{ fields: AlertSearchField[] }>('/api/v2/alerts/search-schema', options);
+	}
+
+	static async get(
+		alertId: AlertIdentifier,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Alert>> {
+		return ApiService.get<Alert>(`/api/v2/alerts/${alertId}`, options);
+	}
+
+	static async create(
+		body: CreateAlertBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Alert>> {
+		return ApiService.post<Alert, CreateAlertBody>(`/api/v2/alerts`, body, options);
+	}
+
+	static async update(
+		alertId: AlertIdentifier,
+		body: UpdateAlertBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Alert>> {
+		return ApiService.put<Alert, UpdateAlertBody>(`/api/v2/alerts/${alertId}`, body, options);
+	}
+
+	static async remove(
+		alertId: AlertIdentifier,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<null>> {
+		return ApiService.delete<null>(`/api/v2/alerts/${alertId}`, options);
+	}
+
+	/**
+	 * Edit one of the alert's IOCs in place. The IOC keeps belonging to
+	 * the alert — this is not the case IOC route, which needs a case.
+	 */
+	static async updateIoc(
+		alertId: AlertIdentifier,
+		iocId: number,
+		body: UpdateAlertIocBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Ioc>> {
+		return ApiService.put<Ioc, UpdateAlertIocBody>(
+			`/api/v2/alerts/${alertId}/iocs/${iocId}`,
+			body,
+			options
+		);
+	}
+
+	/** Edit one of the alert's assets in place. See `updateIoc`. */
+	static async updateAsset(
+		alertId: AlertIdentifier,
+		assetId: number,
+		body: UpdateAlertAssetBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Asset>> {
+		return ApiService.put<Asset, UpdateAlertAssetBody>(
+			`/api/v2/alerts/${alertId}/assets/${assetId}`,
+			body,
+			options
+		);
+	}
+
+	static async getRelatedAlerts(
+		alertId: AlertIdentifier,
+		params: GetRelatedAlertsParams,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<RelatedAlert>> {
+		const path = ApiService.withQuery(`/api/v2/alerts/${alertId}/related-alerts`, {
+			'open-alerts': params?.open_alerts,
+			'closed-alerts': params?.closed_alerts,
+			'open-cases': params?.open_cases,
+			'closed-cases': params?.closed_cases,
+			'days-back': params?.days_back,
+			'number-of-nodes': params?.number_of_nodes
+		});
+
+		const response = await ApiService.get<unknown>(path, options);
+
+		return {
+			...response,
+			data: parseRelatedAlert(response.data)
+		};
+	}
+
+	static async merge(
+		alertId: AlertIdentifier,
+		body: MergeAlertBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<MergeAlertResponse>> {
+		return ApiService.post<MergeAlertResponse, MergeAlertBody>(
+			`/api/v2/alerts/merge/${alertId}`,
+			body,
+			options
+		);
+	}
+
+	static async unmerge(
+		alertId: AlertIdentifier,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<Alert>> {
+		return ApiService.post<Alert, Record<string, never>>(
+			`/api/v2/alerts/unmerge/${alertId}`,
+			{},
+			options
+		);
+	}
+
+	static async escalate(
+		alertId: AlertIdentifier,
+		body: EscalateAlertBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<EscalateAlertResponse>> {
+		return ApiService.post<EscalateAlertResponse, EscalateAlertBody>(
+			`/api/v2/alerts/escalate/${alertId}`,
+			body,
+			options
+		);
+	}
+}

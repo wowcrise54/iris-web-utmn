@@ -16,37 +16,28 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import collections
+from app import legacy_collections  # Before legacy image/docx dependency imports.
 import json
 import logging as logger
 import os
 import urllib.parse
-from flask import Flask
-from flask import session
-from flask_bcrypt import Bcrypt
-from flask_caching import Cache
-
-from flask_login import LoginManager
-from flask_marshmallow import Marshmallow
-from flask_socketio import SocketIO, Namespace
-from flask_sqlalchemy import SQLAlchemy
+import bleach
+from markupsafe import Markup
+from app.web import IRISApp, g
+from app.web import session
+from app.extensions import Bcrypt
+from app.extensions import Cache
+from app.auth_login import LoginManager
+from app.extensions import Marshmallow
+from app.socket_transport import SocketIO, Namespace
+from app.extensions import SQLAlchemy
 from functools import partial
-
-from werkzeug.middleware.proxy_fix import ProxyFix
+from sqlalchemy_imageattach.stores.fs import HttpExposedFileSystemStore
+from app.web_forms import init_forms
 
 from app.flask_dropzone import Dropzone
 from app.iris_engine.tasker.celery import make_celery
 from app.iris_engine.access_control.oidc_handler import get_oidc_client
-
-
-class ReverseProxied(object):
-    def __init__(self, flask_app):
-        self._app = flask_app
-
-    def __call__(self, environ, start_response):
-        scheme = environ.get('HTTP_X_FORWARDED_PROTO', None)
-        if scheme is not None:
-            environ['wsgi.url_scheme'] = scheme
-        return self._app(environ, start_response)
 
 
 class AlertsNamespace(Namespace):
@@ -63,11 +54,7 @@ LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 logger.basicConfig(level=logger.INFO, format=LOG_FORMAT, datefmt=LOG_TIME_FORMAT)
 
-app = Flask(__name__, static_folder='../static')
-
-# CORS(app,
-#      supports_credentials=True,
-#      resources={r"/api/*": {"origins": ["http://127.0.0.1:5137", "http://localhost:5173"]}})
+app = IRISApp(__name__)
 
 
 def ac_current_user_has_permission(*permissions):
@@ -90,21 +77,51 @@ def ac_current_user_has_manage_perms():
     return False
 
 
+# Allowlist for user-defined HTML custom attributes. Matches the frontend
+# do_md_filter_xss() allowlist closely so behavior is consistent across sinks.
+# Explicitly excludes script / iframe / event handlers / javascript: URLs.
+_ATTR_HTML_ALLOWED_TAGS = [
+    'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3',
+    'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong',
+    'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul',
+]
+_ATTR_HTML_ALLOWED_ATTRS = {
+    '*': ['class', 'title'],
+    'a': ['href', 'title', 'target', 'rel'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
+}
+_ATTR_HTML_ALLOWED_PROTOCOLS = ['http', 'https', 'mailto']
+
+
+def _sanitize_attribute_html(value):
+    if value is None:
+        return ''
+    cleaned = bleach.clean(
+        str(value),
+        tags=_ATTR_HTML_ALLOWED_TAGS,
+        attributes=_ATTR_HTML_ALLOWED_ATTRS,
+        protocols=_ATTR_HTML_ALLOWED_PROTOCOLS,
+        strip=True,
+    )
+    return Markup(cleaned)
+
+
 app.jinja_env.filters['unquote'] = lambda u: urllib.parse.unquote(u)
 app.jinja_env.filters['tojsonsafe'] = lambda u: json.dumps(u, indent=4, ensure_ascii=False)
 app.jinja_env.filters['tojsonindent'] = lambda u: json.dumps(u, indent=4)
 app.jinja_env.filters['escape_dots'] = lambda u: u.replace('.', '[.]')
+app.jinja_env.filters['sanitize_attribute_html'] = _sanitize_attribute_html
 app.jinja_env.globals.update(user_has_perm=ac_current_user_has_permission)
 app.jinja_env.globals.update(user_has_manage_perms=ac_current_user_has_manage_perms)
 app.jinja_options["autoescape"] = lambda _: True
 app.jinja_env.autoescape = True
 
+# Internationalization: loads the en/ru catalogs, installs the gettext helpers
+# in Jinja and resolves the active locale per request (see app/i18n.py).
+from app.i18n import init_i18n  # noqa: E402  (after jinja environment setup)
+init_i18n(app)
+
 app.config.from_object('app.configuration.Config')
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax'
-)
 
 cache = Cache(app)
 
@@ -113,12 +130,13 @@ SQLALCHEMY_ENGINE_OPTIONS = {
     "pool_pre_ping": True
 }
 
-db = SQLAlchemy(app, engine_options=SQLALCHEMY_ENGINE_OPTIONS)  # flask-sqlalchemy
+db = SQLAlchemy(app, engine_options=SQLALCHEMY_ENGINE_OPTIONS, scopefunc=lambda: id(g._get_current_object()))  # flask-sqlalchemy
 
 bc = Bcrypt(app)  # flask-bcrypt
 
 lm = LoginManager()  # flask-loginmanager
 lm.init_app(app)  # init the login manager
+init_forms(app)
 
 ma = Marshmallow(app) # Init marshmallow
 
@@ -126,15 +144,15 @@ dropzone = Dropzone(app)
 
 celery = make_celery(app)
 
-# store = HttpExposedFileSystemStore(
-#     path='images',
-#     prefix='/static/assets/images/'
-# )
+store = HttpExposedFileSystemStore(
+    path='images',
+    prefix='/static/assets/images/'
+)
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
-#app.wsgi_app = store.wsgi_middleware(app.wsgi_app)
+app.expose_image_store(path='images', prefix='/static/assets/images/')
 
 socket_io = SocketIO(app, cors_allowed_origins="*")
+asgi_app = socket_io.asgi_app
 
 alerts_namespace = AlertsNamespace('/alerts')
 socket_io.on_namespace(alerts_namespace)
@@ -143,35 +161,6 @@ oidc_client = None
 if app.config.get('AUTHENTICATION_TYPE') == "oidc":
     oidc_client = get_oidc_client(app)
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    db.session.remove()
-
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
-
-    return response
 
 
-from app.views import register_blusprints
-from app.views import load_user
-from app.views import load_user_from_request
-
-register_blusprints(app)
-
-from app.post_init import run_post_init
-
-try:
-
-    run_post_init(development=app.config['DEVELOPMENT'])
-
-except Exception as e:
-    app.logger.exception('Post init failed. IRIS not started')
-    raise e
-
-lm.user_loader(load_user)
-lm.request_loader(load_user_from_request)
+from app import views

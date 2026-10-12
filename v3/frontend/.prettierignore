@@ -1,0 +1,13 @@
+# Package Managers
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+# Stray duplicate of package-lock.json, committed by accident in 4ac6ac3.
+# Ignored here so it doesn't get reformatted; it should probably just be deleted.
+package-lockss.json
+
+# Generated
+coverage/
+
+# Vendored data blob (440KB) — reformatting it is pure diff noise.
+static/emoji/data.json

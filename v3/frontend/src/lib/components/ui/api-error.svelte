@@ -1,0 +1,48 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { isCorsError } from '$lib/utils/error-handler';
+	import { Alert, AlertDescription, AlertTitle } from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
+	import { RefreshCw } from 'lucide-svelte';
+
+	export let error: any = null;
+	export let onRetry: (() => void) | null = null;
+	export let showRetryButton = true;
+
+	$: isCors = isCorsError(error);
+	$: errorMessage = getErrorMessage(error);
+
+	function getErrorMessage(err: any): string {
+		if (!err) return 'An unknown error occurred';
+
+		if (isCorsError(err)) {
+			return 'Unable to connect to the backend server. Please check your network connection or contact your administrator.';
+		}
+
+		return err instanceof Error ? err.message : String(err);
+	}
+</script>
+
+<Alert variant="destructive">
+	<AlertTitle>{irisT("Error loading data", $irisLocale)}</AlertTitle>
+	<AlertDescription>
+		<p>{errorMessage}</p>
+
+		{#if isCors}
+			<p class="mt-2 text-xs">
+				{irisT("(CORS error: This is likely a configuration issue with the application server)", $irisLocale)}
+			</p>
+		{/if}
+
+		{#if showRetryButton && onRetry}
+			<div class="mt-4">
+				<Button variant="outline" size="sm" onclick={onRetry}>
+					<RefreshCw class="mr-2 h-4 w-4" />
+					{irisT("Retry", $irisLocale)}
+				</Button>
+			</div>
+		{/if}
+	</AlertDescription>
+</Alert>

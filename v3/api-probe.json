@@ -1,0 +1,13 @@
+{
+  "auth_settings": 200,
+  "login": 200,
+  "/api/v2/auth/whoami": 200,
+  "/api/v2/cases": 200,
+  "/api/v2/cases/2": 200,
+  "/api/v2/alerts": 200,
+  "/api/v2/alerts/1": 200,
+  "/api/v2/war-rooms": 200,
+  "/api/v2/alert-clusters": 200,
+  "/api/v2/investigation-flows": 200,
+  "/api/v2/custom-dashboards": 200
+}

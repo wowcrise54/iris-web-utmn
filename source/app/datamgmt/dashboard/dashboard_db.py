@@ -15,17 +15,15 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 from sqlalchemy import desc
 
 from app import db
-from app.models.models import CaseTasks
-from app.models.models import TaskAssignee
-from app.models.models import ReviewStatus
-from app.models.cases import Cases
-from app.models.models import GlobalTasks
-from app.models.models import TaskStatus
+from app.models import CaseTasks, TaskAssignee, ReviewStatus
+from app.models import Cases
+from app.models import GlobalTasks
+from app.models import TaskStatus
 from app.models.authorization import User
 
 

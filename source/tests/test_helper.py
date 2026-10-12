@@ -22,7 +22,7 @@ from unittest import TestCase
 
 import re
 from flask import url_for
-from flask.testing import FlaskClient
+from starlette.testclient import TestClient as FlaskClient
 from random import randrange
 
 from app import app

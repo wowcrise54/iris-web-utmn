@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_locale }}">
 <head>
 
 	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-	<title>IRIS - {% block title %}Case{% endblock %} {% if session['current_case'].case_id %}| {{ session['current_case'].case_name }}  {% endif %} </title>
+	<title>IRIS - {% block title %}{{ _("Case") }}{% endblock %} {% if session['current_case'].case_id %}| {{ session['current_case'].case_name }}  {% endif %} </title>
 	<meta content='width=device-width, initial-scale=1.0, shrink-to-fit=no' name='viewport' />
 	<link rel="icon" href="/static/assets/img/logo.ico" type="image/x-icon"/>
 	{% if demo_domain %}
@@ -41,7 +41,7 @@
 
 		{% include 'includes/quick-sidebar.html' %}
 		{% include 'includes/datastore-sidebar.html' %}
-		<div id="minimized_modal_box" class="col-10 col-xs-11 col-sm-4 minimized_modal shadow-lg" style="display:none;" title="Maximize modal" onclick="modal_maximize();">
+		<div id="minimized_modal_box" class="col-10 col-xs-11 col-sm-4 minimized_modal shadow-lg" style="display:none;" title="{{ _('Maximize modal') }}" onclick="modal_maximize();">
 			<div class="row mt-3 mb-3">
 				<div class="col-10 d-flex">
 					<span data-notify="title" id="minimized_modal_title" class="align-self-center"></span>
@@ -55,13 +55,13 @@
 	</div>
 
 	<!--   Core JS Files   -->
-	<script src="/static/assets/js/core/jquery.3.2.1.min.js"></script>
+	<script src="/static/assets/js/core/jquery.3.7.1.min.js"></script>
 	<script src="/static/assets/js/core/popper.min.js"></script>
 	<script src="/static/assets/js/core/bootstrap.min.js"></script>
 	<script src="/static/assets/js/plugin/tagsinput/suggesttag.js"></script>
 
 	<!-- jQuery UI -->
-	<script src="/static/assets/js/plugin/jquery-ui-1.12.1.custom/jquery-ui.min.js"></script>
+	<script src="/static/assets/js/plugin/jquery-ui-1.13.3.custom/jquery-ui.min.js"></script>
 	<script src="/static/assets/js/plugin/jquery-ui-touch-punch/jquery.ui.touch-punch.min.js"></script>
 
 	<!-- jQuery Scrollbar -->
@@ -86,6 +86,7 @@
 	<script src="/static/assets/js/plugin/ace/src-noconflict/ext-language_tools.js" type="text/javascript"
     charset="utf-8"></script>
 
+	{% include 'includes/i18n_scripts.html' %}
 	<script src="/static/assets/js/iris/common.js"></script>
 	<script src="/static/assets/js/iris/datastore.js"></script>
 

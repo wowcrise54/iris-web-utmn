@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_locale }}">
 <head>
 
 	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-	<title>IRIS - {% block title %}Investigation{% endblock %} </title>
+	<title>IRIS - {% block title %}{{ _('Investigation') }}{% endblock %} </title>
 	<meta content='width=device-width, initial-scale=1.0, shrink-to-fit=no' name='viewport' />
 	<link rel="icon" href="/static/assets/img/logo.ico" type="image/x-icon"/>
 	{% if demo_domain %}
@@ -14,7 +14,7 @@
 	<script>
 		WebFont.load({
 			custom: {"families":["Lato:300,400,700,900", "Flaticon", "Font Awesome 5 Solid", "Font Awesome 5 Regular", "Font Awesome 5 Brands", "simple-line-icons"],
-			urls: ['/static/assets/css/fonts.css']},
+			urls: ['/static/assets/css/fonts.min.css']},
 			active: function() {
 				sessionStorage.fonts = true;
 			}
@@ -33,12 +33,12 @@
 
 
 	<!--   Core JS Files   -->
-	<script src="/static/assets/js/core/jquery.3.2.1.min.js"></script>
+	<script src="/static/assets/js/core/jquery.3.7.1.min.js"></script>
 	<script src="/static/assets/js/core/popper.min.js"></script>
 	<script src="/static/assets/js/core/bootstrap.min.js"></script>
 
 	<!-- jQuery UI -->
-	<script src="/static/assets/js/plugin/jquery-ui-1.12.1.custom/jquery-ui.min.js"></script>
+	<script src="/static/assets/js/plugin/jquery-ui-1.13.3.custom/jquery-ui.min.js"></script>
 	<script src="/static/assets/js/plugin/jquery-ui-touch-punch/jquery.ui.touch-punch.min.js"></script>
 
 	<!-- jQuery Scrollbar -->
@@ -60,8 +60,10 @@
 	<script src="/static/assets/js/core/crypto.md5.js"></script>
 	<script src="/static/assets/js/plugin/xss/xss.js"></script>
 
+		<!-- Iris i18n -->
+		{% include 'includes/i18n_scripts.html' %}
 
-	<!-- Specific JS goes HERE -->
-    {% block javascripts %}{% endblock javascripts %}
+		<!-- Specific JS goes HERE -->
+	    {% block javascripts %}{% endblock javascripts %}
 
 </html>

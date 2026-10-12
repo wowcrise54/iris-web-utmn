@@ -1,0 +1,110 @@
+services:
+  db:
+    image: postgres:18-alpine
+    pull_policy: never
+    env_file: ${V3_ENV_FILE:-.env.v3.validation}
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes: !override
+      - v3-db:/var/lib/postgresql/data
+    networks: !override [v3]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iris_db"]
+      interval: 5s
+      retries: 30
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    networks: !override [v3]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      retries: 30
+  app:
+    image: iris-v3-fastapi:local
+    build:
+      context: ./v3/backend
+      dockerfile: docker/webApp/Dockerfile.native
+    env_file: !override ["${V3_ENV_FILE:-.env.v3.validation}"]
+    environment: !override
+      POSTGRES_SERVER: db
+      IRIS_WORKER: null
+    command: !override [app]
+    volumes: !override
+      - v3-downloads:/home/iris/downloads
+      - v3-templates:/home/iris/user_templates
+      - v3-server-data:/home/iris/server_data
+    ports: !override ["127.0.0.1:${V3_HTTP_PORT:-18084}:8000"]
+    networks: !override [v3]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/manage/server/authentication-settings')"]
+      interval: 5s
+      retries: 60
+      start_period: 120s
+    depends_on:
+      db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+  worker:
+    image: iris-v3-fastapi:local
+    build:
+      context: ./v3/backend
+      dockerfile: docker/webApp/Dockerfile.native
+    env_file: !override ["${V3_ENV_FILE:-.env.v3.validation}"]
+    environment: !override
+      POSTGRES_SERVER: db
+      IRIS_WORKER: "1"
+      NUMBER_OF_CHILD: "2"
+    command: !override [worker]
+    volumes: !override
+      - v3-downloads:/home/iris/downloads
+      - v3-templates:/home/iris/user_templates
+      - v3-server-data:/home/iris/server_data
+    networks: !override [v3]
+    depends_on:
+      app: {condition: service_healthy}
+  frontend:
+    image: iris-v3-frontend-ru:local
+    build:
+      context: ./v3/frontend
+      args: {NODE_VERSION: 26-alpine}
+    environment:
+      PUBLIC_INTERNAL_API_URL: http://app:8000
+      PUBLIC_EXTERNAL_API_URL: https://localhost:${V3_HTTPS_PORT:-18545}
+      PUBLIC_USE_MOCK_API_DATA: "false"
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      BODY_SIZE_LIMIT: Infinity
+      NODE_ENV: production
+      IRIS_ALLOW_ORIGIN: https://localhost:${V3_HTTPS_PORT:-18545}
+    networks: [v3]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5173/login', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      retries: 60
+      start_period: 30s
+  nginx:
+    image: iris-v3-nginx:local
+    build:
+      context: ./v3/backend/docker/nginx
+      args: {NGINX_CONF_GID: "1234", NGINX_CONF_FILE: nginx-newui.conf}
+    environment: !override
+      IRIS_UPSTREAM_SERVER: app
+      IRIS_UPSTREAM_PORT: "8000"
+      IRIS_FRONTEND_SERVER: frontend
+      IRIS_FRONTEND_PORT: "5173"
+      INTERFACE_HTTPS_PORT: "8443"
+      SERVER_NAME: localhost
+      CERT_FILENAME: upgrade-cert.pem
+      KEY_FILENAME: upgrade-key.pem
+    ports: !override ["127.0.0.1:${V3_HTTPS_PORT:-18545}:8443"]
+    volumes: !override ["./tests/upgrade_2_4_29/runtime/certs:/www/certs:ro"]
+    networks: !override [v3]
+    depends_on:
+      app: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+volumes:
+  v3-db: {external: true, name: "${V3_VOLUME_PREFIX:-iris-v3-validation-20261010}-db"}
+  v3-downloads: {external: true, name: "${V3_VOLUME_PREFIX:-iris-v3-validation-20261010}-downloads"}
+  v3-templates: {external: true, name: "${V3_VOLUME_PREFIX:-iris-v3-validation-20261010}-templates"}
+  v3-server-data: {external: true, name: "${V3_VOLUME_PREFIX:-iris-v3-validation-20261010}-server-data"}
+networks:
+  v3: {}

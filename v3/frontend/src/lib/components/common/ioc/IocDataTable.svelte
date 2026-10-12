@@ -1,0 +1,186 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { createEventDispatcher } from 'svelte';
+	import { renderComponent, type ColumnDef } from '@tanstack/svelte-table';
+	import { page } from '$app/stores';
+	import type { Ioc } from '$lib/types/resources/ioc';
+	import DataTable from '$lib/components/ui/data-table-tanstack/data-table.svelte';
+	import TlpBadge from '../tlp/TlpBadge.svelte';
+	import IocNameCell from './IocNameCell.svelte';
+	import RowCheckbox from '$lib/components/common/RowCheckbox.svelte';
+	import TagDisplay from '$lib/components/common/tag/TagDisplay.svelte';
+	import RowActionsCell from '$lib/components/common/table/RowActionsCell.svelte';
+	import TruncatedTextCell from '$lib/components/common/table/TruncatedTextCell.svelte';
+
+	export let iocs: Ioc[];
+	export let caseId: string | number | null = null;
+	export let className: string = '';
+	export let totalPages: number | null = null;
+	export let tablePage: number | null = null;
+	export let perPage: number = 10;
+	export let selectionMode: boolean = false;
+	export let selectedIocs: Set<number> = new Set();
+	export let onToggleSelect: ((id: number) => void) | undefined = undefined;
+
+	// Detail columns, off by default so the case views keep the compact
+	// table they have. The alert views turn them on: an alert's IOCs are
+	// only ever read there, and the description, the tags and whatever a
+	// module enriched them with are the whole point of reading them.
+	export let showDescription: boolean = false;
+	export let showTags: boolean = false;
+	export let onShowEnrichment: ((ioc: Ioc) => void) | undefined = undefined;
+	export let onEdit: ((ioc: Ioc) => void) | undefined = undefined;
+
+	const dispatch = createEventDispatcher();
+
+	// See AssetDataTable for the rationale on this two-step sync — it avoids
+	// the race where the parent's lagging tablePage snaps back the user's
+	// click before the server response arrives.
+	let currentPage: number = (tablePage ?? $page.data.iocs?.current_page) || 1;
+	let lastTablePage: number | null = tablePage ?? null;
+	$: if (tablePage != null && tablePage !== lastTablePage && tablePage !== currentPage) {
+		currentPage = tablePage;
+		lastTablePage = tablePage;
+	} else if (tablePage != null && tablePage !== lastTablePage) {
+		lastTablePage = tablePage;
+	}
+
+	let prevPage = currentPage;
+	$: if (currentPage !== prevPage) {
+		prevPage = currentPage;
+		dispatch('pageChange', { page: currentPage });
+	}
+
+	let currentPageSize: number = perPage;
+	let lastPerPage = perPage;
+	$: if (perPage !== lastPerPage && perPage !== currentPageSize) {
+		currentPageSize = perPage;
+		lastPerPage = perPage;
+	} else if (perPage !== lastPerPage) {
+		lastPerPage = perPage;
+	}
+
+	let prevPageSize = currentPageSize;
+	$: if (currentPageSize !== prevPageSize) {
+		prevPageSize = currentPageSize;
+		dispatch('pageSizeChange', { pageSize: currentPageSize });
+	}
+
+	// The detail columns compete for the same fixed width as the base
+	// ones, so the base widths shrink when they are shown rather than
+	// squeezing the value out of the first column.
+	$: detailed = showDescription || showTags;
+
+	let dataColumns: ColumnDef<Ioc>[] = [];
+
+	$: dataColumns = [
+		{
+			accessorKey: 'ioc_value',
+			header: () => 'Name',
+			meta: { tdClass: 'max-w-0' },
+			cell: (cell) => {
+				const ioc = cell.row.original;
+				if (caseId != null) {
+					return renderComponent(IocNameCell, {
+						href: `/case/${caseId}/iocs/${ioc.ioc_id}`,
+						id: ioc.ioc_id,
+						value: ioc.ioc_value
+					});
+				}
+				return ioc.ioc_value;
+			}
+		},
+		{
+			accessorKey: 'ioc_type.type_name',
+			header: () => 'Type',
+			meta: { thClass: detailed ? 'w-[14%]' : 'w-1/4' },
+			cell: (cell) => cell.getValue() || '-'
+		},
+		{
+			accessorKey: 'tlp.tlp_name',
+			header: () => 'TLP',
+			meta: { thClass: detailed ? 'w-[12%]' : 'w-[30%]' },
+			cell: (cell) => {
+				const tlpName = cell.getValue() as string;
+				return renderComponent(TlpBadge, { tlp_name: tlpName });
+			}
+		},
+		...(showDescription
+			? [
+					{
+						accessorKey: 'ioc_description',
+						header: () => 'Description',
+						meta: { thClass: 'w-[28%]', tdClass: 'max-w-0' },
+						cell: (cell) =>
+							renderComponent(TruncatedTextCell, { value: cell.getValue() as string | null })
+					} as ColumnDef<Ioc>
+				]
+			: []),
+		...(showTags
+			? [
+					{
+						accessorKey: 'ioc_tags',
+						header: () => 'Tags',
+						meta: { thClass: 'w-[18%]', tdClass: 'max-w-0' },
+						cell: (cell) =>
+							renderComponent(TagDisplay, { tags: (cell.getValue() as string) ?? '', size: 'xs' })
+					} as ColumnDef<Ioc>
+				]
+			: []),
+		...(onEdit || onShowEnrichment
+			? [
+					{
+						id: '__actions__',
+						header: () => '',
+						meta: { thClass: 'w-16', tdClass: 'w-16' },
+						cell: (cell) => {
+							const ioc = cell.row.original;
+
+							return renderComponent(RowActionsCell, {
+								hasEnrichment: !!ioc.ioc_enrichment,
+								onShowEnrichment: onShowEnrichment && (() => onShowEnrichment?.(ioc)),
+								onEdit: onEdit && (() => onEdit?.(ioc)),
+								editLabel: 'Edit IOC',
+								enrichmentLabel: 'View IOC enrichment'
+							});
+						}
+					} as ColumnDef<Ioc>
+				]
+			: [])
+	];
+
+	$: columns = selectionMode
+		? [
+				{
+					id: '__select__',
+					header: () => '',
+					meta: { thClass: 'w-8 pr-0', tdClass: 'w-8 pr-0' },
+					cell: (cell: import('@tanstack/svelte-table').CellContext<Ioc, unknown>) =>
+						renderComponent(RowCheckbox, {
+							checked: selectedIocs.has(cell.row.original.ioc_id),
+							onToggle: () => onToggleSelect?.(cell.row.original.ioc_id)
+						})
+				} as ColumnDef<Ioc>,
+				...dataColumns
+			]
+		: dataColumns;
+</script>
+
+<div class="{className} flex overflow-auto">
+	{#if !iocs || iocs.length === 0}
+		<div class="w-full p-4 text-center">
+			<p>{irisT("No IOCs to display.", $irisLocale)}</p>
+		</div>
+	{:else}
+		<DataTable
+			columns={columns as ColumnDef<unknown>[]}
+			tableClass="w-full table-fixed text-sm"
+			data={iocs}
+			bind:page={currentPage}
+			bind:pageSize={currentPageSize}
+			totalPages={totalPages ?? undefined}
+		/>
+	{/if}
+</div>

@@ -1,0 +1,12 @@
+# Minimal dependencies to run the localization test suite in isolation.
+# The suite loads app/web.py, app/i18n.py and the i18n blueprint directly, so it
+# does not need the full IRIS runtime (database, Celery, Socket.IO, ...).
+fastapi==0.115.6
+starlette==0.41.3
+Jinja2==3.1.5
+itsdangerous==2.2.0
+Werkzeug==3.1.3
+WTForms==3.2.1
+python-multipart==0.0.20
+httpx
+pytest

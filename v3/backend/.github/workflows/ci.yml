@@ -1,0 +1,385 @@
+#  IRIS Source Code
+#  contact@dfir-iris.org
+#
+#  Continuous Integration for iris-backend.
+#
+#  Runs static checks (ruff, import-linter, vulture), then builds
+#  db + backend images to a tar artifact, loads them into the test
+#  runner, brings up docker-compose.test.yml, and runs the Python
+#  unittest + database migration suites against the live stack.
+#
+#  End-to-end tests against the SvelteKit UI live in the iris-web
+#  meta-repo — see iris-web/.github/workflows/e2e.yml.
+
+name: Continuous Integration
+on: [push, pull_request]
+
+env:
+  REGISTRY: ghcr.io
+  CI_DB_IMAGE: ghcr.io/dfir-iris/iris-db:ci-${{ github.run_id }}-${{ github.run_attempt }}
+  CI_APP_IMAGE: ghcr.io/dfir-iris/iris-backend:ci-${{ github.run_id }}-${{ github.run_attempt }}
+  # Local tags must be run-scoped too. The runner is shared, so a fixed
+  # `iris-db:ci` collides with whatever else already holds that tag
+  # ("AlreadyExists: image docker.io/library/iris-db:ci"). Consumed by
+  # docker-compose.test.yml, which falls back to the plain tag locally.
+  LOCAL_DB_IMAGE: iris-db:ci-${{ github.run_id }}-${{ github.run_attempt }}
+  LOCAL_APP_IMAGE: iris-backend:ci-${{ github.run_id }}-${{ github.run_attempt }}
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+
+jobs:
+
+  static-checks:
+    name: Static analysis checks
+    runs-on: self-hosted
+    steps:
+      - name: Check out iris-backend
+        uses: actions/checkout@v4
+      - name: Check source with ruff
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: check --output-format=github
+      - name: Install the static-analysis tooling
+        run: |
+          # The runner's system Python is externally managed (PEP 668), so a
+          # plain `pip install` is refused outright — and `--user`, which is
+          # how these tools used to land, is refused too. A venv is the usual
+          # answer but is not available either: the runner has no
+          # python3.11-venv, so `python3 -m venv` dies at ensurepip.
+          #
+          # `--target` is the door pip leaves open. It disables the
+          # externally-managed check by design (see the comment on the check
+          # itself in pip's install.py: "Specifying --root, --target, or
+          # --prefix disables the check"), writes nothing outside
+          # $RUNNER_TEMP, and implies --ignore-installed — so what runs here
+          # is what we asked for, not whatever the host happens to ship.
+          #
+          # $GITHUB_PATH/$GITHUB_ENV publish it to the rest of the job.
+          # Getting that PATH entry right is the whole point: these console
+          # scripts previously landed in a user base that was never on PATH,
+          # so `lint-imports` and `vulture` exited 127 and the contracts they
+          # enforce were never actually checked.
+          python3 -m pip install --target "${{ runner.temp }}/ci-tools" \
+            import-linter vulture pyyaml
+          echo "${{ runner.temp }}/ci-tools/bin" >> "$GITHUB_PATH"
+          echo "PYTHONPATH=${{ runner.temp }}/ci-tools" >> "$GITHUB_ENV"
+      - name: Check import dependencies with import-linter
+        # Prepended, not assigned: PYTHONPATH already carries the tooling.
+        run: PYTHONPATH="source:$PYTHONPATH" lint-imports
+      - name: Looking for dead code with vulture
+        run: vulture
+      - name: OpenAPI spec drift check
+        run: |
+          # The generator is pure-AST (no app boot, no DB) so it runs
+          # in the static-checks lane. If it produces something
+          # different from the checked-in file, print the diff and
+          # fail with a hint to regenerate.
+          cd source
+          python3 -m scripts.generate_openapi --output /tmp/openapi.generated.yaml
+          if ! diff -u app/blueprints/rest/openapi.generated.yaml /tmp/openapi.generated.yaml; then
+            echo '::error::OpenAPI spec is out of date. Run `cd source && python -m scripts.generate_openapi --output app/blueprints/rest/openapi.generated.yaml` and commit.'
+            exit 1
+          fi
+
+  build-docker-db:
+    name: Build docker db
+    runs-on: self-hosted
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out iris-backend
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and export
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/db
+          tags: ${{ env.CI_DB_IMAGE }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+  build-docker-app:
+    name: Build docker backend
+    runs-on: self-hosted
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Check out iris-backend
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and export
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/webApp/Dockerfile
+          tags: ${{ env.CI_APP_IMAGE }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+  test-api:
+    name: Test API
+    runs-on: self-hosted
+    permissions:
+      packages: read
+      contents: read
+    needs:
+      - build-docker-db
+      - build-docker-app
+    steps:
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull docker images for tests
+        run: |
+          docker pull "${{ env.CI_DB_IMAGE }}"
+          docker pull "${{ env.CI_APP_IMAGE }}"
+          docker tag "${{ env.CI_DB_IMAGE }}" "${{ env.LOCAL_DB_IMAGE }}"
+          docker tag "${{ env.CI_APP_IMAGE }}" "${{ env.LOCAL_APP_IMAGE }}"
+      - name: Check out iris-backend
+        uses: actions/checkout@v4
+      - name: Start test stack
+        run: |
+          cp .env.tests.model .env
+          # The runner is persistent and `db_data` is a plain named volume,
+          # so a run that was cancelled — or that died before reaching
+          # `Stop test stack` — leaves its Postgres data dir on disk and
+          # `up` silently reuses it. The suite then runs against another
+          # run's rows: duplicate API key names, a demo case it never
+          # created, users it cannot account for. Start from nothing.
+          # (tests_database_migration already does the equivalent — it
+          # drives compose with its own project name and `volume_rm`s
+          # `<project>_db_data` in tearDown.)
+          docker compose --file docker-compose.test.yml down --volumes --remove-orphans
+          docker compose --file docker-compose.test.yml up --detach --wait
+      - name: Inspect test stack start failure
+        if: ${{ failure() || cancelled() }}
+        run: |
+          # Best-effort: the runner has no jq, and under `bash -e` that killed
+          # the step before it reached the logs — which is the one thing worth
+          # having here. `free` is in: start failures on a shared runner have
+          # been memory pressure, not the stack itself.
+          set +e
+          free -m
+          docker ps --all
+          for container in iris_db iris_app iris_worker; do
+            docker inspect --format "{{json .State}}" "${container}"
+          done
+          docker compose --file docker-compose.test.yml logs
+          exit 0
+      - name: Run tests
+        working-directory: tests
+        run: |
+          # `python3 -m venv` fails on this runner (no python3.11-venv, so
+          # ensurepip is missing) and a bare `pip install` is refused by PEP
+          # 668. `--target` sidesteps both — see the static-checks job. It
+          # implies --ignore-installed, so the pins in requirements.txt are
+          # honoured rather than silently satisfied by a system package.
+          # Kept out of the checkout and given a job-specific name: this runs
+          # alongside test-database-migration.
+          python3 -m pip install --target "${{ runner.temp }}/deps-api" -r requirements.txt
+          # `rest_api.py` prints every request *and its full response body*.
+          # That is ~6 MB of console output for a third of the suite, which
+          # overruns the per-step log cap: the run gets cut off mid-test and
+          # the `Ran N tests` / `FAILED (...)` summary is lost. Keep the full
+          # trace in the uploaded artifact and show only unittest's own lines
+          # here. `pipefail` keeps unittest's exit code authoritative rather
+          # than grep's.
+          set -o pipefail
+          PYTHONPATH="${{ runner.temp }}/deps-api" \
+            PYTHONUNBUFFERED=true python3 -m unittest --verbose 2>&1 \
+            | tee "${{ runner.temp }}/tests-api.log" \
+            | grep -vE '^(GET|POST|PUT|PATCH|DELETE) http'
+      - name: Check the absence of errors/stack traces in logs
+        run: |
+          ! docker compose --file docker-compose.test.yml logs app | grep Traceback -A100
+      - name: Stop test stack
+        if: ${{ always() }}
+        run: |
+          docker compose --file docker-compose.test.yml logs > "${{ runner.temp }}/iris-backend.log"
+          # --volumes: without it `db_data` outlives the job and the next
+          # run inherits this one's database. See `Start test stack`.
+          docker compose --file docker-compose.test.yml down --volumes
+      - name: Upload artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Test API logs
+          path: |
+            ${{ runner.temp }}/iris-backend.log
+            ${{ runner.temp }}/tests-api.log
+          retention-days: 7
+
+  test-database-migration:
+    name: Database migration tests
+    runs-on: self-hosted
+    permissions:
+      packages: read
+      contents: read
+    needs:
+      - build-docker-db
+      - build-docker-app
+    steps:
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull docker images for tests
+        run: |
+          docker pull "${{ env.CI_DB_IMAGE }}"
+          docker pull "${{ env.CI_APP_IMAGE }}"
+          docker tag "${{ env.CI_DB_IMAGE }}" "${{ env.LOCAL_DB_IMAGE }}"
+          docker tag "${{ env.CI_APP_IMAGE }}" "${{ env.LOCAL_APP_IMAGE }}"
+      - name: Check out iris-backend
+        uses: actions/checkout@v4
+      - name: Set up .env file
+        run: cp .env.tests.model .env
+      - name: Run tests
+        working-directory: tests_database_migration
+        # Own container/network prefix and host port: this job runs at the
+        # same time as test-api on the same runner, against the same
+        # compose file.
+        env:
+          IRIS_CONTAINER_PREFIX: iris_migration
+          IRIS_DB_HOST_PORT: "5433"
+          IRIS_APP_HOST_PORT: "8001"
+        run: |
+          # --target rather than a venv: same reason as test-api above.
+          python3 -m pip install --target "${{ runner.temp }}/deps-migration" -r requirements.txt
+          PYTHONPATH="${{ runner.temp }}/deps-migration" \
+            PYTHONUNBUFFERED=true python3 -m unittest --verbose
+
+  cleanup-ci-images:
+    name: Cleanup temporary CI images
+    if: ${{ always() }}
+    runs-on: self-hosted
+    permissions:
+      packages: write
+      contents: read
+    needs:
+      - test-api
+      - test-database-migration
+    steps:
+      # Deletes this run's two throwaway images through the GitHub packages
+      # API rather than a registry CLI. The previous version of this step
+      # looked for `oras`, fell back to `crane`, and printed "No registry
+      # cleanup CLI available" when it found neither — which is every run, so
+      # it has never deleted anything while still reporting success. Nothing
+      # here is best-effort any more: if the delete fails the job goes red,
+      # because a cleanup that fails quietly is how the package grew to
+      # hundreds of stale versions in the first place.
+      #
+      # Only ci-<run_id>-<run_attempt> images are in scope, and only ones
+      # pushed by this run. They are single-platform and nothing else
+      # references them, so deleting the version is safe. The per-architecture
+      # scratch tags that build-app/build-db/build-nginx push are a different
+      # matter — those manifests are the live children of the multi-arch
+      # index those workflows publish, and deleting them breaks the release
+      # image. They are left to the weekly sweep in iris-web, which only
+      # touches a child once its last parent index is gone.
+      #
+      # python3 + urllib because the self-hosted runner has no jq (see the
+      # comment in "Inspect test stack start failure") and curl is not used
+      # anywhere else here either, while python3 is already a hard dependency
+      # of the test jobs.
+      - name: Delete this run's temporary CI images
+        env:
+          GH_API: ${{ github.api_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          CI_TAG: ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          api = os.environ['GH_API'].rstrip('/')
+          owner = os.environ['OWNER']
+          tag = os.environ['CI_TAG']
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+
+          def call(method, url):
+              request = urllib.request.Request(url, method=method, headers=headers)
+              with urllib.request.urlopen(request) as response:
+                  body = response.read()
+              return json.loads(body) if body else None
+
+          def find_version(package):
+              """Locate the package version carrying exactly our CI tag.
+
+              Versions come back newest first, so ours is on an early page;
+              five pages of 100 is a generous ceiling. Returning None is not
+              an error — a rerun, or a build job that failed before pushing,
+              legitimately leaves nothing to delete."""
+              for page in range(1, 6):
+                  url = (f'{api}/orgs/{owner}/packages/container/{package}'
+                         f'/versions?per_page=100&page={page}')
+                  versions = call('GET', url)
+                  if not versions:
+                      return None
+                  for version in versions:
+                      tags = version.get('metadata', {}).get('container', {}).get('tags', [])
+                      if tag not in tags:
+                          continue
+                      # Refuse anything carrying a second tag. A digest that is
+                      # also tagged develop or v3.0.0-beta.1 is a release image
+                      # that happens to be byte-identical to this build, and
+                      # deleting the version would take those tags with it.
+                      if tags != [tag]:
+                          print(f'::error::{package}@{version["name"]} is tagged '
+                                f'{tags}, not just {tag} — refusing to delete it.')
+                          sys.exit(1)
+                      return version
+              return None
+
+          failed = False
+          for package in ('iris-backend', 'iris-db'):
+              try:
+                  version = find_version(package)
+                  if version is None:
+                      print(f'{package}: no version tagged {tag}, nothing to delete')
+                      continue
+                  call('DELETE', f'{api}/orgs/{owner}/packages/container/{package}'
+                                 f'/versions/{version["id"]}')
+                  print(f'{package}: deleted version {version["id"]} ({version["name"]})')
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode('utf-8', 'replace').strip()
+                  print(f'::error::{package}: {error.code} {error.reason} deleting '
+                        f'{tag} — {detail}')
+                  if error.code in (401, 403):
+                      print('::error::GITHUB_TOKEN needs admin on the package. Check '
+                            'Package settings -> Manage Actions access for '
+                            f'{owner}/{package}.')
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PY

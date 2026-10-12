@@ -16,25 +16,15 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-####################
-# COMPILE JS IMAGE #
-####################
-FROM node:20-alpine AS compile-js-image
-
-COPY ui/ /ui
-
-RUN rm -rf /ui/{node_modules,dist}
-
-WORKDIR /ui
-
-RUN npm ci
-RUN npm run build
 
 #################
 # COMPILE IMAGE #
 #################
 FROM python:3.12 AS compile-image
-RUN apt-get update
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && (apt-get purge -y --auto-remove 'imagemagick*' 'libmagickcore-*' 'libmagickwand-*' || true) \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN python -m venv /opt/venv
 # Make sure we use the virtualenv:
@@ -48,7 +38,7 @@ RUN pip3 install -r requirements.txt
 ###############
 # BUILD IMAGE #
 ###############
-FROM python:3.12 AS iriswebapp
+FROM python:3.12 as iriswebapp
 ENV PYTHONUNBUFFERED=1 DOCKERIZED=1
 
 COPY --from=compile-image /opt/venv /opt/venv
@@ -59,8 +49,11 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Define specific admin password at creation
 #ENV IRIS_ADM_PASSWORD="MySuperFirstPasswordIWant"
 
-RUN apt update
-RUN apt install -y p7zip-full pgp rsync postgresql-client
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends p7zip-full pgp rsync postgresql-client \
+    && (apt-get purge -y --auto-remove 'imagemagick*' 'libmagickcore-*' 'libmagickwand-*' || true) \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir /iriswebapp/
 RUN mkdir -p /home/iris/certificates/{rootCA,web_certificates}
@@ -75,9 +68,9 @@ WORKDIR /iriswebapp
 
 COPY docker/webApp/iris-entrypoint.sh .
 COPY docker/webApp/wait-for-iriswebapp.sh .
+RUN sed -i 's/\r$//' iris-entrypoint.sh wait-for-iriswebapp.sh
 COPY ./source .
-
-COPY --from=compile-js-image /ui/dist/ /iriswebapp/static/
+RUN find scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
 
 # Add execution right to binaries needed by evtx2splunk for iris_evtx module
 RUN chmod +x /iriswebapp/dependencies/evtxdump_binaries/linux/x64/fd

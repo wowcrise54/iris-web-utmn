@@ -1,0 +1,379 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	:root {
+		--background: 220 20% 97%;
+		--foreground: 224 71% 6%;
+
+		--muted: 220 16% 93%;
+		--muted-foreground: 220 10% 46%;
+
+		--popover: 0 0% 100%;
+		--popover-foreground: 224 71% 6%;
+
+		--card: 0 0% 100%;
+		--card-foreground: 224 71% 6%;
+
+		--border: 220 16% 88%;
+		--input: 220 16% 88%;
+
+		--primary: 214 91% 22%;
+		--primary-foreground: 210 40% 98%;
+
+		--secondary: 220 16% 93%;
+		--secondary-foreground: 224 71% 6%;
+
+		--accent: 214 91% 96%;
+		--accent-foreground: 214 91% 15%;
+
+		--destructive: 0 72% 51%;
+		--destructive-foreground: 210 40% 98%;
+
+		--ring: 214 91% 22%;
+
+		--iris-blue: 214 91% 22%;
+
+		--radius: 0.75rem;
+
+		--table-primary: 220 20% 97%;
+		--table-primary-hover: 220 16% 92%;
+		--table-secondary: 220 16% 95%;
+		--table-secondary-hover: 220 16% 90%;
+		--table-row-odd: 220 20% 98%;
+		--table-row-odd-hover: 220 16% 92%;
+		--table-row-even: 220 16% 95%;
+		--table-row-even-hover: 220 16% 90%;
+
+		--gradient-primary-start: 214 91% 16%;
+		--gradient-primary-end: 240 60% 14%;
+
+		--sidebar: 0 0% 100%;
+		--sidebar-foreground: 220 10% 40%;
+		--sidebar-accent: 214 91% 22%;
+		--sidebar-border: 220 16% 92%;
+		--sidebar-hover: 220 20% 96%;
+	}
+
+	.dark {
+		--background: 228 25% 7%;
+		--foreground: 220 16% 93%;
+
+		--muted: 225 20% 14%;
+		--muted-foreground: 220 12% 55%;
+
+		--popover: 228 30% 10%;
+		--popover-foreground: 220 16% 93%;
+
+		--card: 228 28% 10%;
+		--card-foreground: 220 16% 93%;
+
+		--border: 225 18% 18%;
+
+		--input: 225 18% 18%;
+
+		/*
+		 * Dark mode inverts the primary pair: a light brand blue that can
+		 * carry text, with near-black on top of it. The light-mode value
+		 * (214 91% 22%) is a deep navy — fine as `text-primary` on white,
+		 * invisible on the 228 25% 7% dark background, and it was being
+		 * reused verbatim here. 60% lightness matches --accent-foreground
+		 * below and clears 4.5:1 against --background; --primary-foreground
+		 * then has to go dark so `bg-primary text-primary-foreground`
+		 * buttons stay readable.
+		 *
+		 * `text-primary-foreground` is only ever used on top of
+		 * `bg-primary` — don't reach for it as a generic bright-text token.
+		 */
+		--primary: 214 91% 60%;
+		--primary-foreground: 222 47% 11%;
+
+		--secondary: 225 20% 16%;
+		--secondary-foreground: 220 16% 93%;
+
+		--accent: 225 25% 18%;
+		--accent-foreground: 214 91% 60%;
+
+		--destructive: 0 63% 31%;
+		--destructive-foreground: 210 40% 98%;
+
+		/* Same story as --primary: the focus ring has to be visible against
+		 * the dark background, and a 22%-lightness navy is not. */
+		--ring: 214 91% 60%;
+
+		/*
+		 * Top bar background in dark mode. The saturated brand blue clashed
+		 * with the neutral dark sidebar / page chrome — too bright, too
+		 * loud. Switch to a deep desaturated slate that reads as a proper
+		 * bar without competing for attention. Light mode keeps the brand
+		 * blue (defined above) since it pops against a white sidebar.
+		 */
+		--iris-blue: 222 22% 11%;
+
+		--table-primary: 228 25% 9%;
+		--table-primary-hover: 228 25% 12%;
+		--table-secondary: 228 25% 10%;
+		--table-secondary-hover: 228 25% 13%;
+		--table-row-odd: 228 25% 9%;
+		--table-row-odd-hover: 228 25% 13%;
+		--table-row-even: 228 25% 10.5%;
+		--table-row-even-hover: 228 25% 14%;
+
+		--gradient-primary-start: 225 50% 12%;
+		--gradient-primary-end: 240 40% 8%;
+
+		--sidebar: 228 28% 10%;
+		--sidebar-foreground: 220 12% 70%;
+		--sidebar-accent: 214 91% 22%;
+		--sidebar-border: 225 18% 18%;
+		--sidebar-hover: 225 20% 14%;
+	}
+}
+
+@layer base {
+	* {
+		@apply border-border;
+	}
+
+	body {
+		@apply bg-background text-foreground antialiased;
+		font-feature-settings:
+			'rlig' 1,
+			'calt' 1;
+	}
+
+	h1 {
+		@apply text-3xl font-bold tracking-tight;
+	}
+
+	h2 {
+		@apply text-xl font-semibold tracking-tight;
+	}
+
+	h3 {
+		@apply text-lg font-medium tracking-tight;
+	}
+
+	h4 {
+		@apply text-base font-medium tracking-tight text-muted-foreground;
+	}
+}
+
+@layer components {
+	.iris-panel {
+		@apply rounded-xl border bg-card text-card-foreground;
+		box-shadow:
+			0 1px 3px 0 rgb(0 0 0 / 0.04),
+			0 1px 2px -1px rgb(0 0 0 / 0.04);
+	}
+
+	.dark .iris-panel {
+		box-shadow:
+			0 1px 3px 0 rgb(0 0 0 / 0.2),
+			0 0 0 1px rgb(255 255 255 / 0.03);
+	}
+
+	.iris-glow {
+		box-shadow:
+			0 0 15px -3px hsl(214 91% 22% / 0.15),
+			0 0 6px -4px hsl(214 91% 22% / 0.1);
+	}
+
+	.dark .iris-glow {
+		box-shadow:
+			0 0 15px -3px hsl(214 91% 22% / 0.25),
+			0 0 6px -4px hsl(214 91% 22% / 0.15);
+	}
+}
+
+@layer utilities {
+	.shadow-glow-danger {
+		box-shadow: 0 0 12px 3px rgb(220 38 38 / 0.25);
+	}
+
+	.shadow-glow-primary {
+		box-shadow: 0 0 12px 3px hsl(214 91% 22% / 0.2);
+	}
+
+	.shadow-elevation-1 {
+		box-shadow:
+			0 1px 3px 0 rgb(0 0 0 / 0.06),
+			0 1px 2px -1px rgb(0 0 0 / 0.06);
+	}
+
+	.shadow-elevation-2 {
+		box-shadow:
+			0 4px 6px -1px rgb(0 0 0 / 0.07),
+			0 2px 4px -2px rgb(0 0 0 / 0.05);
+	}
+
+	.shadow-elevation-3 {
+		box-shadow:
+			0 10px 15px -3px rgb(0 0 0 / 0.08),
+			0 4px 6px -4px rgb(0 0 0 / 0.04);
+	}
+
+	.shadow-elevation-4 {
+		box-shadow:
+			0 20px 25px -5px rgb(0 0 0 / 0.1),
+			0 8px 10px -6px rgb(0 0 0 / 0.05);
+	}
+
+	.dark .shadow-elevation-1 {
+		box-shadow:
+			0 1px 3px 0 rgb(0 0 0 / 0.3),
+			0 0 0 1px rgb(255 255 255 / 0.03);
+	}
+
+	.dark .shadow-elevation-2 {
+		box-shadow:
+			0 4px 6px -1px rgb(0 0 0 / 0.35),
+			0 0 0 1px rgb(255 255 255 / 0.04);
+	}
+
+	.dark .shadow-elevation-3 {
+		box-shadow:
+			0 10px 15px -3px rgb(0 0 0 / 0.4),
+			0 0 0 1px rgb(255 255 255 / 0.05);
+	}
+
+	.dark .shadow-elevation-4 {
+		box-shadow:
+			0 20px 25px -5px rgb(0 0 0 / 0.45),
+			0 8px 10px -6px rgb(0 0 0 / 0.25),
+			0 0 0 1px rgb(255 255 255 / 0.06);
+	}
+}
+
+.lucide {
+	stroke-width: 1.5px;
+	flex-shrink: 0;
+}
+
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: hsl(var(--muted-foreground) / 0.2);
+	border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: hsl(var(--muted-foreground) / 0.35);
+}
+.dark .border {
+	@apply border-[#2a2f42] border-opacity-80;
+}
+
+/* Custom background for dark mode */
+.dark .bg-background {
+	@apply border-[#3a3f52];
+}
+
+/* Custom hover effects for cards in dark mode */
+.dark .card-custom:hover,
+.dark .bg-card\/40:hover,
+.dark .bg-card\/50:hover,
+.dark .bg-card:hover {
+	@apply border-[#3a3f52];
+}
+
+.ace_content {
+	@apply dark:bg-black dark:text-white;
+}
+
+.ace_gutter {
+	@apply dark:bg-black/80 dark:text-white;
+
+	&-active-line {
+		@apply dark:bg-white/20;
+	}
+}
+
+.prose {
+	table {
+		@apply my-2 w-full;
+	}
+
+	tr {
+		@apply odd:bg-black/5 dark:odd:bg-white/10;
+	}
+
+	th {
+		@apply bg-white dark:bg-black;
+	}
+
+	th,
+	td {
+		@apply border px-2 py-1 text-left;
+	}
+
+	h1 {
+		@apply text-2xl;
+	}
+
+	h2 {
+		@apply text-xl;
+	}
+
+	h2 {
+		@apply text-lg;
+	}
+
+	ul {
+		@apply list-disc pl-4;
+	}
+}
+
+/*
+ * Mention chip layout — the `<span data-mention>` rendered by tiptap
+ * (`mention-node.ts`), by `Chip.svelte`, and by the post-render sweep in
+ * `decorate-mention-chips.ts`.
+ *
+ * These used to be `:global()` rules inside `MarkDownEditor.svelte`, so they
+ * only reached pages that imported the editor. That held while chips could
+ * only be authored in an editor, but the backend now writes alert chips into
+ * case descriptions and the preview sweep surfaces them anywhere
+ * `MarkDownPreview` renders — the cases list, comments and alert cards have
+ * no editor on the page. Global stylesheet is the only place they're
+ * reliably present.
+ *
+ * `display: inline-flex` with a tiny gap keeps the chip glued to the
+ * surrounding text without inheriting the prose plugin's heading sizes.
+ * Declared after `@tailwind utilities` so the explicit padding/font-size
+ * here beats the `px-1 py-0 text-xs` utilities the chip also carries.
+ */
+.mention-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	line-height: 1.1;
+	padding: 0.05rem 0.3rem;
+	margin: 0 0.05rem;
+	border-radius: 0.25rem;
+	font-size: 0.7rem;
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+.mention-chip-icon {
+	flex-shrink: 0;
+	width: 0.7rem;
+	height: 0.7rem;
+}
+
+.mention-chip-clickable {
+	cursor: pointer;
+	transition: filter 120ms ease;
+}
+
+.mention-chip-clickable:hover {
+	filter: brightness(0.92);
+}

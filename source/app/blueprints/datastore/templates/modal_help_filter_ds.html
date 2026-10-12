@@ -1,0 +1,32 @@
+<div class="modal-xl modal-dialog" role="document">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h4 class="modal-title mt-1 mr-4">{{ _("Datastore filtering help") }}</h4>
+            <button type="button" class="float-right btn bg-transparent" data-dismiss="modal" aria-label="{{ _('Close') }}"><span
+                aria-hidden="true"><i class="fa fa-times"></i></span></button>
+        </div>
+        <div class="modal-body mb-2">
+            <div class="row">
+                <div class="col-12">
+                    <p>{{ _("Files can be filtered thanks to simple queries. The query schema is :") }}  <code>target_element:search_value AND target_element2:search_value2</code>.<br/>
+                    {{ _("There is no") }} <code>OR</code> {{ _('condition and searching without target does not work.') }}
+                    <p>{{ _("The following target elements can be used to filter :") }}</p>
+                    <ul>
+                        <li><code>name</code>{{ _(": Name of the file") }}</li>
+                        <li><code>id</code>{{ _(": ID of the file") }}</li>
+                        <li><code>uuid</code>{{ _(": UUID of the file") }}</li>
+                        <li><code>storage_name</code>{{ _(": Name of the file on the FS") }}</li>
+                        <li><code>tag</code>{{ _(": Tag of the file") }}</li>
+                        <li><code>description</code>{{ _(": Description of the file") }}</li>
+                        <li><code>is_ioc</code> {{ _(": Set to any value to filter files which are IOCs") }}</li>
+                        <li><code>is_evidence</code>{{ _(": Set to any value to filter files which are evidence") }}</li>
+                        <li><code>has_password</code>{{ _(": Set to any value to filter files which have passwords") }}</li>
+                        <li><code>sha256</code>{{ _(": SHA256 to filter files with") }}</li>
+                    </ul>
+                    {{ _("Example of filter :") }}
+                    <code>name: .exe AND is_ioc: true</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,56 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { Badge } from '$lib/components/ui/badge';
+	import { AlertCircle, AlertTriangle, ShieldAlert, CircleDot, HelpCircle } from 'lucide-svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import type { Severity } from './types';
+
+	export let severity: Severity;
+	export let icon_only: boolean = false;
+
+	const severityConfig = {
+		Unspecified: {
+			color: 'bg-gray-100 text-gray-800 hover:bg-gray-200',
+			icon: HelpCircle
+		},
+		Low: {
+			color: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
+			icon: CircleDot
+		},
+		Medium: {
+			color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200',
+			icon: AlertCircle
+		},
+		High: {
+			color: 'bg-orange-100 text-orange-800 hover:bg-orange-200',
+			icon: AlertTriangle
+		},
+		Critical: {
+			color: 'bg-red-100 text-red-800 hover:bg-red-200',
+			icon: ShieldAlert
+		},
+		Informational: {
+			color: 'bg-blue-100 text-blue-800 hover:bg-blue-200',
+			icon: CircleDot
+		}
+	};
+
+	$: config = severityConfig[severity] || severityConfig.Unspecified;
+</script>
+
+{#if icon_only}
+	<Tooltip.Provider>
+		<Tooltip.Root>
+			<Tooltip.Trigger class="flex items-center gap-1">
+				<Badge class="items-center gap-1 {config.color}" icon={config.icon}></Badge>
+			</Tooltip.Trigger>
+			<Tooltip.Content>{severity} {irisT("severity", $irisLocale)}</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
+{:else}
+	<Badge class="items-center gap-1 {config.color}" icon={config.icon}>
+		{severity}
+	</Badge>
+{/if}

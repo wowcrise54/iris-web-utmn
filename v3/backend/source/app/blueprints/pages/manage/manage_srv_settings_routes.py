@@ -1,0 +1,65 @@
+#  IRIS Source Code
+#  Copyright (C) 2021 - Airbus CyberSecurity (SAS)
+#  ir@cyberactionlab.net
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU Lesser General Public
+#  License as published by the Free Software Foundation; either
+#  version 3 of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#  Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+from app.web import Blueprint
+from app.web import render_template
+from app.web import url_for
+from app.web_forms import WebForm as FlaskForm
+from werkzeug.utils import redirect
+
+from app import app
+from app.datamgmt.manage.manage_srv_settings_db import get_alembic_revision
+from app.datamgmt.manage.manage_srv_settings_db import get_srv_settings
+from app.iris_engine.demo_builder import demo_mode_restricts_server_settings
+from app.models.authorization import Permissions
+from app.blueprints.access_controls import ac_requires
+
+manage_srv_settings_blueprint = Blueprint(
+    'manage_srv_settings_blueprint',
+    __name__,
+    template_folder='templates'
+)
+
+
+@manage_srv_settings_blueprint.route('/manage/settings', methods=['GET'])
+@ac_requires(Permissions.server_administrator, no_cid_required=True)
+def manage_settings(caseid, url_redir):
+    if url_redir:
+        return redirect(url_for('manage_srv_settings_blueprint.manage_settings', cid=caseid))
+
+    # Demo mode: every visitor is an admin, so the page — SMTP
+    # credentials, DSNs, backup trigger — is narrowed to the instance
+    # owner. Same gate as the v2 `/server/settings` routes.
+    if demo_mode_restricts_server_settings():
+        return redirect(url_for('index.index', cid=caseid))
+
+    form = FlaskForm()
+
+    server_settings = get_srv_settings()
+
+    versions = {
+        "iris_current": app.config.get('IRIS_VERSION'),
+        "api_min": app.config.get('API_MIN_VERSION'),
+        "api_current": app.config.get('API_MAX_VERSION'),
+        "interface_min": app.config.get('MODULES_INTERFACE_MIN_VERSION'),
+        "interface_current": app.config.get('MODULES_INTERFACE_MAX_VERSION'),
+        "db_revision": get_alembic_revision()
+    }
+
+    # Return default page of case management
+    return render_template('manage_srv_settings.html', form=form, settings=server_settings, versions=versions)

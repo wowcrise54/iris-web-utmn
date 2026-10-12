@@ -2,12 +2,12 @@
 <div class="row text-center">
         <ul class="nav nav-pills nav-default mr-4" id="pills-tab-custom-attr" role="tablist">
         <li class="nav-item">
-            <a class="nav-link active show" id="pills-home-tab-nobd" data-toggle="pill" href="#details" role="tab" aria-controls="pills-home-nobd" aria-selected="false">Info</a>
+            <a class="nav-link active show" id="pills-home-tab-nobd" data-toggle="pill" href="#details" role="tab" aria-controls="pills-home-nobd" aria-selected="false">{{ _("Info") }}</a>
         </li>
 
         {% for ca in attributes %}
             <li class="nav-item submenu">
-                <a class="nav-link"  data-toggle="pill" href="#{{  ca.lower() | replace(' ', '_' ) }}{{page_uid}}{{ loop.index }}" role="tab" aria-controls="{{  ca.lower() | replace(' ', '_' ) }}_{{page_uid}}{{ loop.index }}" aria-selected="false">{{ca}}</a>
+                <a class="nav-link"  data-toggle="pill" href="#{{page_uid}}{{ loop.index }}_{{  ca.lower() | replace(' ', '_' ) }}" role="tab" aria-controls="{{page_uid}}{{ loop.index }}_{{  ca.lower() | replace(' ', '_' ) }}" aria-selected="false">{{ca}}</a>
             </li>
         {% endfor %}
 

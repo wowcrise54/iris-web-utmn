@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_locale }}">
 <head>
 
 	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
-	<title>IRIS - {% block title %}Investigation{% endblock %} | CSIRT </title>
+	<title>IRIS - {% block title %}{{ _("Investigation") }}{% endblock %} | CSIRT </title>
 	<meta content='width=device-width, initial-scale=1.0, shrink-to-fit=no' name='viewport' />
 	<link rel="icon" href="/static/assets/img/logo.ico" type="image/x-icon"/>
 	{% if demo_domain %}
@@ -59,14 +59,14 @@
 
 	<!--   Core JS Files   -->
 
-	<script src="/static/assets/js/core/jquery.3.2.1.min.js"></script>
+	<script src="/static/assets/js/core/jquery.3.7.1.min.js"></script>
 	<script src="/static/assets/js/core/popper.min.js"></script>
 	<script src="/static/assets/js/core/bootstrap.min.js"></script>
 	<script src="/static/assets/js/plugin/tagsinput/suggesttag.js"></script>
 
 
 	<!-- jQuery UI -->
-	<script src="/static/assets/js/plugin/jquery-ui-1.12.1.custom/jquery-ui.min.js"></script>
+	<script src="/static/assets/js/plugin/jquery-ui-1.13.3.custom/jquery-ui.min.js"></script>
 	<script src="/static/assets/js/plugin/jquery-ui-touch-punch/jquery.ui.touch-punch.min.js"></script>
 
 	<!-- jQuery Scrollbar -->
@@ -91,6 +91,7 @@
     charset="utf-8"></script>
 
 	<!-- Iris Common -->
+	{% include 'includes/i18n_scripts.html' %}
 	<script src="/static/assets/js/iris/common.js"></script>
 	<script src="/static/assets/js/iris/datastore.js"></script>
 

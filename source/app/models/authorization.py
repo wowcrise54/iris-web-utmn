@@ -1,25 +1,8 @@
-#  IRIS Source Code
-#  Copyright (C) 2024 - DFIR-IRIS
-#  contact@dfir-iris.org
-#
-#  This program is free software; you can redistribute it and/or
-#  modify it under the terms of the GNU Lesser General Public
-#  License as published by the Free Software Foundation; either
-#  version 3 of the License, or (at your option) any later version.
-#
-#  This program is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-#  Lesser General Public License for more details.
-#
-#  You should have received a copy of the GNU Lesser General Public License
-#  along with this program; if not, write to the Free Software Foundation,
-#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-
 import enum
 import secrets
+import pyotp
 import uuid
-from flask_login import UserMixin
+from app.auth_login import UserMixin
 from sqlalchemy import BigInteger, JSON
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -63,6 +46,11 @@ class Permissions(enum.Enum):
 
     activities_read = 0x400
     all_activities_read = 0x800
+
+    statistics_read = 0x1000
+    custom_dashboards_read = 0x2000
+    custom_dashboards_write = 0x4000
+    custom_dashboards_share = 0x8000
 
 
 class Organisation(db.Model):

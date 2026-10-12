@@ -1,0 +1,18 @@
+{# Language switch, usable on the login screen and inside the application.
+   POSTs to i18n.set_locale with a CSRF token and a site-relative return path. #}
+<div class="iris-language-switch">
+    <form method="post" action="{{ url_for('i18n.set_locale') }}" class="form-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <label class="sr-only" for="iris-locale-select">{{ _('Language') }}</label>
+        <select id="iris-locale-select" name="locale" class="form-control form-control-sm"
+                onchange="this.form.submit()" aria-label="{{ _('Language') }}">
+            {% for code in supported_locales %}
+                <option value="{{ code }}" {% if code == current_locale %}selected{% endif %}>
+                    {{ locale_labels[code].endonym }}
+                </option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="btn btn-sm btn-secondary">{{ _('Switch') }}</button></noscript>
+    </form>
+</div>

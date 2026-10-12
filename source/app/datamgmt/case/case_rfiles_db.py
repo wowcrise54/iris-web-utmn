@@ -17,16 +17,16 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import datetime
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 from sqlalchemy import desc
 
 from app import db
 from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
 from app.datamgmt.states import update_evidences_state
-from app.models.models import CaseReceivedFile
-from app.models.models import Comments
-from app.models.models import EvidencesComments
+from app.models import CaseReceivedFile
+from app.models import Comments
+from app.models import EvidencesComments
 from app.models.authorization import User
 
 

@@ -16,6 +16,7 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import datetime
+
 # IMPORTS ------------------------------------------------
 import enum
 import uuid
@@ -125,6 +126,7 @@ def get_or_create(session, model, **kwargs):
         return instance
 
 
+# CONTENT ------------------------------------------------
 class Client(db.Model):
     __tablename__ = 'client'
 
@@ -157,6 +159,7 @@ alert_assets_association = Table(
     Column('asset_id', ForeignKey('case_assets.asset_id'), primary_key=True)
 )
 
+
 alert_iocs_association = Table(
     'alert_iocs_association',
     db.Model.metadata,
@@ -187,13 +190,13 @@ class CaseAssets(db.Model):
     asset_enrichment = Column(JSONB)
     modification_history = Column(JSON)
 
+
     case = relationship('Cases')
     user = relationship('User')
     asset_type = relationship('AssetsType')
     analysis_status = relationship('AnalysisStatus')
 
     alerts = relationship('Alert', secondary=alert_assets_association, back_populates='assets')
-    iocs = relationship('IocAssetLink', back_populates='asset')
 
 
 class AnalysisStatus(db.Model):
@@ -397,6 +400,39 @@ class Tlp(db.Model):
     tlp_bscolor = Column(Text)
 
 
+class CustomDashboard(db.Model):
+    __tablename__ = 'custom_dashboard'
+
+    id = Column(Integer, primary_key=True)
+    dashboard_uuid = Column(UUID(as_uuid=True), server_default=text("gen_random_uuid()"), nullable=False, unique=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    owner_id = Column(ForeignKey('user.id'), nullable=False)
+    is_shared = Column(Boolean, nullable=False, server_default=text("false"))
+    definition = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship('User')
+    widgets = relationship('CustomDashboardWidget', back_populates='dashboard', cascade='all, delete-orphan')
+
+
+class CustomDashboardWidget(db.Model):
+    __tablename__ = 'custom_dashboard_widget'
+
+    id = Column(Integer, primary_key=True)
+    widget_uuid = Column(UUID(as_uuid=True), server_default=text("gen_random_uuid()"), nullable=False, unique=True)
+    dashboard_id = Column(ForeignKey('custom_dashboard.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    chart_type = Column(String(64), nullable=False)
+    definition = Column(JSONB, nullable=False)
+    position = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    dashboard = relationship('CustomDashboard', back_populates='widgets')
+
+
 class Ioc(db.Model):
     __tablename__ = 'ioc'
 
@@ -413,15 +449,10 @@ class Ioc(db.Model):
     ioc_enrichment = Column(JSONB)
     modification_history = Column(JSON)
 
-    case_id = Column(ForeignKey('cases.case_id'), nullable=True)
-
     user = relationship('User')
     tlp = relationship('Tlp')
     ioc_type = relationship('IocType')
-    case = relationship('Cases')
-    assets = relationship('IocAssetLink', back_populates='ioc', cascade="delete")
-    events = relationship('CaseEventsIoc', back_populates='ioc', cascade="delete")
-    comments = relationship('IocComments', back_populates='ioc', cascade="all, delete")
+
     alerts = relationship('Alert', secondary=alert_iocs_association, back_populates='iocs')
 
 
@@ -484,6 +515,17 @@ class IocType(db.Model):
     type_validation_expect = Column(Text)
 
 
+class IocLink(db.Model):
+    __tablename__ = 'ioc_link'
+
+    ioc_link_id = Column(Integer, primary_key=True)
+    ioc_id = Column(ForeignKey('ioc.ioc_id'))
+    case_id = Column(ForeignKey('cases.case_id'), nullable=False)
+
+    ioc = relationship('Ioc')
+    case = relationship('Cases')
+
+
 class IocAssetLink(db.Model):
     __tablename__ = 'ioc_asset_link'
 
@@ -491,8 +533,8 @@ class IocAssetLink(db.Model):
     ioc_id = Column(ForeignKey('ioc.ioc_id'), nullable=False)
     asset_id = Column(ForeignKey('case_assets.asset_id'), nullable=False)
 
-    ioc = relationship('Ioc', back_populates='assets')
-    asset = relationship('CaseAssets', back_populates='iocs')
+    ioc = relationship('Ioc')
+    asset = relationship('CaseAssets')
 
 
 class OsType(db.Model):

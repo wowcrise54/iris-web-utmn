@@ -1,0 +1,173 @@
+name: Build and push Nginx image
+
+on:
+  push:
+    branches: [develop, master, main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [develop, master, main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: dfir-iris/iris-nginx
+
+jobs:
+  build:
+    # Both arch legs run on the self-hosted fleet. The matrix used to
+    # carry a `runner:` key naming GitHub-hosted runners, but `runs-on`
+    # never referenced it — it was dead config that read as though
+    # arm64 built natively on `ubuntu-24.04-arm`. Dropped rather than
+    # wired up: arm64 is cross-built here under emulation, see the
+    # QEMU step below.
+    runs-on: self-hosted
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      # Give each matrix leg its own Docker credential store. Both legs
+      # run concurrently on the same self-hosted runner and would
+      # otherwise share $HOME/.docker/config.json — one leg's login
+      # clobbering the other's mid-push surfaces as
+      # "failed to fetch oauth token: denied". A fresh directory also
+      # sidesteps any credsStore configured on the host, whose helper
+      # binary may not exist on a headless runner (docker login then
+      # reports success but stores nothing retrievable, and the push
+      # goes out anonymous).
+      #
+      # Set through $GITHUB_ENV rather than a job-level `env:` because
+      # the `runner` context is not available there. $RUNNER_TEMP is,
+      # and the runner clears it between jobs — unlike $HOME, which
+      # persists on a self-hosted box.
+      - name: Isolate Docker config
+        run: |
+          mkdir -p "${RUNNER_TEMP}/docker-${{ matrix.arch }}"
+          echo "DOCKER_CONFIG=${RUNNER_TEMP}/docker-${{ matrix.arch }}" >> "$GITHUB_ENV"
+
+      # Registers binfmt handlers so buildx can emulate arm64 on an
+      # x64 runner. Declared per run rather than relying on whatever
+      # the host happens to have installed: on a persistent self-hosted
+      # runner that state is invisible, unversioned, and vanishes on a
+      # host rebuild. Must precede the buildx setup below.
+      - name: Set up QEMU
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push by digest
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/nginx
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRY, env.IMAGE_NAME, matrix.arch) || '' }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ github.sha }}-${{ matrix.arch }}
+          push: ${{ github.event_name != 'pull_request' }}
+          build-args: |
+            NGINX_CONF_GID=1234
+            NGINX_CONF_FILE=nginx-newui.conf
+
+  merge:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      packages: write
+      contents: read
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if beta tag
+        id: check_beta
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" == *"beta"* ]]; then
+            echo "is_beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=${{ github.ref == 'refs/tags/v*' && steps.check_beta.outputs.is_beta != 'true' }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern=v{{version}}
+            type=ref,event=branch
+            type=raw,value=beta,enable=${{ steps.check_beta.outputs.is_beta == 'true' }}
+
+      - name: Create manifest list and push
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ github.sha }}-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-${{ github.sha }}-arm64
+
+      # There is deliberately no scratch-tag cleanup step here.
+      #
+      # `imagetools create` above builds an index whose children are the exact
+      # manifests behind build-<sha>-amd64 and build-<sha>-arm64. Those two
+      # tags are the only handles on manifests the release tags now depend on,
+      # and `oras manifest delete` / `crane delete` remove the *manifest*, not
+      # just the tag — ORAS even prompts "delete the manifest and all tags
+      # associated with it". So the step that used to sit here would, the first
+      # time a runner happened to ship one of those binaries, have deleted the
+      # platform children out from under the image it had just published:
+      # `docker pull` on the tag resolves, then 404s on the arch manifest. It
+      # only ever looked harmless because ubuntu-24.04 has neither binary, so it
+      # printed "No registry cleanup CLI available" and exited 0 on every run.
+      #
+      # These tags cannot be cleaned up at this point in time by anything in
+      # CI: nothing in this repo deletes them, and a step that tried would hit
+      # the manifest-vs-tag problem above. They accumulate, and are pruned
+      # out-of-band by the maintainer. Eliminating them entirely means
+      # switching this workflow to the push-by-digest pattern so no scratch
+      # tag is ever created; that is a change to the publish path, not a
+      # cleanup.
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}

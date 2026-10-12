@@ -17,12 +17,12 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import base64
 import datetime
-from flask_login import current_user
+from app.auth_login import current_user
 
 from app import db, app
-from app.models.models import IrisHook
-from app.models.models import IrisModule
-from app.models.models import IrisModuleHook
+from app.models import IrisHook
+from app.models import IrisModule
+from app.models import IrisModuleHook
 from app.models.authorization import User
 
 log = app.logger

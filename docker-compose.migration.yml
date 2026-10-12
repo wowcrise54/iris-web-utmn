@@ -1,0 +1,104 @@
+# Isolated local migration validation. Always use an explicit -p project name.
+# Prepare TLS material with: python tests/migration/prepare_stack.py
+x-app: &app
+  image: ${MIGRATION_APP_IMAGE:-iris-migration-fastapi:local}
+  pull_policy: build
+  build:
+    context: ${MIGRATION_APP_CONTEXT:-.}
+    dockerfile: docker/webApp/Dockerfile
+  env_file: tests/data/basic.env
+  environment: &app-env
+    POSTGRES_PASSWORD: migration-test-postgres
+    POSTGRES_ADMIN_PASSWORD: migration-test-raptor
+    POSTGRES_SERVER: db
+    CELERY_BROKER: amqp://rabbitmq
+    IRIS_UPSTREAM_SERVER: app
+    IRIS_UPSTREAM_PORT: "8000"
+    LOG_LEVEL: info
+  volumes:
+    - ./tests/migration:/migration:ro
+    - migration-downloads:/home/iris/downloads
+    - migration-templates:/home/iris/user_templates
+    - migration-server-data:/home/iris/server_data
+  networks: [migration]
+
+services:
+  db:
+    image: iris-migration-db:local
+    pull_policy: build
+    build: docker/db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: migration-test-postgres
+      POSTGRES_ADMIN_USER: raptor
+      POSTGRES_ADMIN_PASSWORD: migration-test-raptor
+      POSTGRES_DB: iris_db
+    volumes:
+      - migration-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d iris_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [migration]
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks: [migration]
+  app:
+    <<: *app
+    command: ["./iris-entrypoint.sh", "iriswebapp"]
+    ports:
+      - "127.0.0.1:${MIGRATION_HTTP_PORT:-18080}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+    depends_on:
+      db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+  worker:
+    <<: *app
+    command: ["./wait-for-iriswebapp.sh", "app:8000", "./iris-entrypoint.sh", "iris-worker"]
+    environment:
+      <<: *app-env
+      IRIS_WORKER: "1"
+      NUMBER_OF_CHILD: "2"
+    depends_on:
+      app: {condition: service_healthy}
+  nginx:
+    image: iris-migration-nginx:local
+    pull_policy: build
+    build:
+      context: docker/nginx
+      args:
+        NGINX_CONF_GID: "1234"
+        NGINX_CONF_FILE: nginx.conf
+    environment:
+      IRIS_UPSTREAM_SERVER: app
+      IRIS_UPSTREAM_PORT: "8000"
+      INTERFACE_HTTPS_PORT: "8443"
+      SERVER_NAME: localhost
+      CERT_FILENAME: migration-cert.pem
+      KEY_FILENAME: migration-key.pem
+    ports:
+      - "127.0.0.1:${MIGRATION_HTTPS_PORT:-18443}:8443"
+    volumes:
+      - ./tests/migration/runtime/certs:/www/certs:ro
+    depends_on:
+      app: {condition: service_healthy}
+    networks: [migration]
+
+volumes:
+  migration-db:
+  migration-downloads:
+  migration-templates:
+  migration-server-data:
+networks:
+  migration:

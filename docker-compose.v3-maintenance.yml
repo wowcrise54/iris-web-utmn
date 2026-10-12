@@ -1,0 +1,6 @@
+# No host ingress while the restored data is being verified.
+services:
+  app:
+    ports: !override []
+  nginx:
+    ports: !override []

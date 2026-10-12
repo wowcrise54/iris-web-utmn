@@ -1,0 +1,26 @@
+services:
+  db:
+    env_file: !override [.env.v3.live]
+    networks: !override [upgrade]
+  rabbitmq:
+    networks: !override [upgrade]
+  app:
+    env_file: !override [.env.v3.live]
+    networks: !override [upgrade]
+    ports: !override ["127.0.0.1:18082:8000"]
+  worker:
+    env_file: !override [.env.v3.live]
+    networks: !override [upgrade]
+  frontend:
+    networks: !override [upgrade]
+    environment:
+      PUBLIC_EXTERNAL_API_URL: https://localhost:18543
+      IRIS_ALLOW_ORIGIN: https://localhost:18543
+  nginx:
+    networks: !override [upgrade]
+    ports: !override ["127.0.0.1:18543:8443"]
+volumes:
+  v3-db: {external: true, name: iris-web-utmn-v3-20261010-160726-db}
+  v3-downloads: {external: true, name: iris-web-utmn-v3-20261010-160726-downloads}
+  v3-templates: {external: true, name: iris-web-utmn-v3-20261010-160726-templates}
+  v3-server-data: {external: true, name: iris-web-utmn-v3-20261010-160726-server-data}

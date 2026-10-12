@@ -1,0 +1,4 @@
+runtime/
+*.log
+frontend/*.log
+frontend/src/lib/i18n/missing.json

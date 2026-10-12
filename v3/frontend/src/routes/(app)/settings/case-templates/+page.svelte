@@ -1,0 +1,826 @@
+<!--
+  Case Templates admin page.
+
+  Layout: master/detail
+    • LEFT (basis-1/3): paginated template list with debounced
+      search + infinite scroll, plus Add / Import / Refresh.
+    • RIGHT (basis-2/3): interactive editor + a raw JSON fallback.
+
+  The interactive editor (`<CaseTemplateForm>`) is built dynamically
+  from the descriptor returned by `GET /api/v2/manage/case-templates/schema`
+  — the backend introspects `CaseTemplateSchema` at request time so a
+  field added to the Marshmallow schema shows up in the form without
+  any frontend change. The Raw JSON tab keeps an Ace editor for power
+  users importing pre-existing template files.
+
+  Permissions:
+    • The page itself sits under /settings (admin-gated).
+    • Backend requires `case_templates_read` (list/get) and
+      `case_templates_write` (create/update/delete).
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { onMount } from 'svelte';
+	import {
+		BookDashedIcon,
+		DownloadIcon,
+		FileCodeIcon,
+		FormInputIcon,
+		HelpCircleIcon,
+		PlusIcon,
+		RefreshCwIcon,
+		SaveIcon,
+		SearchIcon,
+		Trash2Icon,
+		UploadIcon,
+		XIcon
+	} from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { toast } from '$lib/components/ui/toast';
+	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
+	import JsonEditor from '$lib/components/common/editors/JsonEditor.svelte';
+	import CaseTemplateForm from './components/CaseTemplateForm.svelte';
+	import {
+		CaseTemplatesV2Service,
+		type CaseTemplateBodyV2,
+		type CaseTemplateSchemaInfo,
+		type CaseTemplateV2
+	} from '$lib/services/case-templates.service';
+	import {
+		CaseClassificationsService,
+		type CaseClassification
+	} from '$lib/services/case-classifications.service';
+
+	const PAGE_SIZE = 25;
+
+	// Default body offered when the user clicks "Add template". Matches
+	// the shape of the legacy seed and the schema fields the backend
+	// validates against.
+	const DEFAULT_TEMPLATE_BODY: CaseTemplateBodyV2 = {
+		name: 'new-template',
+		display_name: 'New template',
+		description: '',
+		author: '',
+		title_prefix: '',
+		summary: '',
+		tags: [],
+		classification: '',
+		note_directories: [],
+		tasks: []
+	};
+
+	type ListState = {
+		items: CaseTemplateV2[];
+		total: number;
+		nextPage: number | null;
+		loading: boolean;
+		loadingMore: boolean;
+	};
+
+	const emptyListState = (): ListState => ({
+		items: [],
+		total: 0,
+		nextPage: 1,
+		loading: false,
+		loadingMore: false
+	});
+
+	let listState = $state<ListState>(emptyListState());
+	let selectedId = $state<number | null>(null);
+
+	// Editor state ----------------------------------------------------
+	type EditorMode = 'closed' | 'new' | 'edit';
+	let editorMode = $state<EditorMode>('closed');
+	// Canonical representation is a parsed object. The raw JSON tab
+	// serialises out of / into this on flip so the two views stay in
+	// sync without one being the source of truth.
+	let editorValue = $state<Record<string, unknown>>({});
+	// Mirror string used by the Raw JSON tab. Kept here (not local to
+	// the tab) so flipping between tabs preserves edits in either
+	// direction.
+	let editorBody = $state<string>('');
+	let editorIsValid = $state(true);
+	let editorJsonError = $state<string | null>(null);
+	let editorSaving = $state(false);
+	let editorSaveError = $state<string | null>(null);
+
+	// Schema + classifications, fetched once on mount. The form
+	// renders nothing until `templateSchema` is loaded — the spinner
+	// covers the gap.
+	let templateSchema = $state<CaseTemplateSchemaInfo | null>(null);
+	let templateSchemaError = $state<string | null>(null);
+	let classifications = $state<CaseClassification[]>([]);
+
+	type DetailTab = 'form' | 'json' | 'schema';
+	let detailTab = $state<DetailTab>('form');
+
+	// Search ----------------------------------------------------------
+	let searchValue = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	const currentSearch = () => searchValue.trim() || undefined;
+
+	// Confirmation ---------------------------------------------------
+	let confirmOpen = $state(false);
+	let confirmTitle = $state('');
+	let confirmMessage = $state('');
+	let confirmAction = $state<() => Promise<void> | void>(() => {});
+
+	// Import file picker ---------------------------------------------
+	let importInput: HTMLInputElement | null = $state(null);
+
+	const showError = (msg: string, fallback = 'Operation failed') =>
+		toast({ title: msg || fallback, variant: 'destructive' });
+	const showSuccess = (msg: string) => toast({ title: msg, variant: 'success' });
+
+	// List loading ----------------------------------------------------
+	const loadList = async () => {
+		listState = { ...emptyListState(), loading: true };
+		try {
+			const res = await CaseTemplatesV2Service.search({
+				page: 1,
+				per_page: PAGE_SIZE,
+				search: currentSearch()
+			});
+			if (res.ok && res.data && typeof res.data !== 'string') {
+				const env = res.data;
+				listState = {
+					items: env.data,
+					total: env.total,
+					nextPage: env.next_page,
+					loading: false,
+					loadingMore: false
+				};
+				if (selectedId == null || !env.data.find((r) => r.id === selectedId)) {
+					selectedId = env.data.length > 0 ? env.data[0].id : null;
+					if (selectedId != null) await openExisting(selectedId);
+					else closeEditor();
+				}
+			} else {
+				showError(res.error?.message ?? 'Failed to load templates');
+				listState = { ...listState, loading: false };
+			}
+		} catch (e) {
+			showError((e as Error).message);
+			listState = { ...listState, loading: false };
+		}
+	};
+
+	const loadMore = async () => {
+		if (listState.loading || listState.loadingMore || listState.nextPage == null) return;
+		listState = { ...listState, loadingMore: true };
+		const page = listState.nextPage as number;
+		try {
+			const res = await CaseTemplatesV2Service.search({
+				page,
+				per_page: PAGE_SIZE,
+				search: currentSearch()
+			});
+			if (res.ok && res.data && typeof res.data !== 'string') {
+				const env = res.data;
+				listState = {
+					items: [...listState.items, ...env.data],
+					total: env.total,
+					nextPage: env.next_page,
+					loading: false,
+					loadingMore: false
+				};
+			} else {
+				listState = { ...listState, loadingMore: false };
+			}
+		} catch {
+			listState = { ...listState, loadingMore: false };
+		}
+	};
+
+	let sentinel = $state<HTMLDivElement | null>(null);
+	$effect(() => {
+		if (!sentinel) return;
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((e) => e.isIntersecting)) void loadMore();
+			},
+			{ rootMargin: '120px' }
+		);
+		observer.observe(sentinel);
+		return () => observer.disconnect();
+	});
+
+	const queueSearch = () => {
+		if (searchTimer) clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			void loadList();
+		}, 250);
+	};
+
+	const loadSchema = async () => {
+		const res = await CaseTemplatesV2Service.schema();
+		if (res.ok && res.data && typeof res.data !== 'string') {
+			templateSchema = res.data as CaseTemplateSchemaInfo;
+			templateSchemaError = null;
+		} else {
+			templateSchemaError =
+				res.error?.message ?? 'Failed to load the template schema; raw JSON still works.';
+		}
+	};
+
+	const loadClassifications = async () => {
+		const res = await CaseClassificationsService.list();
+		// The legacy endpoint wraps the array in `{status, data: [...]}`
+		// so we unwrap once. New responses may already be the array.
+		const raw = (res.data as { data?: unknown }) ?? null;
+		const list = Array.isArray(raw?.data)
+			? (raw.data as CaseClassification[])
+			: Array.isArray(res.data)
+				? (res.data as CaseClassification[])
+				: [];
+		classifications = list;
+	};
+
+	onMount(async () => {
+		await Promise.all([loadList(), loadSchema(), loadClassifications()]);
+	});
+
+	// Editor flow ----------------------------------------------------
+	const formatJson = (obj: unknown) => JSON.stringify(obj, null, 2);
+
+	const closeEditor = () => {
+		editorMode = 'closed';
+		editorValue = {};
+		editorBody = '';
+		editorJsonError = null;
+		editorSaveError = null;
+	};
+
+	// Adopt a freshly-loaded template object as the editor state.
+	// Sets both the structured `editorValue` (form) and the JSON
+	// `editorBody` (raw tab) so flipping tabs is lossless.
+	const adoptTemplate = (obj: Record<string, unknown>) => {
+		editorValue = obj;
+		editorBody = formatJson(obj);
+		editorIsValid = true;
+		editorJsonError = null;
+		editorSaveError = null;
+	};
+
+	const openExisting = async (id: number) => {
+		const res = await CaseTemplatesV2Service.get(id);
+		if (res.ok && res.data && typeof res.data !== 'string') {
+			const tpl = res.data as CaseTemplateV2;
+			// Strip metadata fields — they're dump-only on the
+			// backend and serving them back on update is harmless but
+			// noisy in the raw JSON view.
+			const { id: _id, created_at, updated_at, created_by_user_id, ...editable } = tpl;
+			void _id;
+			void created_at;
+			void updated_at;
+			void created_by_user_id;
+			adoptTemplate(editable as Record<string, unknown>);
+			editorMode = 'edit';
+			detailTab = 'form';
+		} else {
+			showError(res.error?.message ?? 'Failed to load template');
+		}
+	};
+
+	const openNew = () => {
+		selectedId = null;
+		adoptTemplate({ ...DEFAULT_TEMPLATE_BODY } as unknown as Record<string, unknown>);
+		editorMode = 'new';
+		detailTab = 'form';
+	};
+
+	const onSelect = async (id: number) => {
+		if (id === selectedId && editorMode === 'edit') return;
+		selectedId = id;
+		await openExisting(id);
+	};
+
+	// Source of truth for the save call. If the user is on the Raw
+	// JSON tab and the buffer parses, prefer that — they may have
+	// pasted in something the form widgets can't fully express. Fall
+	// back to the structured `editorValue` when the JSON is dirty or
+	// the user is on the form tab.
+	const parsedEditorBody = (): CaseTemplateBodyV2 | null => {
+		if (detailTab === 'json') {
+			try {
+				return JSON.parse(editorBody) as CaseTemplateBodyV2;
+			} catch {
+				return null;
+			}
+		}
+		return editorValue as unknown as CaseTemplateBodyV2;
+	};
+
+	const saveEditor = async () => {
+		if (detailTab === 'json' && !editorIsValid) {
+			editorSaveError = 'Fix the JSON syntax before saving.';
+			return;
+		}
+		const parsed = parsedEditorBody();
+		if (parsed == null) {
+			editorSaveError = 'Body is not valid JSON.';
+			return;
+		}
+		editorSaving = true;
+		editorSaveError = null;
+		try {
+			const res =
+				editorMode === 'new'
+					? await CaseTemplatesV2Service.create(parsed)
+					: selectedId != null
+						? await CaseTemplatesV2Service.update(selectedId, parsed)
+						: null;
+			if (res == null) {
+				editorSaveError = 'Nothing to save.';
+				return;
+			}
+			if (res.ok && res.data && typeof res.data !== 'string') {
+				const row = res.data as CaseTemplateV2;
+				showSuccess(editorMode === 'new' ? 'Template created' : 'Template saved');
+				selectedId = row.id;
+				await loadList();
+				await openExisting(row.id);
+			} else {
+				const data = res.data as { message?: string; data?: unknown } | null;
+				editorSaveError = data?.message ?? res.error?.message ?? 'Unable to save';
+			}
+		} catch (e) {
+			editorSaveError = (e as Error).message;
+		} finally {
+			editorSaving = false;
+		}
+	};
+
+	const removeCurrent = () => {
+		if (selectedId == null) return;
+		const id = selectedId;
+		const tpl = listState.items.find((t) => t.id === id);
+		confirmTitle = `Delete template "${tpl?.display_name || tpl?.name || `#${id}`}"?`;
+		confirmMessage =
+			'This cannot be undone. Existing cases that were created from this template are unaffected.';
+		confirmAction = async () => {
+			const res = await CaseTemplatesV2Service.remove(id);
+			if (res.ok) {
+				showSuccess('Template deleted');
+				selectedId = null;
+				closeEditor();
+				await loadList();
+			} else {
+				const data = res.data as { message?: string } | null;
+				showError(data?.message ?? res.error?.message ?? 'Unable to delete');
+			}
+		};
+		confirmOpen = true;
+	};
+
+	// Export the current editor state as a downloadable file. Always
+	// uses the structured value as source — the form view is the
+	// canonical representation.
+	const exportCurrent = () => {
+		const obj = editorValue as unknown as CaseTemplateBodyV2;
+		const blob = new Blob([JSON.stringify(obj, null, 2)], {
+			type: 'application/json'
+		});
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${obj.name || 'case-template'}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
+
+	const triggerImport = () => importInput?.click();
+
+	const handleImportFile = async (event: Event) => {
+		const target = event.currentTarget as HTMLInputElement;
+		const file = target.files?.[0];
+		target.value = '';
+		if (!file) return;
+		try {
+			const text = await file.text();
+			const parsed = JSON.parse(text);
+			if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+				showError('File must contain a JSON object.');
+				return;
+			}
+			adoptTemplate(parsed as Record<string, unknown>);
+			editorMode = 'new';
+			selectedId = null;
+			detailTab = 'form';
+		} catch (e) {
+			showError(`File is not valid JSON: ${(e as Error).message}`);
+		}
+	};
+
+	const runConfirm = async () => {
+		await confirmAction();
+	};
+
+	// Derived display ------------------------------------------------
+	const selectedTemplate = $derived<CaseTemplateV2 | null>(
+		selectedId == null ? null : (listState.items.find((t) => t.id === selectedId) ?? null)
+	);
+</script>
+
+<svelte:head>
+	<title>Case Templates</title>
+</svelte:head>
+
+<div class="flex h-full w-full flex-col overflow-hidden">
+	<!-- Page header -->
+	<header class="flex items-center justify-between gap-3 border-b px-5 py-3">
+		<div class="flex items-center gap-2.5">
+			<BookDashedIcon size={18} class="text-muted-foreground" />
+			<div class="leading-tight">
+				<h1 class="text-sm font-semibold">{irisT("Case Templates", $irisLocale)}</h1>
+				<p class="text-2xs text-muted-foreground">
+					{irisT("Reusable case skeletons — title prefix, classification, tags, tasks and notes.", $irisLocale)}
+				</p>
+			</div>
+		</div>
+
+		<div class="flex items-center gap-1.5">
+			<Button
+				variant="outline"
+				size="sm"
+				class="h-7"
+				onclick={loadList}
+				disabled={listState.loading}
+			>
+				<RefreshCwIcon size={12} class={`mr-1 ${listState.loading ? 'animate-spin' : ''}`} />
+				{irisT("Refresh", $irisLocale)}
+			</Button>
+			<Button variant="outline" size="sm" class="h-7" onclick={triggerImport}>
+				<UploadIcon size={12} class="mr-1" />
+				{irisT("Import", $irisLocale)}
+			</Button>
+			<input
+				bind:this={importInput}
+				type="file"
+				accept="application/json,.json"
+				class="hidden"
+				onchange={handleImportFile}
+			/>
+			<Button size="sm" class="h-7" onclick={openNew}>
+				<PlusIcon size={12} class="mr-1" />
+				{irisT("Add template", $irisLocale)}
+			</Button>
+		</div>
+	</header>
+
+	<!-- Body -->
+	<div class="flex flex-1 gap-3 overflow-hidden p-4">
+		<!-- Master list -->
+		<section class="flex min-h-0 flex-1 basis-1/3 flex-col overflow-hidden rounded-md border">
+			<div class="flex flex-col gap-2 border-b bg-muted/30 px-3 py-2">
+				<div class="flex items-center justify-between gap-2">
+					<div class="flex items-baseline gap-2">
+						<h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+							{irisT("Templates", $irisLocale)}
+						</h2>
+						<span class="text-2xs tabular-nums text-muted-foreground">
+							{listState.items.length} / {listState.total}
+						</span>
+					</div>
+				</div>
+
+				<div class="relative">
+					<SearchIcon
+						size={12}
+						class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						type="search"
+						placeholder={irisT("Search by name, description, author…", $irisLocale)}
+						class="h-7 pl-7 pr-7 text-xs"
+						bind:value={searchValue}
+						oninput={queueSearch}
+					/>
+					{#if searchValue}
+						<button
+							type="button"
+							aria-label={irisT("Clear search", $irisLocale)}
+							class="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							onclick={() => {
+								searchValue = '';
+								queueSearch();
+							}}
+						>
+							<XIcon size={11} />
+						</button>
+					{/if}
+				</div>
+			</div>
+
+			<div class="flex-1 overflow-y-auto">
+				{#if listState.loading && listState.items.length === 0}
+					<div class="space-y-1 p-3">
+						{#each Array(6) as _}
+							<Skeleton class="h-7 w-full" />
+						{/each}
+					</div>
+				{:else if listState.items.length === 0}
+					{#if searchValue.trim()}
+						<p class="px-3 py-6 text-center text-xs text-muted-foreground">
+							{irisT("No matches for", $irisLocale)} <span class="font-mono">{searchValue.trim()}</span>.
+						</p>
+					{:else}
+						<p class="px-3 py-6 text-center text-xs text-muted-foreground">
+							{irisT("No templates yet. Click", $irisLocale)} <span class="font-medium">{irisT("Add template", $irisLocale)}</span> {irisT("to get started.", $irisLocale)}
+						</p>
+					{/if}
+				{:else}
+					<ul class="divide-y">
+						{#each listState.items as tpl (tpl.id)}
+							{@const active = tpl.id === selectedId}
+							<li>
+								<button
+									type="button"
+									class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors
+										{active ? irisT("bg-primary/10 font-medium text-foreground", $irisLocale) : 'hover:bg-muted/40'}"
+									onclick={() => onSelect(tpl.id)}
+								>
+									<div class="min-w-0 flex-1">
+										<div class="truncate">{tpl.display_name || tpl.name}</div>
+										{#if tpl.description}
+											<div class="truncate text-2xs text-muted-foreground">
+												{tpl.description}
+											</div>
+										{/if}
+									</div>
+									<span class="font-mono text-2xs text-muted-foreground">
+										#{tpl.id}
+									</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+
+					{#if listState.nextPage != null}
+						<div
+							bind:this={sentinel}
+							class="flex items-center justify-center gap-2 border-t px-3 py-2 text-2xs text-muted-foreground"
+						>
+							{#if listState.loadingMore}
+								<RefreshCwIcon size={11} class="animate-spin" />
+								{irisT("Loading more…", $irisLocale)}{:else}
+								<span class="opacity-0">{irisT("Loading more…", $irisLocale)}</span>
+							{/if}
+						</div>
+					{:else if listState.total > PAGE_SIZE}
+						<div class="border-t px-3 py-2 text-center text-2xs text-muted-foreground">
+							{irisT("End of list —", $irisLocale)} {listState.total} {irisT("entries", $irisLocale)}
+						</div>
+					{/if}
+				{/if}
+			</div>
+		</section>
+
+		<!-- Detail / editor -->
+		<section class="flex min-h-0 flex-1 basis-2/3 flex-col overflow-hidden rounded-md border">
+			<div class="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
+				<div class="flex items-baseline gap-2">
+					<h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+						{irisT("Editor", $irisLocale)}
+					</h2>
+					{#if editorMode === 'new'}
+						<span class="text-2xs text-muted-foreground">{irisT("New template", $irisLocale)}</span>
+					{:else if selectedTemplate}
+						<span class="text-2xs text-muted-foreground">
+							{selectedTemplate.display_name || selectedTemplate.name}
+						</span>
+					{/if}
+				</div>
+
+				{#if editorMode !== 'closed'}
+					<div class="flex items-center gap-1.5">
+						<Button variant="outline" size="sm" class="h-7" onclick={exportCurrent}>
+							<DownloadIcon size={12} class="mr-1" />
+							{irisT("Export", $irisLocale)}
+						</Button>
+						{#if editorMode === 'edit' && selectedId != null}
+							<Button
+								variant="outline"
+								size="sm"
+								class="h-7 text-destructive hover:text-destructive"
+								onclick={removeCurrent}
+							>
+								<Trash2Icon size={12} class="mr-1" />
+								{irisT("Delete", $irisLocale)}
+							</Button>
+						{/if}
+						<Button
+							size="sm"
+							class="h-7"
+							onclick={saveEditor}
+							disabled={editorSaving || (detailTab === 'json' && !editorIsValid)}
+						>
+							<SaveIcon size={12} class="mr-1" />
+							{editorSaving ? irisT("Saving…", $irisLocale) : editorMode === 'new' ? irisT("Create", $irisLocale) : irisT("Save", $irisLocale)}
+						</Button>
+					</div>
+				{/if}
+			</div>
+
+			{#if editorMode === 'closed'}
+				<p class="flex-1 px-3 py-10 text-center text-xs text-muted-foreground">
+					{irisT("Select a template on the left, or click", $irisLocale)} <span class="font-medium">{irisT("Add template", $irisLocale)}</span> {irisT("to create\n\t\t\t\t\tone.", $irisLocale)}
+				</p>
+			{:else}
+				{@const tabs: { id: DetailTab; label: string; icon: typeof FileCodeIcon }[] = [
+					{ id: 'form', label: 'Form', icon: FormInputIcon },
+					{ id: 'json', label: 'Raw JSON', icon: FileCodeIcon },
+					{ id: 'schema', label: 'Schema', icon: HelpCircleIcon }
+				]}
+				<!-- Tab strip -->
+				<nav
+					class="flex shrink-0 items-center gap-1 border-b bg-muted/10 px-3 py-1.5"
+					aria-label={irisT("Editor sections", $irisLocale)}
+				>
+					{#each tabs as t}
+						{@const active = detailTab === t.id}
+						<button
+							type="button"
+							onclick={() => {
+								// Sync the buffers in the direction we're
+								// leaving so the other tab opens on the
+								// latest value. Form → JSON: serialise the
+								// structured value. JSON → Form: parse the
+								// buffer only if it's syntactically valid;
+								// otherwise leave the form on its last
+								// known-good state and let the user keep
+								// editing the JSON.
+								if (detailTab === 'form' && t.id === 'json') {
+									editorBody = formatJson(editorValue);
+									editorIsValid = true;
+									editorJsonError = null;
+								} else if (detailTab === 'json' && t.id === 'form') {
+									try {
+										const next = JSON.parse(editorBody);
+										if (next && typeof next === 'object' && !Array.isArray(next)) {
+											editorValue = next as Record<string, unknown>;
+										}
+									} catch {
+										// Form stays on the previous structured value.
+									}
+								}
+								detailTab = t.id;
+							}}
+							class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors {active
+								? irisT("bg-card font-medium text-foreground shadow-sm", $irisLocale)
+								: irisT("text-muted-foreground hover:bg-muted/60 hover:text-foreground", $irisLocale)}"
+							aria-pressed={active}
+						>
+							<t.icon size={12} />
+							{t.label}
+						</button>
+					{/each}
+				</nav>
+
+				<div class="flex-1 overflow-y-auto">
+					{#if detailTab === 'form'}
+						{#if templateSchema == null}
+							{#if templateSchemaError}
+								<p class="px-3 py-6 text-center text-2xs text-destructive">
+									{templateSchemaError}
+								</p>
+							{:else}
+								<div class="space-y-2 p-3">
+									{#each Array(4) as _}
+										<Skeleton class="h-10 w-full" />
+									{/each}
+								</div>
+							{/if}
+						{:else}
+							<CaseTemplateForm
+								schema={templateSchema}
+								value={editorValue}
+								onChange={(next) => {
+									editorValue = next;
+								}}
+								{classifications}
+								disabled={editorSaving}
+							/>
+							{#if editorSaveError}
+								<p class="whitespace-pre-wrap px-4 pb-3 text-2xs text-destructive">
+									{editorSaveError}
+								</p>
+							{/if}
+						{/if}
+					{:else if detailTab === 'json'}
+						<div class="flex flex-col gap-2 p-3">
+							<JsonEditor
+								value={editorBody}
+								mode="json"
+								minLines={20}
+								maxLines={48}
+								onInput={(val, ok, err) => {
+									editorBody = val;
+									editorIsValid = ok;
+									editorJsonError = err;
+								}}
+							/>
+							{#if editorJsonError && !editorIsValid}
+								<p class="text-2xs text-destructive">
+									{irisT("JSON syntax error:", $irisLocale)} {editorJsonError}
+								</p>
+							{/if}
+							{#if editorSaveError}
+								<p class="whitespace-pre-wrap text-2xs text-destructive">
+									{editorSaveError}
+								</p>
+							{/if}
+						</div>
+					{:else if detailTab === 'schema'}
+						<div class="prose prose-sm flex max-w-none flex-col gap-3 p-4 text-xs">
+							<h3 class="text-sm font-semibold">{irisT("Case template structure", $irisLocale)}</h3>
+							<p class="text-muted-foreground">
+								{irisT("A case template is a JSON document describing how a new case should be seeded —\n\t\t\t\t\t\t\t\ttitle prefix, classification, tags, tasks and note directories. When applied, the\n\t\t\t\t\t\t\t\tpost-modifier appends the summary to the case description, materialises tags,\n\t\t\t\t\t\t\t\tcreates tasks (status \"To Do\") and walks the note directory tree creating notes.", $irisLocale)}
+							</p>
+							<table class="w-full border-collapse text-2xs">
+								<thead
+									class="border-b bg-muted/40 text-left uppercase tracking-wide text-muted-foreground"
+								>
+									<tr>
+										<th class="px-2 py-1 font-medium">{irisT("Field", $irisLocale)}</th>
+										<th class="px-2 py-1 font-medium">{irisT("Type", $irisLocale)}</th>
+										<th class="px-2 py-1 font-medium">{irisT("Notes", $irisLocale)}</th>
+									</tr>
+								</thead>
+								<tbody class="divide-y">
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("name", $irisLocale)}</td><td class="px-2 py-1">{irisT("string", $irisLocale)}</td><td
+											class="px-2 py-1">{irisT("Required. Unique short slug.", $irisLocale)}</td
+										></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("display_name", $irisLocale)}</td><td class="px-2 py-1"
+											>{irisT("string", $irisLocale)}</td
+										><td class="px-2 py-1">{irisT("Optional. Falls back to", $irisLocale)} <code>name</code>.</td></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("description", $irisLocale)}</td><td class="px-2 py-1"
+											>{irisT("string", $irisLocale)}</td
+										><td class="px-2 py-1">{irisT("Admin-side description (not shown on the case).", $irisLocale)}</td></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("author", $irisLocale)}</td><td class="px-2 py-1">{irisT("string", $irisLocale)}</td><td
+											class="px-2 py-1">{irisT("Max 128 chars.", $irisLocale)}</td
+										></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("title_prefix", $irisLocale)}</td><td class="px-2 py-1"
+											>{irisT("string", $irisLocale)}</td
+										><td class="px-2 py-1">{irisT("Max 32 chars. Prepended to the case name.", $irisLocale)}</td></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("summary", $irisLocale)}</td><td class="px-2 py-1">{irisT("string", $irisLocale)}</td
+										><td class="px-2 py-1">{irisT("Appended to the case description on apply.", $irisLocale)}</td></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("tags", $irisLocale)}</td><td class="px-2 py-1">{irisT("string[]", $irisLocale)}</td><td
+											class="px-2 py-1">{irisT("Appended to the case tags.", $irisLocale)}</td
+										></tr
+									>
+									<tr
+										><td class="px-2 py-1 font-mono">{irisT("classification", $irisLocale)}</td><td class="px-2 py-1"
+											>{irisT("string", $irisLocale)}</td
+										><td class="px-2 py-1"
+											>{irisT("Must match an existing case classification's", $irisLocale)} <code>name</code>.</td
+										></tr
+									>
+									<tr>
+										<td class="px-2 py-1 font-mono">{irisT("tasks", $irisLocale)}</td>
+										<td class="px-2 py-1">{irisT("object[]", $irisLocale)}</td>
+										<td class="px-2 py-1">
+											{irisT("Each", $irisLocale)} <code>{`{title, description?, tags?}`}</code>.
+										</td>
+									</tr>
+									<tr>
+										<td class="px-2 py-1 font-mono">{irisT("note_directories", $irisLocale)}</td>
+										<td class="px-2 py-1">{irisT("object[]", $irisLocale)}</td>
+										<td class="px-2 py-1">
+											{irisT("Each", $irisLocale)} <code>{`{title, notes?: [{title, content?}]}`}</code>.
+										</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</section>
+	</div>
+</div>
+
+<ConfirmationDialog
+	bind:open={confirmOpen}
+	title={confirmTitle}
+	message={confirmMessage}
+	confirmText="Delete"
+	onConfirm={runConfirm}
+/>

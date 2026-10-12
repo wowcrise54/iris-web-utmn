@@ -1,0 +1,60 @@
+import type { LoginResponse } from '$lib/services/auth.service';
+import type { HistoryData } from '$lib/components/common/ActivityHistory.svelte';
+import type { Asset } from './asset';
+import type { Classification, ResolutionStatus, Severity, Status } from './common';
+import type { Customer } from './customer';
+import type { Ioc } from './ioc';
+
+export interface Alert {
+	alert_id: number;
+	alert_uuid: string;
+	alert_title: string;
+	alert_description: string;
+	alert_creation_time: string;
+	alert_note: string;
+	alert_tags: string;
+
+	alert_owner_id: number;
+	owner: LoginResponse;
+
+	alert_severity_id: number;
+	severity: Severity;
+
+	alert_status_id: number;
+	status: Status;
+
+	alert_customer_id: number;
+	customer: Customer;
+
+	alert_classification_id: number;
+	classification: Classification;
+
+	alert_resolution_status_id: number;
+	resolution_status: ResolutionStatus;
+
+	assets: Asset[];
+
+	cases: number[];
+	comments: number[];
+	clusters: number[];
+	alert_investigation_flow_id: number | null;
+	investigation_flow: { flow_id: number; flow_name: string } | null;
+
+	/**
+	 * Free-form context from the ingesting pipeline. A JSON column on the
+	 * backend, so a value is whatever was written there — not necessarily a
+	 * string. Typing it `Record<string, string>` let a `.trim()` past the
+	 * compiler and crashed the alerts pane on any alert carrying a number.
+	 */
+	alert_context: Record<string, unknown> | null;
+
+	alert_source: string;
+	alert_source_ref: string;
+	alert_source_link: string;
+	alert_source_content: Record<string, string | number>;
+	alert_source_event_time: string;
+
+	iocs: Ioc[];
+
+	modification_history: HistoryData;
+}

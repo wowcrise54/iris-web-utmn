@@ -1,0 +1,474 @@
+<!--
+  AlertClusters overview. Same visual language as the cases-list page:
+  white workspace, `h1` heading, filter row inline with search on the
+  right, a bordered table below with column headers and hover rows.
+  Rich per-row metadata (severity chip, status pill, id/title, alert
+  count, customer, owner avatar, source rule, creation time) so
+  analysts spot "what to open next" without drilling in.
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { ShieldAlertIcon } from 'lucide-svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { Loading } from '$lib/components/ui/loading';
+	import Searchbar from '$lib/components/ui/searchbar/searchbar.svelte';
+	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
+	import UserAvatar from '$lib/components/common/UserAvatar.svelte';
+	import AlertsPagination from '../alerts/components/alerts-pagination.svelte';
+	import {
+		AlertClustersService,
+		type PaginatedAlertClusters
+	} from '$lib/services/alert-clusters.service';
+	import {
+		AlertClusterStatusService,
+		type AlertClusterStatus
+	} from '$lib/services/alert-cluster-status.service';
+	import { SeveritiesService, type Severity } from '$lib/services/severities.service';
+	import { CustomersService, type Customer } from '$lib/services/customers.service';
+	import type { AlertCluster } from '$lib/types/resources/alert-cluster';
+	import { DEFAULT_DEBOUNCE, DEFAULT_ITEMS_PER_PAGE } from '$lib/config/api.config';
+	import { mediumDateTimeFormatter } from '$lib/utils/time-formatter';
+
+	let clusters = $state<AlertCluster[]>([]);
+	let total = $state(0);
+	let pageNum = $state(1);
+	let perPage = $state(DEFAULT_ITEMS_PER_PAGE);
+	let titleFilter = $state('');
+	let statusFilter = $state<string>('');
+	let severityFilter = $state<string>('');
+	let customerFilter = $state<string>('');
+	let loading = $state(false);
+	let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+	let statuses = $state<AlertClusterStatus[]>([]);
+	let severities = $state<Severity[]>([]);
+	let customers = $state<Customer[]>([]);
+
+	const perPageOptions = [10, 25, 50, 100].map((n) => ({
+		value: String(n),
+		label: `${n} entries`
+	}));
+
+	const severityChip = (name: string) => {
+		switch (name.toLowerCase()) {
+			case 'critical':
+				return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+			case 'high':
+				return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
+			case 'medium':
+				return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
+			case 'low':
+			case 'informational':
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	};
+
+	const statusChip = (name: string) => {
+		switch (name.toLowerCase()) {
+			case 'open':
+				return 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300';
+			case 'investigating':
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+			case 'dismissed':
+				return 'bg-muted text-muted-foreground';
+			case 'escalated':
+				return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	};
+
+	const severityLabel = (id?: number | null) => {
+		if (!id) return 'Unspecified';
+		return severities.find((s) => s.severity_id === id)?.severity_name ?? 'Unspecified';
+	};
+
+	const load = async () => {
+		loading = true;
+		try {
+			const res = await AlertClustersService.list({
+				page: pageNum,
+				per_page: perPage,
+				title: titleFilter || undefined,
+				status_id: statusFilter ? Number(statusFilter) : undefined,
+				customer_id: customerFilter ? Number(customerFilter) : undefined,
+				sort: 'cluster_creation_time desc'
+			});
+			const payload =
+				res.data && typeof res.data === 'object' ? (res.data as PaginatedAlertClusters) : null;
+			let list = payload?.data ?? [];
+			// Severity is client-side filtered: the backend search API
+			// doesn't expose severity as a query param yet. Cheap for
+			// realistic page sizes; upgrade to server-side if the list
+			// grows unwieldy.
+			if (severityFilter) {
+				const target = Number(severityFilter);
+				list = list.filter((i) => i.cluster_severity_id === target);
+			}
+			clusters = list;
+			total = payload?.total ?? 0;
+		} finally {
+			loading = false;
+		}
+	};
+
+	const totalPages = $derived(Math.max(1, Math.ceil(total / perPage)));
+
+	// Debounced text search — mirrors the cases-list behaviour so the
+	// analyst types freely without every keystroke hitting the API.
+	let didInitSearch = false;
+	$effect(() => {
+		const _s = titleFilter;
+		if (!didInitSearch) {
+			didInitSearch = true;
+			return;
+		}
+		if (searchDebounce) clearTimeout(searchDebounce);
+		searchDebounce = setTimeout(() => {
+			pageNum = 1;
+			void load();
+		}, DEFAULT_DEBOUNCE);
+	});
+
+	const clearFilters = () => {
+		titleFilter = '';
+		statusFilter = '';
+		severityFilter = '';
+		customerFilter = '';
+		pageNum = 1;
+		void load();
+	};
+
+	const hasActiveFilters = $derived(
+		!!(titleFilter || statusFilter || severityFilter || customerFilter)
+	);
+
+	// Build the URL to pass as `?back=` when opening a cluster, so the
+	// detail page can offer a back arrow that restores the current filters.
+	const clusterUrl = (id: number) => {
+		const sp = new URLSearchParams();
+		if (titleFilter) sp.set('title', titleFilter);
+		if (statusFilter) sp.set('status', statusFilter);
+		if (severityFilter) sp.set('severity', severityFilter);
+		if (customerFilter) sp.set('customer', customerFilter);
+		if (pageNum > 1) sp.set('p', String(pageNum));
+		if (perPage !== DEFAULT_ITEMS_PER_PAGE) sp.set('pp', String(perPage));
+		const back = sp.toString() ? `/alert-clusters?${sp}` : '/alert-clusters';
+		return `/alert-clusters/${id}?back=${encodeURIComponent(back)}`;
+	};
+
+	onMount(async () => {
+		// Restore filters that were encoded by clusterUrl() when the user
+		// navigated to a cluster and then pressed the back arrow.
+		const sp = page.url.searchParams;
+		if (sp.get('title')) titleFilter = sp.get('title')!;
+		if (sp.get('status')) statusFilter = sp.get('status')!;
+		if (sp.get('severity')) severityFilter = sp.get('severity')!;
+		if (sp.get('customer')) customerFilter = sp.get('customer')!;
+		if (sp.get('p')) pageNum = Number(sp.get('p'));
+		if (sp.get('pp')) perPage = Number(sp.get('pp'));
+
+		void AlertClusterStatusService.list().then((r) => {
+			if (r.data && typeof r.data === 'object') {
+				statuses = (r.data as { data?: AlertClusterStatus[] }).data ?? [];
+			}
+		});
+		void SeveritiesService.list().then((r) => {
+			if (r.data && typeof r.data === 'object') {
+				severities = (r.data as { data?: Severity[] }).data ?? [];
+			}
+		});
+		void CustomersService.list().then((r) => {
+			if (r.ok) customers = r.data;
+		});
+		await load();
+	});
+</script>
+
+<svelte:head>
+	<title>Alert Clusters</title>
+</svelte:head>
+
+<!--
+  VISUAL TEST (full-bleed): no outer padding and no card chrome — the
+  workspace is one `bg-card` surface running to the viewport edges, matching
+  the case workspace. Title and filters share a single strip so there's one
+  horizontal rule above the table instead of a card border plus a table
+  border. Only the table region scrolls; the strip and pagination stay pinned.
+-->
+<div class="flex grow flex-col">
+	<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+		<!-- ============ Header + filters, one strip ============ -->
+		<div
+			class="flex shrink-0 flex-col gap-2 border-b border-border/60 bg-muted/30 px-5 py-2 xl:flex-row xl:items-center xl:justify-between xl:gap-4"
+		>
+			<div class="flex shrink-0 items-baseline gap-2">
+				<h1 class="text-sm font-semibold tracking-tight">{irisT("Alert Clusters", $irisLocale)}</h1>
+				<span class="whitespace-nowrap text-xs text-muted-foreground">
+					{total} {irisT("total — awaiting triage", $irisLocale)}
+				</span>
+			</div>
+
+			<div class="flex flex-wrap items-center justify-end gap-2">
+				<div class="flex flex-wrap items-center gap-2">
+					<div class="flex h-10">
+						<Select
+							value={statusFilter}
+							onValueChange={(v) => {
+								statusFilter = v;
+								pageNum = 1;
+								void load();
+							}}
+							type="single"
+						>
+							<SelectTrigger>
+								{statusFilter
+									? (statuses.find((s) => String(s.status_id) === statusFilter)?.status_name ??
+										'Any status')
+									: irisT("Any status", $irisLocale)}
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="">{irisT("Any status", $irisLocale)}</SelectItem>
+								{#each statuses as s (s.status_id)}
+									<SelectItem value={String(s.status_id)}>{s.status_name}</SelectItem>
+								{/each}
+							</SelectContent>
+						</Select>
+					</div>
+
+					<div class="flex h-10">
+						<Select
+							value={severityFilter}
+							onValueChange={(v) => {
+								severityFilter = v;
+								pageNum = 1;
+								void load();
+							}}
+							type="single"
+						>
+							<SelectTrigger>
+								{severityFilter
+									? (severities.find((s) => String(s.severity_id) === severityFilter)
+											?.severity_name ?? 'Any severity')
+									: irisT("Any severity", $irisLocale)}
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="">{irisT("Any severity", $irisLocale)}</SelectItem>
+								{#each severities as s (s.severity_id)}
+									<SelectItem value={String(s.severity_id)}>{s.severity_name}</SelectItem>
+								{/each}
+							</SelectContent>
+						</Select>
+					</div>
+
+					<div class="flex h-10">
+						<Select
+							value={customerFilter}
+							onValueChange={(v) => {
+								customerFilter = v;
+								pageNum = 1;
+								void load();
+							}}
+							type="single"
+						>
+							<SelectTrigger>
+								{customerFilter
+									? (customers.find((c) => String(c.customer_id) === customerFilter)
+											?.customer_name ?? 'Any customer')
+									: irisT("Any customer", $irisLocale)}
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="">{irisT("Any customer", $irisLocale)}</SelectItem>
+								{#each customers as c (c.customer_id)}
+									<SelectItem value={String(c.customer_id)}>{c.customer_name}</SelectItem>
+								{/each}
+							</SelectContent>
+						</Select>
+					</div>
+
+					{#if hasActiveFilters}
+						<Button variant="outline" size="sm" onclick={clearFilters}>{irisT("Clear", $irisLocale)}</Button>
+					{/if}
+				</div>
+
+				<div class="flex items-center gap-2">
+					<div class="flex min-w-56">
+						<Searchbar placeholder={irisT("Search by title", $irisLocale)} bind:value={titleFilter} />
+					</div>
+
+					<div class="flex h-10">
+						<Select
+							value={String(perPage)}
+							onValueChange={(value) => {
+								perPage = Number(value);
+								pageNum = 1;
+								void load();
+							}}
+							type="single"
+						>
+							<SelectTrigger>{perPage} {irisT("entries per page", $irisLocale)}</SelectTrigger>
+							<SelectContent>
+								{#each perPageOptions as opt (opt.value)}
+									<SelectItem value={opt.value}>{opt.label}</SelectItem>
+								{/each}
+							</SelectContent>
+						</Select>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!--
+	  ==================== Table ====================
+	  Full-bleed: the rounded border that used to box the table off is gone,
+	  so rows run edge to edge like the case list panes. The strip above and
+	  the pagination below supply the only two rules.
+	-->
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+			<div class="flex-1 overflow-y-auto">
+				<table class="w-full text-sm">
+					<thead
+						class="sticky top-0 z-10 bg-muted/50 text-left text-2xs uppercase tracking-wide text-muted-foreground backdrop-blur"
+					>
+						<tr>
+							<th class="px-4 py-2.5 font-medium">{irisT("Alert Cluster", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Severity", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Status", $irisLocale)}</th>
+							<th class="px-4 py-2.5 text-center font-medium">{irisT("Alerts", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Customer", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Owner", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Source rule", $irisLocale)}</th>
+							<th class="px-4 py-2.5 font-medium">{irisT("Opened", $irisLocale)}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if loading}
+							<tr>
+								<td colspan="8" class="py-16">
+									<div class="flex justify-center"><Loading /></div>
+								</td>
+							</tr>
+						{:else if clusters.length === 0}
+							<tr>
+								<td colspan="8" class="px-4 py-16">
+									<div class="flex flex-col items-center gap-2 text-center">
+										<ShieldAlertIcon class="h-8 w-8 text-muted-foreground/50" />
+										<p class="text-sm font-medium">{irisT("No alert clusters match", $irisLocale)}</p>
+										<p class="text-xs text-muted-foreground">
+											{hasActiveFilters
+												? irisT("Try widening your filters.", $irisLocale)
+												: irisT("AlertClusters will appear here as rules fire.", $irisLocale)}
+										</p>
+									</div>
+								</td>
+							</tr>
+						{:else}
+							{#each clusters as inc (inc.cluster_id)}
+								<tr
+									class="cursor-pointer border-t transition-colors hover:bg-muted/30"
+									onclick={() => goto(clusterUrl(inc.cluster_id))}
+								>
+									<td class="max-w-md px-4 py-3">
+										<div class="flex min-w-0 items-center gap-2">
+											<span class="truncate font-medium">
+												<span class="text-muted-foreground">#{inc.cluster_id}</span>
+												— {inc.cluster_title}
+											</span>
+											{#if inc.cluster_case_id}
+												<span
+													class="rounded-full bg-green-500/10 px-1.5 py-0.5 text-2xs font-medium text-green-700"
+													title={irisT("Escalated to case", $irisLocale)}
+												>
+													{irisT("→ case #", $irisLocale)}{inc.cluster_case_id}
+												</span>
+											{/if}
+										</div>
+									</td>
+
+									<td class="px-4 py-3">
+										<span
+											class="inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium {severityChip(
+												severityLabel(inc.cluster_severity_id)
+											)}"
+										>
+											{severityLabel(inc.cluster_severity_id)}
+										</span>
+									</td>
+
+									<td class="px-4 py-3">
+										<span
+											class="rounded-full px-2 py-0.5 text-2xs font-medium {statusChip(
+												inc.status?.status_name ?? ''
+											)}"
+										>
+											{inc.status?.status_name ?? 'Unknown'}
+										</span>
+									</td>
+
+									<td class="px-4 py-3 text-center font-medium">
+										{(inc.alert_ids ?? []).length}
+									</td>
+
+									<td class="px-4 py-3 text-xs text-muted-foreground">
+										{inc.customer?.customer_name ?? '—'}
+									</td>
+
+									<td class="px-4 py-3">
+										{#if inc.owner}
+											<div class="flex items-center gap-2">
+												<UserAvatar
+													userId={inc.owner.id}
+													name={inc.owner.user_name}
+													size="size-6"
+												/>
+												<span class="text-xs">{inc.owner.user_name}</span>
+											</div>
+										{:else}
+											<span class="text-xs italic text-muted-foreground">{irisT("Unassigned", $irisLocale)}</span>
+										{/if}
+									</td>
+
+									<td class="px-4 py-3 text-xs">
+										{#if inc.source_rule}
+											<span class="text-muted-foreground">{inc.source_rule.rule_name}</span>
+										{:else}
+											<span class="text-muted-foreground">—</span>
+										{/if}
+									</td>
+
+									<td class="px-4 py-3 text-xs text-muted-foreground">
+										{mediumDateTimeFormatter(inc.cluster_creation_time)}
+									</td>
+								</tr>
+							{/each}
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</div>
+
+		<!-- ==================== Pagination ==================== -->
+		{#if total > 0 && totalPages > 1}
+			<div class="flex shrink-0 items-center justify-between border-t border-border/60 px-5 py-2">
+				<p class="text-2xs text-muted-foreground">
+					{irisT("Page", $irisLocale)} {pageNum} {irisT("of", $irisLocale)} {totalPages} — {total} {irisT("alert cluster", $irisLocale)}{total === 1 ? '' : 's'}
+				</p>
+				<AlertsPagination
+					page={pageNum}
+					pages={totalPages}
+					onPageChange={(p) => {
+						pageNum = p;
+						void load();
+					}}
+				/>
+			</div>
+		{/if}
+	</div>
+</div>

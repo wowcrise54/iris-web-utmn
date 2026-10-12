@@ -1,0 +1,5410 @@
+# Russian translation catalog for the IRIS web interface.
+#
+# Rules for maintainers:
+#   * The msgid is always the English source string exactly as it appears in
+#     the template (``{{ _("...") }}``) or Python (``gettext("...")``) call.
+#   * Never translate user supplied data, enum values, case/asset/IOC names,
+#     API payloads or log records — only the static, developer authored UI.
+#   * Preserve every ``{placeholder}`` and ``%(name)s`` token verbatim.
+#   * Plural entries use the three-form Russian rule declared below.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: iris-web 2.4.29\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+
+# --------------------------------------------------------------------------- #
+# Application chrome: navigation, sidebar, footer
+# --------------------------------------------------------------------------- #
+msgid "Home"
+msgstr "Главная"
+
+msgid "Statistics"
+msgstr "Статистика"
+
+msgid "Dashboards"
+msgstr "Дашборды"
+
+msgid "Overview"
+msgstr "Обзор"
+
+msgid "Welcome page"
+msgstr "Страница приветствия"
+
+msgid "Investigation"
+msgstr "Расследование"
+
+msgid "Case"
+msgstr "Инцидент"
+
+msgid "Alerts"
+msgstr "Оповещения"
+
+msgid "Search"
+msgstr "Поиск"
+
+msgid "Activities"
+msgstr "Активности"
+
+msgid "DIM Tasks"
+msgstr "Задачи DIM"
+
+msgid "Manage"
+msgstr "Управление"
+
+msgid "Manage cases"
+msgstr "Управление инцидентами"
+
+msgid "Advanced"
+msgstr "Дополнительно"
+
+msgid "Modules"
+msgstr "Модули"
+
+msgid "Customers"
+msgstr "Заказчики"
+
+msgid "Case Objects"
+msgstr "Объекты инцидента"
+
+msgid "Custom Attributes"
+msgstr "Пользовательские атрибуты"
+
+msgid "Case Templates"
+msgstr "Шаблоны инцидентов"
+
+msgid "Report Templates"
+msgstr "Шаблоны отчётов"
+
+msgid "Access control"
+msgstr "Управление доступом"
+
+msgid "Server settings"
+msgstr "Настройки сервера"
+
+msgid "Help"
+msgstr "Справка"
+
+msgid "My settings"
+msgstr "Мои настройки"
+
+msgid "Logout"
+msgstr "Выход"
+
+msgid "Updates are available for the server"
+msgstr "Доступны обновления сервера"
+
+msgid "Switch case"
+msgstr "Сменить инцидент"
+
+msgid "Switch context"
+msgstr "Сменить контекст"
+
+msgid "No context"
+msgstr "Нет контекста"
+
+msgid "Create case"
+msgstr "Создать инцидент"
+
+msgid "Add task log"
+msgstr "Добавить запись задачи"
+
+msgid "Datastore"
+msgstr "Хранилище"
+
+msgid "Quick actions"
+msgstr "Быстрые действия"
+
+msgid "Toggle navigation"
+msgstr "Переключить навигацию"
+
+msgid "Go"
+msgstr "Перейти"
+
+msgid "Go to case number #"
+msgstr "Перейти к инциденту №"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Switch"
+msgstr "Сменить"
+
+msgid "Submit"
+msgstr "Отправить"
+
+msgid "Add a task log that will be registered under activities"
+msgstr "Добавьте запись задачи, которая будет зарегистрирована в активностях"
+
+msgid "Log content"
+msgstr "Содержимое записи"
+
+msgid "Datastore folder"
+msgstr "Папка хранилища"
+
+msgid "Input the folder name below"
+msgstr "Введите имя папки ниже"
+
+msgid "Folder name"
+msgstr "Имя папки"
+
+msgid "Task info"
+msgstr "Информация о задаче"
+
+msgid "Save Filter"
+msgstr "Сохранить фильтр"
+
+msgid "Filter Name *"
+msgstr "Имя фильтра *"
+
+msgid "Filter name"
+msgstr "Имя фильтра"
+
+msgid "Filter Description"
+msgstr "Описание фильтра"
+
+msgid "Filter description"
+msgstr "Описание фильтра"
+
+msgid "Private Filter"
+msgstr "Приватный фильтр"
+
+msgid "If checked, the filter will be only visible to you"
+msgstr "Если отмечено, фильтр будет виден только вам"
+
+# --------------------------------------------------------------------------- #
+# Authentication: login and MFA
+# --------------------------------------------------------------------------- #
+msgid "Sign In"
+msgstr "Войти"
+
+msgid "Username"
+msgstr "Имя пользователя"
+
+msgid "Password"
+msgstr "Пароль"
+
+msgid "Use SSO"
+msgstr "Войти через SSO"
+
+msgid "Don't have an account yet ?"
+msgstr "Ещё нет учётной записи?"
+
+msgid "Login"
+msgstr "Вход"
+
+msgid "Verify MFA"
+msgstr "Подтверждение MFA"
+
+msgid "Enter the token displayed on your authentication app"
+msgstr "Введите код из приложения-аутентификатора"
+
+msgid "Token"
+msgstr "Код"
+
+msgid "Setup MFA"
+msgstr "Настройка MFA"
+
+msgid "MFA Setup"
+msgstr "Настройка MFA"
+
+msgid "MFA Verify"
+msgstr "Подтверждение MFA"
+
+msgid "Your organisation requires to setup MFA"
+msgstr "Ваша организация требует настройки MFA"
+
+msgid "Scan the QR code with your authenticator app and enter the token and your password."
+msgstr "Отсканируйте QR-код приложением-аутентификатором и введите код и пароль."
+
+# --------------------------------------------------------------------------- #
+# Error pages
+# --------------------------------------------------------------------------- #
+msgid "Access denied"
+msgstr "Доступ запрещён"
+
+msgid "ACCESS DENIED"
+msgstr "ДОСТУП ЗАПРЕЩЁН"
+
+msgid "Seems like you shouldn't be here"
+msgstr "Похоже, вам здесь не место"
+
+msgid "Get back on track"
+msgstr "Вернуться"
+
+msgid "Access denied while trying to access case #"
+msgstr "Отказано в доступе при попытке открыть инцидент №"
+
+msgid "Access denied while trying to access the resource"
+msgstr "Отказано в доступе при попытке открыть ресурс"
+
+msgid "404 Error"
+msgstr "Ошибка 404"
+
+msgid "SORRY!"
+msgstr "ИЗВИНИТЕ!"
+
+msgid "The page you’re looking for was not found."
+msgstr "Запрошенная страница не найдена."
+
+# --------------------------------------------------------------------------- #
+# Dashboard
+# --------------------------------------------------------------------------- #
+msgid "Dashboard"
+msgstr "Панель управления"
+
+msgid "Create new case"
+msgstr "Создать новый инцидент"
+
+msgid "Cases (open / all)"
+msgstr "Инциденты (открытые / все)"
+
+msgid "Attributed open cases"
+msgstr "Назначенные открытые инциденты"
+
+msgid "Attributed open tasks"
+msgstr "Назначенные открытые задачи"
+
+msgid "Assigned alerts"
+msgstr "Назначенные оповещения"
+
+msgid "Attributed cases review"
+msgstr "Проверка назначенных инцидентов"
+
+msgid "Refresh"
+msgstr "Обновить"
+
+msgid "Show closed cases"
+msgstr "Показать закрытые инциденты"
+
+msgid "Add global task"
+msgstr "Добавить глобальную задачу"
+
+msgid "Global tasks"
+msgstr "Глобальные задачи"
+
+msgid "Case name"
+msgstr "Название инцидента"
+
+msgid "Review Status"
+msgstr "Статус проверки"
+
+msgid "Title"
+msgstr "Заголовок"
+
+msgid "Description"
+msgstr "Описание"
+
+msgid "Status"
+msgstr "Статус"
+
+msgid "Last update"
+msgstr "Последнее обновление"
+
+msgid "Tags"
+msgstr "Теги"
+
+msgid "Client"
+msgstr "Клиент"
+
+msgid "Opening date"
+msgstr "Дата открытия"
+
+msgid "Assigned to"
+msgstr "Назначено"
+
+msgid "Open case"
+msgstr "Открытый инцидент"
+
+# --------------------------------------------------------------------------- #
+# User-facing messages (flash / form errors)
+# --------------------------------------------------------------------------- #
+msgid "Wrong credentials. Please try again."
+msgstr "Неверные учётные данные. Попробуйте снова."
+
+msgid "LDAP authentication unavailable. Check server logs"
+msgstr "LDAP-аутентификация недоступна. Проверьте журналы сервера"
+
+msgid "Too many attempts. Please try again later."
+msgstr "Слишком много попыток. Попробуйте позже."
+
+msgid "MFA setup expired. Please restart the login flow."
+msgstr "Настройка MFA истекла. Начните вход заново."
+
+msgid "Invalid password. Please try again."
+msgstr "Неверный пароль. Попробуйте снова."
+
+msgid "Invalid token or password. Please try again."
+msgstr "Неверный код или пароль. Попробуйте снова."
+
+msgid "Token is required."
+msgstr "Требуется код."
+
+msgid "Invalid token. Please try again."
+msgstr "Неверный код. Попробуйте снова."
+
+msgid "Please log in to access this page."
+msgstr "Войдите, чтобы получить доступ к этой странице."
+
+# --------------------------------------------------------------------------- #
+# Language switch
+# --------------------------------------------------------------------------- #
+msgid "Language"
+msgstr "Язык"
+
+# --------------------------------------------------------------------------- #
+# Plural forms
+# --------------------------------------------------------------------------- #
+msgid "task"
+msgid_plural "tasks"
+msgstr[0] "задача"
+msgstr[1] "задачи"
+msgstr[2] "задач"
+
+msgid "case"
+msgid_plural "cases"
+msgstr[0] "инцидент"
+msgstr[1] "инцидента"
+msgstr[2] "инцидентов"
+
+# --------------------------------------------------------------------------- #
+# Form labels and validation messages
+# --------------------------------------------------------------------------- #
+msgid "Error"
+msgstr "Ошибка"
+
+msgid "Go to case number"
+msgstr "Перейти к инциденту"
+
+msgid "Verify"
+msgstr "Подтвердить"
+
+msgid "MFA Secret"
+msgstr "Секрет MFA"
+
+msgid "This field is required."
+msgstr "Обязательное поле."
+
+msgid "Invalid email address."
+msgstr "Некорректный адрес электронной почты."
+# Remaining native UI pages and dialogs
+
+msgid "\"Accounts to access the instance are available at the bottom of the page. If they don't work, try checking if there are not trailing spaces when copying.\""
+msgstr "Учётные записи для доступа доступны внизу страницы. Если вход не удаётся, проверьте, не скопированы ли лишние пробелы."
+
+msgid "\"Don't have an account yet ?\""
+msgstr "Ещё нет учётной записи?"
+
+msgid "\"Don't mind the background, it's for preview also\""
+msgstr "Не обращайте внимания на фон: он тоже демонстрационный"
+
+msgid "\"Not sure what IRIS is about? You'll find more info on the\""
+msgstr "Хотите узнать больше об IRIS? Посетите"
+
+msgid "\"The users below are associated with this customer and have by default access to the customer's related data, including\\n\\t\\t\\t\\t\\t\\t\\t\\talerts and cases.\""
+msgstr "Эти пользователи связаны с заказчиком и по умолчанию имеют доступ к его оповещениям и инцидентам."
+
+msgid "\"Typing wrong attributes here might result in UI breaks. IRIS will attempt to validate the attributes' taxonomy before committing.\""
+msgstr "Ошибочные атрибуты могут нарушить интерфейс. IRIS проверит их структуру перед сохранением."
+
+msgid "#Members"
+msgstr "Количество участников"
+
+msgid "%case_name% : name of the case"
+msgstr "%case_name%: название инцидента"
+
+msgid "%code_name%: autogenerated enterprise code name"
+msgstr "%code_name%: автоматически созданное кодовое имя организации"
+
+msgid "%customer% : customer name"
+msgstr "%customer%: название заказчика"
+
+msgid "%date% : date of generation"
+msgstr "%date%: дата формирования"
+
+msgid "(optional): aggregation to apply. Leave empty to return raw values."
+msgstr "(необязательно): агрегация. Оставьте пустым для получения исходных значений."
+
+msgid "(optional): applies global filters to the widget."
+msgstr "(необязательно): применяет к виджету общие фильтры."
+
+msgid "(optional): formatting, layout, and widget-specific settings."
+msgstr "(необязательно): форматирование, макет и настройки виджета."
+
+msgid "(optional): name used when referencing the aggregated value in options."
+msgstr "(необязательно): имя агрегированного значения для использования в параметрах."
+
+msgid "(optional): normalizes time-series groupings to the chosen bucket."
+msgstr "(необязательно): приводит временные группы к выбранному интервалу."
+
+msgid "(optional): per-field filter object using"
+msgstr "(необязательно): объект фильтра отдельного поля с использованием"
+
+msgid "(optional): sets grouping columns for aggregated widgets and tables."
+msgstr "(необязательно): задаёт столбцы группировки для агрегированных виджетов и таблиц."
+
+msgid "(required): allowed table key from the reference list."
+msgstr "(обязательно): допустимый ключ таблицы из справочника."
+
+msgid "(required): column name from that table."
+msgstr "(обязательно): имя столбца этой таблицы."
+
+msgid "(required): controls what data is selected and how it is aggregated."
+msgstr "(обязательно): определяет выборку и агрегацию данных."
+
+msgid ") on IRIS"
+msgstr ") в IRIS"
+
+msgid ") read data of non-accessible cases (titled"
+msgstr ") чтение данных недоступных инцидентов (с названиями"
+
+msgid ") to administrative rights ("
+msgstr ") до административных прав ("
+
+msgid ") to code execution on the server"
+msgstr ") до выполнения кода на сервере"
+
+msgid ", and"
+msgstr ", и"
+
+msgid ", and an"
+msgstr ", а также"
+
+msgid ", optional"
+msgstr ", необязательно"
+
+msgid "- Module Information"
+msgstr "— информация о модуле"
+
+msgid ". This is an operational requirement and not recognized as a vulnerability."
+msgstr ". Это эксплуатационное требование, которое не считается уязвимостью."
+
+msgid ". Widget definitions mirror the examples in the help modal."
+msgstr ". Определения виджетов соответствуют примерам в справке."
+
+msgid ": A static content rendered as HTML for infinite possibilities."
+msgstr ": статическое HTML-содержимое с широкими возможностями оформления."
+
+msgid ": A static content rendered in raw text. HTML is not interpreted."
+msgstr ": статический текст. HTML не интерпретируется."
+
+msgid ": Asset linked to the event"
+msgstr ": актив, связанный с событием"
+
+msgid ": Category of the event"
+msgstr ": категория события"
+
+msgid ": Description of the event"
+msgstr ": описание события"
+
+msgid ": Description of the file"
+msgstr ": описание файла"
+
+msgid ": End date to filter with"
+msgstr ": конечная дата фильтрации"
+
+msgid ": ID of the file"
+msgstr ": ID файла"
+
+msgid ": IOC linked to the event"
+msgstr ": IOC, связанный с событием"
+
+msgid ": Name of the file"
+msgstr ": имя файла"
+
+msgid ": Name of the file on the FS"
+msgstr ": имя файла в файловой системе"
+
+msgid ": Offer analysts the possibility to fill additional details. Multiple types of inputs are supported. See taxonomy for more details"
+msgstr ": дополнительные поля для аналитиков. Поддерживаются разные типы ввода. Подробнее см. описание структуры"
+
+msgid ": Raw event content"
+msgstr ": исходное содержимое события"
+
+msgid ": SHA256 to filter files with"
+msgstr ": SHA256 для фильтрации файлов"
+
+msgid ": Set to any value to filter files which are IOCs"
+msgstr ": любое значение для выбора файлов IOC"
+
+msgid ": Set to any value to filter files which are evidence"
+msgstr ": любое значение для выбора файлов доказательств"
+
+msgid ": Set to any value to filter files which have passwords"
+msgstr ": любое значение для выбора файлов с паролем"
+
+msgid ": Source of the event"
+msgstr ": источник события"
+
+msgid ": Start date to filter with"
+msgstr ": начальная дата фильтрации"
+
+msgid ": Tag of the file"
+msgstr ": тег файла"
+
+msgid ": Tag within the event"
+msgstr ": тег события"
+
+msgid ": Title of the event"
+msgstr ": заголовок события"
+
+msgid ": UUID of the file"
+msgstr ": UUID файла"
+
+msgid ": achieve any action requiring an authentication without being authenticated."
+msgstr ": выполнение действий, требующих аутентификации, без входа в систему."
+
+msgid ": from a standard user ("
+msgstr ": от обычного пользователя ("
+
+msgid "A case template is defined as below."
+msgstr "Шаблон инцидента определяется следующим образом."
+
+msgid "A password policy change applies to new or updated passwords."
+msgstr "Изменение политики паролей применяется к новым и изменённым паролям."
+
+msgid "API Key"
+msgstr "Ключ API"
+
+msgid "Access"
+msgstr "Доступ"
+
+msgid "Access Control"
+msgstr "Управление доступом"
+
+msgid "Access IRIS"
+msgstr "Открыть IRIS"
+
+msgid "Access to the case can be granted to other users once the case is created. Users pertaining to the customer will be able to see the case by default."
+msgstr "После создания инцидента можно предоставить доступ другим пользователям. Пользователи заказчика получают доступ по умолчанию."
+
+msgid "Accounts"
+msgstr "Учётные записи"
+
+msgid "Action"
+msgstr "Действие"
+
+msgid "Activate"
+msgstr "Активировать"
+
+msgid "Active"
+msgstr "Активен"
+
+msgid "Activity"
+msgstr "Активность"
+
+msgid "Activity report"
+msgstr "Отчёт об активности"
+
+msgid "Add"
+msgstr "Добавить"
+
+msgid "Add Asset Type"
+msgstr "Добавить тип актива"
+
+msgid "Add Contact"
+msgstr "Добавить контакт"
+
+msgid "Add Group"
+msgstr "Добавить группу"
+
+msgid "Add IOC"
+msgstr "Добавить IOC"
+
+msgid "Add IOC Type"
+msgstr "Добавить тип IOC"
+
+msgid "Add Module"
+msgstr "Добавить модуль"
+
+msgid "Add Report Template"
+msgstr "Добавить шаблон отчёта"
+
+msgid "Add User"
+msgstr "Добавить пользователя"
+
+msgid "Add a section"
+msgstr "Добавить раздел"
+
+msgid "Add alert as event in the timeline"
+msgstr "Добавить оповещение как событие на временную шкалу"
+
+msgid "Add an existing asset to the case graph."
+msgstr "Добавить существующий актив на граф инцидента."
+
+msgid "Add asset"
+msgstr "Добавить актив"
+
+msgid "Add asset to graph"
+msgstr "Добавить актив на граф"
+
+msgid "Add assets"
+msgstr "Добавить активы"
+
+msgid "Add case template"
+msgstr "Добавить шаблон инцидента"
+
+msgid "Add contact"
+msgstr "Добавить контакт"
+
+msgid "Add customer"
+msgstr "Добавить заказчика"
+
+msgid "Add event"
+msgstr "Добавить событие"
+
+msgid "Add folder"
+msgstr "Добавить папку"
+
+msgid "Add group"
+msgstr "Добавить группу"
+
+msgid "Add module"
+msgstr "Добавить модуль"
+
+msgid "Add multiple assets"
+msgstr "Добавить несколько активов"
+
+msgid "Add new"
+msgstr "Добавить новый"
+
+msgid "Add new event"
+msgstr "Добавить новое событие"
+
+msgid "Add note"
+msgstr "Добавить заметку"
+
+msgid "Add protagonist"
+msgstr "Добавить участника"
+
+msgid "Add section"
+msgstr "Добавить раздел"
+
+msgid "Add task"
+msgstr "Добавить задачу"
+
+msgid "Add template"
+msgstr "Добавить шаблон"
+
+msgid "Add to summary"
+msgstr "Добавить в сводку"
+
+msgid "Add user"
+msgstr "Добавить пользователя"
+
+msgid "Added by"
+msgstr "Добавил"
+
+msgid "Additional information"
+msgstr "Дополнительная информация"
+
+msgid "Additional notes"
+msgstr "Дополнительные заметки"
+
+msgid "Adjust timeframe and filters applied to all statistics on this page."
+msgstr "Настройте период и фильтры для всей статистики на этой странице."
+
+msgid "Alert MTTR help"
+msgstr "Справка о среднем времени реагирования на оповещения"
+
+msgid "Alert history"
+msgstr "История оповещения"
+
+msgid "Alert over time"
+msgstr "Оповещения по времени"
+
+msgid "Alert over time help"
+msgstr "Справка об оповещениях по времени"
+
+msgid "Alert resolution help"
+msgstr "Справка о результатах обработки оповещений"
+
+msgid "Alert resolution status"
+msgstr "Результат обработки оповещения"
+
+msgid "Alert severity"
+msgstr "Критичность оповещения"
+
+msgid "Alert severity help"
+msgstr "Справка о критичности оповещений"
+
+msgid "Alert status"
+msgstr "Статус оповещения"
+
+msgid "Alert status help"
+msgstr "Справка о статусах оповещений"
+
+msgid "Alert title"
+msgstr "Заголовок оповещения"
+
+msgid "Alert(s) ID"
+msgstr "ID оповещений"
+
+msgid "Alerts associated with at least one case record."
+msgstr "Оповещения, связанные хотя бы с одним инцидентом."
+
+msgid "Alerts created"
+msgstr "Созданные оповещения"
+
+msgid "Alerts created during the last 2, 24, and 48 hours."
+msgstr "Оповещения, созданные за последние 2, 24 и 48 часов."
+
+msgid "Alerts created help"
+msgstr "Справка о созданных оповещениях"
+
+msgid "Alerts per page:"
+msgstr "Оповещений на странице:"
+
+msgid "Alerts section help"
+msgstr "Справка о разделе оповещений"
+
+msgid "Alerts that remain in the initial 'New' status."
+msgstr "Оповещения, которые остаются в начальном статусе «Новое»."
+
+msgid "Alerts whose resolution status is missing or marked as unknown."
+msgstr "Оповещения без результата обработки или с неизвестным результатом."
+
+msgid "Alerts without an owner created during the last 2, 24, and 48 hours."
+msgstr "Оповещения без ответственного, созданные за последние 2, 24 и 48 часов."
+
+msgid "All access"
+msgstr "Полный доступ"
+
+msgid "All customers"
+msgstr "Все заказчики"
+
+msgid "All severities"
+msgstr "Все уровни критичности"
+
+msgid "All statuses"
+msgstr "Все статусы"
+
+msgid "Allowed tables &amp; columns"
+msgstr "Доступные таблицы и столбцы"
+
+msgid "Analysis"
+msgstr "Анализ"
+
+msgid "Analysis Status"
+msgstr "Статус анализа"
+
+msgid "Apply"
+msgstr "Применить"
+
+msgid "Apply Filters"
+msgstr "Применить фильтры"
+
+msgid "Apply filter"
+msgstr "Применить фильтр"
+
+msgid "Apply to currents and futures cases"
+msgstr "Применить к существующим и будущим инцидентам"
+
+msgid "Asset Icon - compromised"
+msgstr "Значок актива — скомпрометирован"
+
+msgid "Asset Icon - not compromised"
+msgstr "Значок актива — не скомпрометирован"
+
+msgid "Asset Name *"
+msgstr "Имя актива *"
+
+msgid "Asset Type"
+msgstr "Тип актива"
+
+msgid "Asset Type *"
+msgstr "Тип актива *"
+
+msgid "Asset Type description"
+msgstr "Описание типа актива"
+
+msgid "Asset name"
+msgstr "Имя актива"
+
+msgid "Asset tags"
+msgstr "Теги актива"
+
+msgid "Asset(s) name"
+msgstr "Имена активов"
+
+msgid "Assets"
+msgstr "Активы"
+
+msgid "Assets Name *"
+msgstr "Имена активов *"
+
+msgid "Assets Type *"
+msgstr "Тип активов *"
+
+msgid "Assets to import"
+msgstr "Активы для импорта"
+
+msgid "Assets types"
+msgstr "Типы активов"
+
+msgid "Assign"
+msgstr "Назначить"
+
+msgid "Assign to me"
+msgstr "Назначить мне"
+
+msgid "Assigned to *"
+msgstr "Назначено *"
+
+msgid "Associated Users"
+msgstr "Связанные пользователи"
+
+msgid "Attribute definition"
+msgstr "Определение атрибута"
+
+msgid "Attribute preview"
+msgstr "Предпросмотр атрибута"
+
+msgid "Attributes allow to extend the fields available for analysts when they add or edit"
+msgstr "Атрибуты расширяют доступные аналитикам поля при добавлении или изменении"
+
+msgid "Attributes are defined as below."
+msgstr "Атрибуты определяются следующим образом."
+
+msgid "Attributes can be added by administrator in this UI, or they can be pushed by modules."
+msgstr "Администратор может добавлять атрибуты в интерфейсе; также их могут предоставлять модули."
+
+msgid "Attributes can have the following purposes:"
+msgstr "Атрибуты могут использоваться для следующих целей:"
+
+msgid "Attributes in this page represent the default attributes of each new"
+msgstr "На этой странице представлены атрибуты по умолчанию для каждого нового объекта типа"
+
+msgid "Attributes taxonomy"
+msgstr "Структура атрибутов"
+
+msgid "Audit"
+msgstr "Аудит"
+
+msgid "Audit users"
+msgstr "Аудит пользователей"
+
+msgid "Auto saving enabled"
+msgstr "Автосохранение включено"
+
+msgid "Auto-refresh"
+msgstr "Автообновление"
+
+msgid "Automatic trigger"
+msgstr "Автоматический запуск"
+
+msgid "Available aggregations"
+msgstr "Доступные агрегации"
+
+msgid "Available operators are:"
+msgstr "Доступные операторы:"
+
+msgid "Average case duration"
+msgstr "Средняя продолжительность инцидента"
+
+msgid "Average duration between source event time and alert creation."
+msgstr "Среднее время между событием источника и созданием оповещения."
+
+msgid "Average time from alert creation to the second recorded history entry."
+msgstr "Среднее время от создания оповещения до второй записи в его истории."
+
+msgid "Average time from case creation to case closure."
+msgstr "Среднее время от создания до закрытия инцидента."
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Back up of the current server code to backup storage defined in"
+msgstr "Резервное копирование текущего кода сервера в хранилище, указанное в"
+
+msgid "Backup database"
+msgstr "Создать резервную копию базы данных"
+
+msgid "Backups"
+msgstr "Резервные копии"
+
+msgid "Base object information"
+msgstr "Основная информация об объекте"
+
+msgid "Bold"
+msgstr "Полужирный"
+
+msgid "Breakdown of how alerts have been resolved."
+msgstr "Распределение оповещений по результатам обработки."
+
+msgid "Brute-force is not what we are looking for"
+msgstr "Перебор паролей не входит в цели проверки"
+
+msgid "By accessing this instance you confirm you read, understand and agree with all the information on this page."
+msgstr "Используя этот экземпляр, вы подтверждаете, что прочитали, поняли и приняли всю информацию на этой странице."
+
+msgid "By using this site, you acknowledge that content posted on this site is public and DFIR-IRIS cannot guarantee the security of any information disclose on it; you make such disclosures at your own risk."
+msgstr "Используя этот сайт, вы признаёте, что опубликованное содержимое общедоступно. DFIR-IRIS не гарантирует безопасность размещённых данных; вы публикуете их на свой риск."
+
+msgid "CSV File format example"
+msgstr "Пример формата CSV-файла"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Cancel review"
+msgstr "Отменить проверку"
+
+msgid "Careful, this is by nature prone to vulnerabilities."
+msgstr "Будьте осторожны: по своей природе это может приводить к уязвимостям."
+
+msgid "Case Assets"
+msgstr "Активы инцидента"
+
+msgid "Case Error"
+msgstr "Ошибка инцидента"
+
+msgid "Case Evidence"
+msgstr "Доказательства инцидента"
+
+msgid "Case Graph"
+msgstr "Граф инцидента"
+
+msgid "Case Graph Timeline"
+msgstr "Временная шкала графа инцидента"
+
+msgid "Case ID"
+msgstr "ID инцидента"
+
+msgid "Case ID :"
+msgstr "ID инцидента:"
+
+msgid "Case IOC"
+msgstr "IOC инцидента"
+
+msgid "Case MTTR help"
+msgstr "Справка о среднем времени реагирования на инциденты"
+
+msgid "Case Name"
+msgstr "Название инцидента"
+
+msgid "Case Review"
+msgstr "Проверка инцидента"
+
+msgid "Case Tasks"
+msgstr "Задачи инцидента"
+
+msgid "Case Template Example"
+msgstr "Пример шаблона инцидента"
+
+msgid "Case Template taxonomy"
+msgstr "Структура шаблона инцидента"
+
+msgid "Case Timeline"
+msgstr "Временная шкала инцидента"
+
+msgid "Case UUID :"
+msgstr "UUID инцидента:"
+
+msgid "Case access"
+msgstr "Доступ к инциденту"
+
+msgid "Case classification"
+msgstr "Классификация инцидента"
+
+msgid "Case classification help"
+msgstr "Справка о классификации инцидентов"
+
+msgid "Case classifications"
+msgstr "Классификации инцидентов"
+
+msgid "Case description :"
+msgstr "Описание инцидента:"
+
+msgid "Case false positive rate help"
+msgstr "Доля ложноположительных инцидентов — справка"
+
+msgid "Case name *"
+msgstr "Название инцидента *"
+
+msgid "Case name :"
+msgstr "Название инцидента:"
+
+msgid "Case notes"
+msgstr "Заметки инцидента"
+
+msgid "Case outcome"
+msgstr "Исход инцидента"
+
+msgid "Case outcomes"
+msgstr "Исходы инцидентов"
+
+msgid "Case reviewed by"
+msgstr "Инцидент проверил"
+
+msgid "Case seen"
+msgstr "Просмотры инцидента"
+
+msgid "Case severity"
+msgstr "Критичность инцидента"
+
+msgid "Case severity help"
+msgstr "Справка о критичности инцидентов"
+
+msgid "Case state"
+msgstr "Состояние инцидента"
+
+msgid "Case status"
+msgstr "Статус инцидента"
+
+msgid "Case status help"
+msgstr "Справка о статусах инцидентов"
+
+msgid "Case summary"
+msgstr "Сводка инцидента"
+
+msgid "Case tags"
+msgstr "Теги инцидента"
+
+msgid "Case tags :"
+msgstr "Теги инцидента:"
+
+msgid "Case template definition"
+msgstr "Определение шаблона инцидента"
+
+msgid "Case templates allow to prefill case objects such as tasks, tags, and notes."
+msgstr "Шаблоны позволяют заранее заполнить задачи, теги и заметки инцидента."
+
+msgid "Case templates can be added and edited in this UI, or they can be uploaded as JSON files."
+msgstr "Шаблоны инцидентов можно добавлять и редактировать в интерфейсе или загружать как JSON-файлы."
+
+msgid "Case templates can be uploaded as JSON files, or they can be added and edited in the Add/Edit case template UI."
+msgstr "Шаблоны инцидентов можно загрузить как JSON-файлы или создать и изменить через форму добавления/редактирования шаблона."
+
+msgid "Cases"
+msgstr "Инциденты"
+
+msgid "Cases access"
+msgstr "Доступ к инцидентам"
+
+msgid "Cases accesses are usually inherited from groups memberships. These are not displayed here. This tab allows to add granular case access if necessary."
+msgstr "Доступ к инцидентам обычно наследуется от групп и здесь не отображается. На этой вкладке можно предоставить отдельные права доступа."
+
+msgid "Cases management"
+msgstr "Управление инцидентами"
+
+msgid "Cases opened"
+msgstr "Открытые инциденты"
+
+msgid "Cases opened help"
+msgstr "Справка об открытых инцидентах"
+
+msgid "Cases resolved"
+msgstr "Разрешённые инциденты"
+
+msgid "Cases resolved help"
+msgstr "Справка о разрешённых инцидентах"
+
+msgid "Cases resolved with a false-positive classification."
+msgstr "Инциденты с ложноположительной классификацией."
+
+msgid "Cases section help"
+msgstr "Справка о разделе инцидентов"
+
+msgid "Change color"
+msgstr "Изменить цвет"
+
+msgid "Change password"
+msgstr "Изменить пароль"
+
+msgid "Changing types of fields in attributes might result in incompatibles types and existing objects being unable to be migrated."
+msgstr "Изменение типов полей атрибутов может привести к несовместимости и невозможности переноса существующих объектов."
+
+msgid "Chart &amp; time settings"
+msgstr "Настройки графиков и времени"
+
+msgid "Chart types"
+msgstr "Типы графиков"
+
+msgid "Check to set to true"
+msgstr "Отметьте, чтобы включить"
+
+msgid "Choose CSV file to import :"
+msgstr "Выберите CSV-файл для импорта:"
+
+msgid "Choose JSON file to import :"
+msgstr "Выберите JSON-файл для импорта:"
+
+msgid "Choose a dashboard to display its widgets."
+msgstr "Выберите панель, чтобы отобразить её виджеты."
+
+msgid "Choose file to upload :"
+msgstr "Выберите файл для загрузки:"
+
+msgid "Choose files to upload :"
+msgstr "Выберите файлы для загрузки:"
+
+msgid "Choose reviewer"
+msgstr "Выбрать проверяющего"
+
+msgid "Classification"
+msgstr "Классификация"
+
+msgid "Classification :"
+msgstr "Классификация:"
+
+msgid "Classification description"
+msgstr "Описание классификации"
+
+msgid "Classification expanded name"
+msgstr "Полное название классификации"
+
+msgid "Classification name"
+msgstr "Название классификации"
+
+msgid "Clear"
+msgstr "Очистить"
+
+msgid "Clear Filters"
+msgstr "Сбросить фильтры"
+
+msgid "Click on a case to unveil access control path"
+msgstr "Нажмите на инцидент, чтобы увидеть, как предоставлен доступ"
+
+msgid "Click on a user to unveil access control path"
+msgstr "Нажмите на пользователя, чтобы увидеть, как предоставлен доступ"
+
+msgid "Click to show trace"
+msgstr "Нажмите, чтобы показать трассировку"
+
+msgid "Click to unfold"
+msgstr "Нажмите, чтобы развернуть"
+
+msgid "Close Alert"
+msgstr "Закрыть оповещение"
+
+msgid "Close case"
+msgstr "Закрыть инцидент"
+
+msgid "Close date"
+msgstr "Дата закрытия"
+
+msgid "Close date :"
+msgstr "Дата закрытия:"
+
+msgid "Close with note"
+msgstr "Закрыть с заметкой"
+
+msgid "Closed"
+msgstr "Закрыт"
+
+msgid "Closed on"
+msgstr "Закрыт"
+
+msgid "Columns"
+msgstr "Столбцы"
+
+msgid "Comment"
+msgstr "Комментарий"
+
+msgid "Comment text"
+msgstr "Текст комментария"
+
+msgid "Comments"
+msgstr "Комментарии"
+
+msgid "Comments on"
+msgstr "Комментарии к"
+
+msgid "Compatibility verifications"
+msgstr "Проверка совместимости"
+
+msgid "Complete overwrite"
+msgstr "Полная перезапись"
+
+msgid "Compromise Status"
+msgstr "Статус компрометации"
+
+msgid "Compromised"
+msgstr "Скомпрометирован"
+
+msgid "Configuration (click on a setting to edit)"
+msgstr "Конфигурация (нажмите на настройку для изменения)"
+
+msgid "Configuration file :"
+msgstr "Файл конфигурации:"
+
+msgid "Confirm Review"
+msgstr "Подтвердить проверку"
+
+msgid "Confirm review"
+msgstr "Подтвердить проверку"
+
+msgid "Contact"
+msgstr "Контакт"
+
+msgid "Contact Role"
+msgstr "Роль контакта"
+
+msgid "Contact email"
+msgstr "Электронная почта контакта"
+
+msgid "Contact mobile phone"
+msgstr "Мобильный телефон контакта"
+
+msgid "Contact name *"
+msgstr "Имя контакта *"
+
+msgid "Contact work phone"
+msgstr "Рабочий телефон контакта"
+
+msgid "Contacts"
+msgstr "Контакты"
+
+msgid "Copy MD link"
+msgstr "Копировать ссылку Markdown"
+
+msgid "Copy one of these conditions and paste it into the \"Custom Conditions\" field above, then adjust the values as needed."
+msgstr "Скопируйте одно из условий в поле «Пользовательские условия» выше и измените значения."
+
+msgid "Copy shared link"
+msgstr "Копировать общую ссылку"
+
+msgid "Count of alerts created during the selected timeframe."
+msgstr "Количество оповещений, созданных за выбранный период."
+
+msgid "Counts of critical/high alerts without an owner or remaining in status New."
+msgstr "Количество критических оповещений и оповещений высокой критичности без ответственного или в статусе «Новое»."
+
+msgid "Create"
+msgstr "Создать"
+
+msgid "Create a new case"
+msgstr "Создать новый инцидент"
+
+msgid "Created at"
+msgstr "Создано"
+
+msgid "Created by"
+msgstr "Создал"
+
+msgid "Creation End Date"
+msgstr "Конечная дата создания"
+
+msgid "Creation Start Date"
+msgstr "Начальная дата создания"
+
+msgid "Critical and high severity alerts lacking ownership or still New."
+msgstr "Критические оповещения и оповещения высокой критичности без ответственного или в статусе «Новое»."
+
+msgid "Current month"
+msgstr "Текущий месяц"
+
+msgid "Current open cases"
+msgstr "Текущие открытые инциденты"
+
+msgid "Current year"
+msgstr "Текущий год"
+
+msgid "Custom Conditions"
+msgstr "Пользовательские условия"
+
+msgid "Custom Dashboard Reference"
+msgstr "Справочник пользовательских панелей"
+
+msgid "Custom Dashboards"
+msgstr "Пользовательские панели"
+
+msgid "Custom dashboards are composed of widgets. Each widget definition includes"
+msgstr "Пользовательские панели состоят из виджетов. Определение каждого виджета включает"
+
+msgid "Customer"
+msgstr "Заказчик"
+
+msgid "Customer :"
+msgstr "Заказчик:"
+
+msgid "Customer Description"
+msgstr "Описание заказчика"
+
+msgid "Customer ID"
+msgstr "ID заказчика"
+
+msgid "Customer SLAs"
+msgstr "SLA заказчика"
+
+msgid "Customer name"
+msgstr "Название заказчика"
+
+msgid "Customers management"
+msgstr "Управление заказчиками"
+
+msgid "Customers membership *"
+msgstr "Членство у заказчиков *"
+
+msgid "Customers the user belongs to."
+msgstr "Заказчики, к которым относится пользователь."
+
+msgid "DFIR-IRIS Modules Tasks"
+msgstr "Задачи модулей DFIR-IRIS"
+
+msgid "DFIR-IRIS is a non-profit organization. It is not responsible for any damage caused by the use of this site and any material contained in it, or from any action or decision taken as a result of using this site."
+msgstr "DFIR-IRIS — некоммерческая организация. Она не несёт ответственности за ущерб от использования сайта и его материалов или решений, принятых на их основе."
+
+msgid "Dark mode"
+msgstr "Тёмная тема"
+
+msgid "Dashboard JSON Tools"
+msgstr "Инструменты JSON для панелей"
+
+msgid "Dashboard editor mode"
+msgstr "Режим редактора панели"
+
+msgid "Database"
+msgstr "База данных"
+
+msgid "Database revision:"
+msgstr "Версия схемы базы данных:"
+
+msgid "Datastore File"
+msgstr "Файл хранилища"
+
+msgid "Datastore Files"
+msgstr "Файлы хранилища"
+
+msgid "Datastore filtering help"
+msgstr "Справка по фильтрации хранилища"
+
+msgid "Date"
+msgstr "Дата"
+
+msgid "Date added"
+msgstr "Дата добавления"
+
+msgid "Date added :"
+msgstr "Дата добавления:"
+
+msgid "Date created"
+msgstr "Дата создания"
+
+msgid "Date ended"
+msgstr "Дата завершения"
+
+msgid "Deactivate"
+msgstr "Деактивировать"
+
+msgid "Default :"
+msgstr "По умолчанию:"
+
+msgid "Delete"
+msgstr "Удалить"
+
+msgid "Delete case"
+msgstr "Удалить инцидент"
+
+msgid "Delete note"
+msgstr "Удалить заметку"
+
+msgid "Delete revision"
+msgstr "Удалить версию"
+
+msgid "Delete selected events"
+msgstr "Удалить выбранные события"
+
+msgid "Description *"
+msgstr "Описание *"
+
+msgid "Description :"
+msgstr "Описание:"
+
+msgid "Deselect All"
+msgstr "Снять все выделения"
+
+msgid "Detection coverage"
+msgstr "Покрытие обнаружения"
+
+msgid "Detection coverage help"
+msgstr "Справка о покрытии обнаружения"
+
+msgid "Disable module"
+msgstr "Отключить модуль"
+
+msgid "Disclaimer"
+msgstr "Отказ от ответственности"
+
+msgid "Dismiss"
+msgstr "Скрыть"
+
+msgid "Display in graph"
+msgstr "Показать на графе"
+
+msgid "Display modes"
+msgstr "Режимы отображения"
+
+msgid "Display presets"
+msgstr "Предустановки отображения"
+
+msgid "Distribution of alerts across workflow statuses."
+msgstr "Распределение оповещений по статусам обработки."
+
+msgid "Distribution of alerts by severity classification."
+msgstr "Распределение оповещений по критичности."
+
+msgid "Distribution of detected cases by classification."
+msgstr "Распределение обнаруженных инцидентов по классификации."
+
+msgid "Distribution of detected cases by current status."
+msgstr "Распределение обнаруженных инцидентов по текущим статусам."
+
+msgid "Distribution of detected cases by severity rating."
+msgstr "Распределение обнаруженных инцидентов по критичности."
+
+msgid "Distribution of uploaded evidence by type and volume."
+msgstr "Распределение загруженных доказательств по типам и объёму."
+
+msgid "Do not download and open files from other users blindly"
+msgstr "Не скачивайте и не открывайте файлы других пользователей без проверки"
+
+msgid "Do not prompt a confirmation popup and delete objects directly"
+msgstr "Удалять объекты сразу, без подтверждения"
+
+msgid "Do not upload any illegal or confidential materials"
+msgstr "Не загружайте незаконные или конфиденциальные материалы"
+
+msgid "Do you confirm that the case has been reviewed?"
+msgstr "Подтверждаете, что инцидент проверен?"
+
+msgid "Domain"
+msgstr "Домен"
+
+msgid "Download"
+msgstr "Скачать"
+
+msgid "Download as CSV"
+msgstr "Скачать CSV"
+
+msgid "Download as CSV with user info"
+msgstr "Скачать CSV с данными пользователей"
+
+msgid "Download as MD"
+msgstr "Скачать Markdown"
+
+msgid "Download definition"
+msgstr "Скачать определение"
+
+msgid "Download of updates assets from github"
+msgstr "Загрузка файлов обновлений с GitHub"
+
+msgid "Download sample CSV"
+msgstr "Скачать пример CSV"
+
+msgid "Duplicate"
+msgstr "Дублировать"
+
+msgid "Each entry inside"
+msgstr "Каждая запись внутри"
+
+msgid "Edit"
+msgstr "Редактировать"
+
+msgid "Edit IOC #"
+msgstr "Изменить IOC №"
+
+msgid "Edit attribute"
+msgstr "Изменить атрибут"
+
+msgid "Edit case information"
+msgstr "Изменить данные инцидента"
+
+msgid "Edit case template"
+msgstr "Изменить шаблон инцидента"
+
+msgid "Edit contact #"
+msgstr "Изменить контакт №"
+
+msgid "Edit customer"
+msgstr "Изменить заказчика"
+
+msgid "Edit customer #"
+msgstr "Изменить заказчика №"
+
+msgid "Edit evidence #"
+msgstr "Изменить доказательство №"
+
+msgid "Edit the full dashboard payload. Switch back to the visual builder to continue using the guided UI."
+msgstr "Измените полную конфигурацию панели. Вернитесь в визуальный редактор для пошаговой настройки."
+
+msgid "Edit user"
+msgstr "Изменить пользователя"
+
+msgid "Editor Mode"
+msgstr "Режим редактора"
+
+msgid "Email"
+msgstr "Электронная почта"
+
+msgid "Email:"
+msgstr "Электронная почта:"
+
+msgid "Enable module"
+msgstr "Включить модуль"
+
+msgid "End"
+msgstr "Конец"
+
+msgid "Enforce MFA for all users"
+msgstr "Обязательная MFA для всех пользователей"
+
+msgid "Enrichment"
+msgstr "Обогащение"
+
+msgid "Ensure users are disconnected. Any unsaved work might be lost."
+msgstr "Убедитесь, что пользователи вышли из системы. Несохранённые изменения могут быть потеряны."
+
+msgid "Enter date in any format and submit to try auto-parsing"
+msgstr "Введите дату в любом формате и отправьте для автоматического распознавания"
+
+msgid "Error UUID"
+msgstr "UUID ошибки"
+
+msgid "Error:"
+msgstr "Ошибка:"
+
+msgid "Escalation note"
+msgstr "Заметка об эскалации"
+
+msgid "Escalation rate"
+msgstr "Доля эскалаций"
+
+msgid "Escalation rate help"
+msgstr "Справка о доле эскалаций"
+
+msgid "Event ID #"
+msgstr "ID события №"
+
+msgid "Event Time *"
+msgstr "Время события *"
+
+msgid "Event color"
+msgstr "Цвет события"
+
+msgid "Event description"
+msgstr "Описание события"
+
+msgid "Event tags"
+msgstr "Теги события"
+
+msgid "Events CSV File format example"
+msgstr "Пример CSV-файла событий"
+
+msgid "Evidence"
+msgstr "Доказательства"
+
+msgid "Evidence Type"
+msgstr "Тип доказательства"
+
+msgid "Evidence end date time (UTC)"
+msgstr "Дата и время окончания доказательства (UTC)"
+
+msgid "Evidence start date time (UTC)"
+msgstr "Дата и время начала доказательства (UTC)"
+
+msgid "Evidence types"
+msgstr "Типы доказательств"
+
+msgid "Evidence types help"
+msgstr "Справка о типах доказательств"
+
+msgid "Ex: iris_evtx"
+msgstr "Например: iris_evtx"
+
+msgid "Example"
+msgstr "Пример"
+
+msgid "Example of filter :"
+msgstr "Пример фильтра:"
+
+msgid "Example:"
+msgstr "Пример:"
+
+msgid "Example: False Positive Rate KPI"
+msgstr "Пример: KPI доли ложных срабатываний"
+
+msgid "Expand All"
+msgstr "Развернуть всё"
+
+msgid "Expanded name"
+msgstr "Полное название"
+
+msgid "Expected CSV File format"
+msgstr "Ожидаемый формат CSV-файла"
+
+msgid "Expected Events CSV File format"
+msgstr "Ожидаемый формат CSV-файла событий"
+
+msgid "Expected keys:"
+msgstr "Ожидаемые ключи:"
+
+msgid "Expected type :"
+msgstr "Ожидаемый тип:"
+
+msgid "Export"
+msgstr "Экспорт"
+
+msgid "Export configuration"
+msgstr "Экспорт конфигурации"
+
+msgid "Export page as PNG"
+msgstr "Экспорт страницы в PNG"
+
+msgid "False"
+msgstr "Нет"
+
+msgid "False Positive"
+msgstr "Ложное срабатывание"
+
+msgid "False positive"
+msgstr "Ложное срабатывание"
+
+msgid "False positive cases"
+msgstr "Ложноположительные инциденты"
+
+msgid "False positive cases help"
+msgstr "Справка о ложноположительных инцидентах"
+
+msgid "False positive rate"
+msgstr "Доля ложных срабатываний"
+
+msgid "False positive rate help"
+msgstr "Справка о доле ложных срабатываний"
+
+msgid "False positives"
+msgstr "Ложные срабатывания"
+
+msgid "False positives count help"
+msgstr "Справка о количестве ложных срабатываний"
+
+msgid "Fetch of updates information from github.com"
+msgstr "Получение сведений об обновлениях с github.com"
+
+msgid "Field attributes"
+msgstr "Атрибуты полей"
+
+msgid "Field example"
+msgstr "Пример поля"
+
+msgid "Field types"
+msgstr "Типы полей"
+
+msgid "Fields with an asterix are required."
+msgstr "Поля со звёздочкой обязательны."
+
+msgid "File description:"
+msgstr "Описание файла:"
+
+msgid "File information"
+msgstr "Информация о файле"
+
+msgid "File is Evidence"
+msgstr "Файл является доказательством"
+
+msgid "File is IOC"
+msgstr "Файл является IOC"
+
+msgid "File tags"
+msgstr "Теги файла"
+
+msgid "File upload in datastore is limited to 200KB per file."
+msgstr "Размер файла в хранилище ограничен 200 КБ."
+
+msgid "Filename"
+msgstr "Имя файла"
+
+msgid "Filename *"
+msgstr "Имя файла *"
+
+msgid "Files are Evidence"
+msgstr "Файлы являются доказательствами"
+
+msgid "Files are IOC"
+msgstr "Файлы являются IOC"
+
+msgid "Files can be filtered thanks to simple queries. The query schema is :"
+msgstr "Файлы можно фильтровать простыми запросами. Структура запроса:"
+
+msgid "Files tags"
+msgstr "Теги файлов"
+
+msgid "Filter"
+msgstr "Фильтр"
+
+msgid "Filter actions"
+msgstr "Действия с фильтрами"
+
+msgid "Filter help"
+msgstr "Справка по фильтрам"
+
+msgid "Filter operators"
+msgstr "Операторы фильтрации"
+
+msgid "Filters"
+msgstr "Фильтры"
+
+msgid "Filters (both widget-level and per-field) support the operators below."
+msgstr "Фильтры виджетов и отдельных полей поддерживают следующие операторы."
+
+msgid "Flag"
+msgstr "Флаг"
+
+msgid "Fold/unfold directories"
+msgstr "Свернуть/развернуть каталоги"
+
+msgid "From API"
+msgstr "Из API"
+
+msgid "Full access"
+msgstr "Полный доступ"
+
+msgid "Full name"
+msgstr "Полное имя"
+
+msgid "General info"
+msgstr "Общая информация"
+
+msgid "Generate"
+msgstr "Сформировать"
+
+msgid "Generate in Safe Mode"
+msgstr "Сформировать в безопасном режиме"
+
+msgid "Generate report"
+msgstr "Сформировать отчёт"
+
+msgid "Global settings"
+msgstr "Общие настройки"
+
+msgid "Go at the bottom"
+msgstr "Вниз"
+
+msgid "Go at the top"
+msgstr "Вверх"
+
+msgid "Go back to server"
+msgstr "Вернуться к серверу"
+
+msgid "Graph"
+msgstr "Граф"
+
+msgid "Group ID"
+msgstr "ID группы"
+
+msgid "Group UUID"
+msgstr "UUID группы"
+
+msgid "Group by asset"
+msgstr "Группировать по активу"
+
+msgid "Group by category"
+msgstr "Группировать по категории"
+
+msgid "Group name"
+msgstr "Название группы"
+
+msgid "Group name *"
+msgstr "Название группы *"
+
+msgid "Groups"
+msgstr "Группы"
+
+msgid "Groups membership *"
+msgstr "Членство в группах *"
+
+msgid "Groups the user is member of."
+msgstr "Группы, в которых состоит пользователь."
+
+msgid "HTTP Proxy"
+msgstr "HTTP-прокси"
+
+msgid "HTTPS Proxy"
+msgstr "HTTPS-прокси"
+
+msgid "Has pipeline"
+msgstr "Есть конвейер"
+
+msgid "Hash"
+msgstr "Хеш"
+
+msgid "Heading 1"
+msgstr "Заголовок 1"
+
+msgid "Heading 2"
+msgstr "Заголовок 2"
+
+msgid "Heading 3"
+msgstr "Заголовок 3"
+
+msgid "Heading 4"
+msgstr "Заголовок 4"
+
+msgid "Here are two sample custom conditions:"
+msgstr "Два примера пользовательских условий:"
+
+msgid "High priority alerts help"
+msgstr "Справка об оповещениях высокого приоритета"
+
+msgid "High priority unattended"
+msgstr "Высокий приоритет без обработки"
+
+msgid "Hook description"
+msgstr "Описание обработчика"
+
+msgid "Hook name"
+msgstr "Название обработчика"
+
+msgid "IOC tags"
+msgstr "Теги IOC"
+
+msgid "IOC types"
+msgstr "Типы IOC"
+
+msgid "IOC(s)"
+msgstr "Индикаторы компрометации"
+
+msgid "IOCs to import"
+msgstr "IOC для импорта"
+
+msgid "IRIS - Server updates"
+msgstr "IRIS — обновления сервера"
+
+msgid "IRIS Demonstration"
+msgstr "Демонстрация IRIS"
+
+msgid "IRIS Theme"
+msgstr "Тема IRIS"
+
+msgid "IRIS is an open source app, so you can directly access the code on"
+msgstr "IRIS — приложение с открытым кодом. Исходный код доступен на"
+
+msgid "IRIS is not optimized to be used on phones. We recommend accessing it from a computer."
+msgstr "IRIS не оптимизирован для телефонов. Рекомендуем использовать компьютер."
+
+msgid "IRIS server version:"
+msgstr "Версия сервера IRIS:"
+
+msgid "IRIS will attempt to validate the contents of the case template before committing."
+msgstr "IRIS проверит содержимое шаблона инцидента перед сохранением."
+
+msgid "Icon - compromised"
+msgstr "Значок — скомпрометирован"
+
+msgid "Icon - not compromised"
+msgstr "Значок — не скомпрометирован"
+
+msgid "Idle"
+msgstr "Ожидание"
+
+msgid "If checked, each new line will create a new IOC"
+msgstr "Если отмечено, каждая новая строка создаёт отдельный IOC"
+
+msgid "If checked, the IOCs related to this event will be associated with the specified assets"
+msgstr "Если отмечено, IOC этого события будут связаны с указанными активами"
+
+msgid "If checked, the event will be integrated in the Graph section of the case"
+msgstr "Если отмечено, событие будет включено в граф инцидента"
+
+msgid "If checked, the event will be integrated in the Timeline Visualization"
+msgstr "Если отмечено, событие будет включено в визуализацию временной шкалы"
+
+msgid "If checked, the user won't appear in the attribution suggestions and won't be able to connect on the UI"
+msgstr "Если отмечено, пользователь не будет предлагаться для назначения и не сможет войти в интерфейс"
+
+msgid "If set, requires all users of the platform to register and use MFA."
+msgstr "Требует от всех пользователей платформы зарегистрировать и использовать MFA."
+
+msgid "If the passwords are not working, please double-check spaces were not added while copying."
+msgstr "Если пароль не работает, проверьте, не скопированы ли лишние пробелы."
+
+msgid "If you can, use a local instance of IRIS instead of this one. It only takes a few minutes to"
+msgstr "По возможности используйте локальный экземпляр IRIS. Достаточно нескольких минут, чтобы"
+
+msgid "If you find a vulnerability"
+msgstr "Если вы нашли уязвимость"
+
+msgid "If you manage to run code on the host server, do not try to go further."
+msgstr "Если удалось выполнить код на сервере, не пытайтесь продвигаться дальше."
+
+msgid "If you notice anything suspicious or have any question, please"
+msgstr "Если заметили что-то подозрительное или есть вопросы,"
+
+msgid "If you want to create a new asset, please go to the Asset tab."
+msgstr "Для создания нового актива перейдите на вкладку «Активы»."
+
+msgid "Import"
+msgstr "Импорт"
+
+msgid "Import as new"
+msgstr "Импортировать как новый"
+
+msgid "Import configuration"
+msgstr "Импорт конфигурации"
+
+msgid "Import module configuration from file"
+msgstr "Импортировать конфигурацию модуля из файла"
+
+msgid "Import, export, or edit dashboards directly via JSON. Load an existing dashboard, update it, or paste a new configuration below."
+msgstr "Импортируйте, экспортируйте и редактируйте панели через JSON. Загрузите существующую панель, измените её или вставьте новую конфигурацию ниже."
+
+msgid "Important Remarks"
+msgstr "Важные замечания"
+
+msgid "In any case, none of the native values of the"
+msgstr "При этом исходные значения"
+
+msgid "In other words, please respect a responsible disclosure of 30 days. We will patch and then publish the vulnerability. Depending on the finding a CVE might be requested, and will have your name - except if you don't want to."
+msgstr "Соблюдайте срок ответственного раскрытия в 30 дней. Мы исправим и затем опубликуем уязвимость. При необходимости будет запрошен CVE с вашим именем, если вы согласны."
+
+msgid "In progress"
+msgstr "В работе"
+
+msgid "Include Special chars"
+msgstr "Включить специальные символы"
+
+msgid "Info"
+msgstr "Информация"
+
+msgid "Inherited from"
+msgstr "Наследуется от"
+
+msgid "Inherited from groups"
+msgstr "Наследуется от групп"
+
+msgid "Initiate a database backup. The backup file is stored on the configured path"
+msgstr "Создать резервную копию базы данных. Файл сохраняется по настроенному пути"
+
+msgid "Initiating user"
+msgstr "Инициатор"
+
+msgid "Inputs"
+msgstr "Поля ввода"
+
+msgid "Insert bullet list"
+msgstr "Вставить маркированный список"
+
+msgid "Insert code"
+msgstr "Вставить код"
+
+msgid "Insert link"
+msgstr "Вставить ссылку"
+
+msgid "Insert numbered list"
+msgstr "Вставить нумерованный список"
+
+msgid "Insert table"
+msgstr "Вставить таблицу"
+
+msgid "Interface version"
+msgstr "Версия интерфейса"
+
+msgid "Interface version :"
+msgstr "Версия интерфейса:"
+
+msgid "Iris can be extended with compatible modules. Modules are pip packages providing a specific interface which allows\n                        Iris and the module to communicate. Enter below a pip package name already installed."
+msgstr "IRIS можно расширять совместимыми модулями. Модули представляют собой пакеты pip"
+
+msgid "Is IOC:"
+msgstr "Является IOC:"
+
+msgid "Is active :"
+msgstr "Активен:"
+
+msgid "Is evidence:"
+msgstr "Является доказательством:"
+
+msgid "Is password protected:"
+msgstr "Защищён паролем:"
+
+msgid "It can be used to add procedures defining how to react against a specific kind of incident (phishing, ransomware, APT...)"
+msgstr "Позволяет добавить инструкции по реагированию на определённые виды инцидентов (фишинг, программы-вымогатели, APT и другие)"
+
+msgid "It could be used to add procedures defining how to react against a specific kind of incident (phishing, ransomware, APT...)"
+msgstr "Позволяет добавить инструкции по реагированию на определённые виды инцидентов (фишинг, программы-вымогатели, APT и другие)"
+
+msgid "It is not responsible for the content of any external sites linked to this site."
+msgstr "Организация не отвечает за содержимое внешних сайтов, на которые ведут ссылки."
+
+msgid "It looks pretty empty"
+msgstr "Здесь пока пусто"
+
+msgid "Italic"
+msgstr "Курсив"
+
+msgid "JSON File format example"
+msgstr "Пример формата JSON-файла"
+
+msgid "JSON actions"
+msgstr "Действия с JSON"
+
+msgid "Key"
+msgstr "Ключ"
+
+msgid "Key indicators for current alert queue health."
+msgstr "Ключевые показатели текущей очереди оповещений."
+
+msgid "Keys inside the"
+msgstr "Ключи внутри"
+
+msgid "Kindly read the following carefully"
+msgstr "Внимательно прочитайте следующую информацию"
+
+msgid "Label"
+msgstr "Подпись"
+
+msgid "Last 1 year"
+msgstr "Последний год"
+
+msgid "Last 12 hours"
+msgstr "Последние 12 часов"
+
+msgid "Last 15 minutes"
+msgstr "Последние 15 минут"
+
+msgid "Last 2 years"
+msgstr "Последние 2 года"
+
+msgid "Last 24h"
+msgstr "Последние 24 часа"
+
+msgid "Last 2h"
+msgstr "Последние 2 часа"
+
+msgid "Last 30 days"
+msgstr "Последние 30 дней"
+
+msgid "Last 48h"
+msgstr "Последние 48 часов"
+
+msgid "Last 5 years"
+msgstr "Последние 5 лет"
+
+msgid "Last 6 months"
+msgstr "Последние 6 месяцев"
+
+msgid "Last 7 days"
+msgstr "Последние 7 дней"
+
+msgid "Last 90 days"
+msgstr "Последние 90 дней"
+
+msgid "Last hour"
+msgstr "Последний час"
+
+msgid "Last month"
+msgstr "Последний месяц"
+
+msgid "Last year ("
+msgstr "Прошлый год ("
+
+msgid "Layout"
+msgstr "Макет"
+
+msgid "Legend positions"
+msgstr "Положение легенды"
+
+msgid "Legitimate"
+msgstr "Легитимный"
+
+msgid "Light mode"
+msgstr "Светлая тема"
+
+msgid "Link to IOCs"
+msgstr "Связать с IOC"
+
+msgid "Link to assets"
+msgstr "Связать с активами"
+
+msgid "Linked cases"
+msgstr "Связанные инциденты"
+
+msgid "Linked to cases"
+msgstr "Связаны с инцидентами"
+
+msgid "Linked to cases help"
+msgstr "Справка о связях с инцидентами"
+
+msgid "Load from file"
+msgstr "Загрузить из файла"
+
+msgid "Loading"
+msgstr "Загрузка"
+
+msgid "Loading.."
+msgstr "Загрузка…"
+
+msgid "Loading..."
+msgstr "Загрузка…"
+
+msgid "Loading…"
+msgstr "Загрузка…"
+
+msgid "Locally compute file information by selecting it below."
+msgstr "Выберите файл ниже, чтобы вычислить его характеристики локально."
+
+msgid "Login Name"
+msgstr "Имя для входа"
+
+msgid "Logs"
+msgstr "Журналы"
+
+msgid "Logs:"
+msgstr "Журналы:"
+
+msgid "Manage Attributes"
+msgstr "Управление атрибутами"
+
+msgid "Manage Case Templates"
+msgstr "Управление шаблонами инцидентов"
+
+msgid "Manage Cases"
+msgstr "Управление инцидентами"
+
+msgid "Manage Customers"
+msgstr "Управление заказчиками"
+
+msgid "Manage Modules"
+msgstr "Управление модулями"
+
+msgid "Manage Objects"
+msgstr "Управление объектами"
+
+msgid "Manage Templates"
+msgstr "Управление шаблонами"
+
+msgid "Manage customers membership"
+msgstr "Управление членством у заказчиков"
+
+msgid "Manage members of group"
+msgstr "Управление участниками группы"
+
+msgid "Manage user groups"
+msgstr "Управление группами пользователя"
+
+msgid "Mandatory"
+msgstr "Обязательный"
+
+msgid "Mandatory :"
+msgstr "Обязательный:"
+
+msgid "Mandatory parameter not set"
+msgstr "Обязательный параметр не задан"
+
+msgid "Manual input"
+msgstr "Ручной ввод"
+
+msgid "Markdown Link"
+msgstr "Ссылка Markdown"
+
+msgid "Max. API version supported:"
+msgstr "Максимальная поддерживаемая версия API:"
+
+msgid "Max. module interface version supported:"
+msgstr "Максимальная поддерживаемая версия интерфейса модуля:"
+
+msgid "Maximize modal"
+msgstr "Развернуть окно"
+
+msgid "Mean Time To Respond"
+msgstr "Среднее время реагирования"
+
+msgid "Mean time to detect"
+msgstr "Среднее время обнаружения"
+
+msgid "Mean time to detect help"
+msgstr "Справка о среднем времени обнаружения"
+
+msgid "Mean time to respond"
+msgstr "Среднее время реагирования"
+
+msgid "Members"
+msgstr "Участники"
+
+msgid "Members *"
+msgstr "Участники *"
+
+msgid "Members can be added once the group is created."
+msgstr "Участников можно добавить после создания группы."
+
+msgid "Merge"
+msgstr "Объединить"
+
+msgid "Merge into a new case"
+msgstr "Объединить в новый инцидент"
+
+msgid "Merge into existing case"
+msgstr "Объединить с существующим инцидентом"
+
+msgid "Merge options"
+msgstr "Параметры объединения"
+
+msgid "Merged"
+msgstr "Объединено"
+
+msgid "Min. API version supported:"
+msgstr "Минимальная поддерживаемая версия API:"
+
+msgid "Min. module interface version supported:"
+msgstr "Минимальная поддерживаемая версия интерфейса модуля:"
+
+msgid "Minimize"
+msgstr "Свернуть"
+
+msgid "Minimum Password Length"
+msgstr "Минимальная длина пароля"
+
+msgid "Mobile phone:"
+msgstr "Мобильный телефон:"
+
+msgid "Modification history:"
+msgstr "История изменений:"
+
+msgid "Modifications history"
+msgstr "История изменений"
+
+msgid "Module extensions"
+msgstr "Расширения модуля"
+
+msgid "Module name"
+msgstr "Название модуля"
+
+msgid "Module version"
+msgstr "Версия модуля"
+
+msgid "Module version :"
+msgstr "Версия модуля:"
+
+msgid "Modules are running as the same trust level as Iris. They can thus access all the information\n                        stored on Iris as well as run code on the server. Please be cautious and review modules before installing them."
+msgstr "Модули обладают теми же правами, что и IRIS, и могут читать все данные и выполнять код на сервере. Проверяйте модули перед установкой."
+
+msgid "Modules management"
+msgstr "Управление модулями"
+
+msgid "More details"
+msgstr "Подробнее"
+
+msgid "Move"
+msgstr "Переместить"
+
+msgid "Move item"
+msgstr "Переместить элемент"
+
+msgid "Multi-Factor Authentication"
+msgstr "Многофакторная аутентификация"
+
+msgid "Must contain at least"
+msgstr "Должен содержать не менее"
+
+msgid "Must contain at least a digit"
+msgstr "Должен содержать хотя бы одну цифру"
+
+msgid "Must contain at least a lower case"
+msgstr "Должен содержать хотя бы одну строчную букву"
+
+msgid "Must contain at least an upper case"
+msgstr "Должен содержать хотя бы одну прописную букву"
+
+msgid "Must contain at least one of :"
+msgstr "Должен содержать хотя бы один символ из:"
+
+msgid "Must include digits"
+msgstr "Обязательны цифры"
+
+msgid "Must include lowercase char"
+msgstr "Обязательны строчные буквы"
+
+msgid "Must include uppercase char"
+msgstr "Обязательны прописные буквы"
+
+msgid "N/A"
+msgstr "Нет данных"
+
+msgid "Name"
+msgstr "Имя"
+
+msgid "Name *"
+msgstr "Имя *"
+
+msgid "Name :"
+msgstr "Имя:"
+
+msgid "Naming format"
+msgstr "Формат имени"
+
+msgid "New"
+msgstr "Новое"
+
+msgid "New Owner"
+msgstr "Новый ответственный"
+
+msgid "New alerts"
+msgstr "Новые оповещения"
+
+msgid "New alerts windows help"
+msgstr "Справка о периодах новых оповещений"
+
+msgid "New case title *"
+msgstr "Название нового инцидента *"
+
+msgid "New dashboard"
+msgstr "Новая панель"
+
+msgid "New template"
+msgstr "Новый шаблон"
+
+msgid "No access"
+msgstr "Нет доступа"
+
+msgid "No case found for you !"
+msgstr "Доступные вам инциденты не найдены!"
+
+msgid "No custom dashboards yet. Create one to get started."
+msgstr "Пользовательских панелей пока нет. Создайте первую."
+
+msgid "No data available"
+msgstr "Нет данных"
+
+msgid "No group"
+msgstr "Нет группы"
+
+msgid "No report template found"
+msgstr "Шаблон отчёта не найден"
+
+msgid "No sections yet."
+msgstr "Разделов пока нет."
+
+msgid "Not applicable"
+msgstr "Неприменимо"
+
+msgid "Note"
+msgstr "Заметка"
+
+msgid "Note #"
+msgstr "Заметка №"
+
+msgid "Note :"
+msgstr "Заметка:"
+
+msgid "Note revisions"
+msgstr "Версии заметки"
+
+msgid "Note that the instance might be reset at any moment."
+msgstr "Демонстрационный экземпляр может быть сброшен в любой момент."
+
+msgid "Note title *"
+msgstr "Заголовок заметки *"
+
+msgid "Notes"
+msgstr "Заметки"
+
+msgid "Notes:"
+msgstr "Заметки:"
+
+msgid "Number of alerts resolved as false positive."
+msgstr "Количество оповещений с результатом «Ложное срабатывание»."
+
+msgid "Number of cases closed during the timeframe."
+msgstr "Количество инцидентов, закрытых за период."
+
+msgid "Number of cases initiated during the timeframe."
+msgstr "Количество инцидентов, созданных за период."
+
+msgid "Objects Attributes"
+msgstr "Атрибуты объектов"
+
+msgid "One IOC per line"
+msgstr "Один IOC на строку"
+
+msgid "One asset per line"
+msgstr "Один актив на строку"
+
+msgid "Open alerts that currently have no assigned owner."
+msgstr "Открытые оповещения без назначенного ответственного."
+
+msgid "Open assigned alerts list"
+msgstr "Открыть назначенные оповещения"
+
+msgid "Open cases"
+msgstr "Открытые инциденты"
+
+msgid "Open date"
+msgstr "Дата открытия"
+
+msgid "Open date :"
+msgstr "Дата открытия:"
+
+msgid "Open matching alerts"
+msgstr "Открыть подходящие оповещения"
+
+msgid "Open on"
+msgstr "Открыт"
+
+msgid "Open since"
+msgstr "Открыт с"
+
+msgid "Opening user"
+msgstr "Открыл"
+
+msgid "Opening user :"
+msgstr "Открыл:"
+
+msgid "Options reference"
+msgstr "Справочник параметров"
+
+msgid "Original file name:"
+msgstr "Исходное имя файла:"
+
+msgid "Other existing attributes are not deleted."
+msgstr "Другие существующие атрибуты не удаляются."
+
+msgid "Outcome"
+msgstr "Исход"
+
+msgid "Overwrite features"
+msgstr "Возможности перезаписи"
+
+msgid "Owned by"
+msgstr "Ответственный"
+
+msgid "Owner"
+msgstr "Ответственный"
+
+msgid "Owner :"
+msgstr "Ответственный:"
+
+msgid "Parameter"
+msgstr "Параметр"
+
+msgid "Parent Event ID"
+msgstr "ID родительского события"
+
+msgid "Partial access"
+msgstr "Частичный доступ"
+
+msgid "Partial overwrite"
+msgstr "Частичная перезапись"
+
+msgid "Password (optional for service accounts)"
+msgstr "Пароль (необязателен для служебных учётных записей)"
+
+msgid "Password Policy"
+msgstr "Политика паролей"
+
+msgid "Password verification"
+msgstr "Подтверждение пароля"
+
+msgid "Password:"
+msgstr "Пароль:"
+
+msgid "Path"
+msgstr "Путь"
+
+msgid "Pending"
+msgstr "Ожидает"
+
+msgid "Percentage of alerts linked to at least one case."
+msgstr "Доля оповещений, связанных хотя бы с одним инцидентом."
+
+msgid "Percentage of alerts marked with an escalated status."
+msgstr "Доля оповещений со статусом эскалации."
+
+msgid "Percentage of alerts tagged as false positives."
+msgstr "Доля оповещений, отмеченных как ложные срабатывания."
+
+msgid "Percentage of detected cases resolved as false positives."
+msgstr "Доля обнаруженных инцидентов с ложноположительным исходом."
+
+msgid "Performance indicators and distributions for alert handling."
+msgstr "Показатели и распределения обработки оповещений."
+
+msgid "Permission"
+msgstr "Разрешение"
+
+msgid "Permissions"
+msgstr "Разрешения"
+
+msgid "Permissions *"
+msgstr "Разрешения *"
+
+msgid "Permissions and groups memberships can be set once the user is created."
+msgstr "Права и членство в группах можно настроить после создания пользователя."
+
+msgid "Permissions are inherited from the groups the user belongs to. The table shows the effective permissions the user has on the platform."
+msgstr "Права наследуются от групп пользователя. Таблица показывает действующие права на платформе."
+
+msgid "Pick a section or widget to edit"
+msgstr "Выберите раздел или виджет для редактирования"
+
+msgid "Pipelines"
+msgstr "Конвейеры"
+
+msgid "Plausible"
+msgstr "Предположительно"
+
+msgid "Please do not leave or refresh the page once updates have started"
+msgstr "Не покидайте и не обновляйте страницу после начала обновления"
+
+msgid "Please press the"
+msgstr "Нажмите кнопку"
+
+msgid "Please wait while we look for updates"
+msgstr "Подождите, идёт поиск обновлений"
+
+msgid "Post-init Behavior"
+msgstr "Поведение после инициализации"
+
+msgid "Preset ranges"
+msgstr "Предустановленные периоды"
+
+msgid "Prevent post-init step to register default case objects again during boot"
+msgstr "Не регистрировать объекты инцидента по умолчанию повторно при запуске"
+
+msgid "Prevent post-init step to register default modules again during boot"
+msgstr "Не регистрировать модули по умолчанию повторно при запуске"
+
+msgid "Preview"
+msgstr "Предпросмотр"
+
+msgid "Preview of revision"
+msgstr "Предпросмотр версии"
+
+msgid "Privacy"
+msgstr "Конфиденциальность"
+
+msgid "Process"
+msgstr "Обработать"
+
+msgid "Processing module"
+msgstr "Модуль обработки"
+
+msgid "Processing pipeline"
+msgstr "Конвейер обработки"
+
+msgid "Processing pipelines"
+msgstr "Конвейеры обработки"
+
+msgid "Processors"
+msgstr "Обработчики"
+
+msgid "Prompt a confirmation box before deleting objects"
+msgstr "Запрашивать подтверждение перед удалением объектов"
+
+msgid "Prompt a confirmation popup before deleting objects"
+msgstr "Запрашивать подтверждение перед удалением объектов"
+
+msgid "Protagonist"
+msgstr "Участник"
+
+msgid "Protagonists"
+msgstr "Участники"
+
+msgid "Provides pipeline :"
+msgstr "Предоставляет конвейер:"
+
+msgid "Proxy"
+msgstr "Прокси"
+
+msgid "Proxy settings can be used by modules to access external resources."
+msgstr "Модули могут использовать настройки прокси для доступа к внешним ресурсам."
+
+msgid "Push IOCs to assets"
+msgstr "Связать IOC с активами"
+
+msgid "Queue Size"
+msgstr "Размер очереди"
+
+msgid "Queue size help"
+msgstr "Справка о размере очереди"
+
+msgid "Raw"
+msgstr "Исходный текст"
+
+msgid "Raw JSON"
+msgstr "Исходный JSON"
+
+msgid "Read only access"
+msgstr "Доступ только для чтения"
+
+msgid "Reassign Alert #"
+msgstr "Переназначить оповещение №"
+
+msgid "Recent unassigned alerts help"
+msgstr "Справка о недавних неназначенных оповещениях"
+
+msgid "Refresh access"
+msgstr "Обновить доступ"
+
+msgid "Refresh list"
+msgstr "Обновить список"
+
+msgid "Register"
+msgstr "Зарегистрировать"
+
+msgid "Register Evidence"
+msgstr "Зарегистрировать доказательство"
+
+msgid "Register evidence"
+msgstr "Зарегистрировать доказательство"
+
+msgid "Registered hooks"
+msgstr "Зарегистрированные обработчики"
+
+msgid "Registrant module"
+msgstr "Зарегистрировавший модуль"
+
+msgid "Related IOC"
+msgstr "Связанный IOC"
+
+msgid "Remove"
+msgstr "Удалить"
+
+msgid "Remove module"
+msgstr "Удалить модуль"
+
+msgid "Renew"
+msgstr "Перевыпустить"
+
+msgid "Reopen case"
+msgstr "Открыть инцидент повторно"
+
+msgid "Report Templates Management"
+msgstr "Управление шаблонами отчётов"
+
+msgid "Report templates are configured in"
+msgstr "Шаблоны отчётов настраиваются в"
+
+msgid "Request"
+msgstr "Запрос"
+
+msgid "Request review"
+msgstr "Запросить проверку"
+
+msgid "Reset"
+msgstr "Сбросить"
+
+msgid "Reset MFA"
+msgstr "Сбросить MFA"
+
+msgid "Resolution Status"
+msgstr "Результат обработки"
+
+msgid "Resolution status"
+msgstr "Результат обработки"
+
+msgid "Resolution unknown help"
+msgstr "Справка о неизвестных результатах обработки"
+
+msgid "Resolution unknown/unset"
+msgstr "Результат неизвестен или не задан"
+
+msgid "Resources"
+msgstr "Ресурсы"
+
+msgid "Respect a"
+msgstr "Соблюдайте"
+
+msgid "Response metrics and distributions for cases opened in the timeframe."
+msgstr "Показатели реагирования и распределения для инцидентов, открытых за период."
+
+msgid "Restrictions"
+msgstr "Ограничения"
+
+msgid "Revert to this revision"
+msgstr "Восстановить эту версию"
+
+msgid "Review by"
+msgstr "Проверяет"
+
+msgid "Review requested"
+msgstr "Проверка запрошена"
+
+msgid "Reviewed"
+msgstr "Проверено"
+
+msgid "Reviewer"
+msgstr "Проверяющий"
+
+msgid "Reviewer :"
+msgstr "Проверяющий:"
+
+msgid "Right-click on a directory to add a note"
+msgstr "Нажмите правой кнопкой на каталог, чтобы добавить заметку"
+
+msgid "Role"
+msgstr "Роль"
+
+msgid "Role:"
+msgstr "Роль:"
+
+msgid "Rules of engagement"
+msgstr "Правила использования"
+
+msgid "SLAs"
+msgstr "Соглашения об уровне обслуживания"
+
+msgid "SOC ID :"
+msgstr "ID SOC:"
+
+msgid "SOC Ticket"
+msgstr "Тикет SOC"
+
+msgid "SOC ticket ID"
+msgstr "ID тикета SOC"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "Save as filter"
+msgstr "Сохранить как фильтр"
+
+msgid "Save changes"
+msgstr "Сохранить изменения"
+
+msgid "Save note"
+msgstr "Сохранить заметку"
+
+msgid "Saved dashboards"
+msgstr "Сохранённые панели"
+
+msgid "Scope"
+msgstr "Область"
+
+msgid "Search across cases"
+msgstr "Поиск по инцидентам"
+
+msgid "Search in notes"
+msgstr "Поиск в заметках"
+
+msgid "Section"
+msgstr "Раздел"
+
+msgid "Seen count"
+msgstr "Количество просмотров"
+
+msgid "Seen in case"
+msgstr "Замечен в инциденте"
+
+msgid "Select"
+msgstr "Выбрать"
+
+msgid "Select a configuration file to upload. Existing configuration for this module will be overwritten."
+msgstr "Выберите файл конфигурации. Текущая конфигурация модуля будет перезаписана."
+
+msgid "Select a dashboard"
+msgstr "Выберите панель"
+
+msgid "Select a destination folder below."
+msgstr "Выберите папку назначения ниже."
+
+msgid "Select a note on the left pane or click here to add a directory"
+msgstr "Выберите заметку слева или нажмите здесь, чтобы добавить каталог"
+
+msgid "Select activity report template"
+msgstr "Выберите шаблон отчёта об активности"
+
+msgid "Select all"
+msgstr "Выбрать всё"
+
+msgid "Select case template"
+msgstr "Выберите шаблон инцидента"
+
+msgid "Select case to merge into *"
+msgstr "Выберите инцидент для объединения *"
+
+msgid "Select events"
+msgstr "Выбрать события"
+
+msgid "Select processing pipeline and drop analysis files below. Press Process to start the processing. Do not close the page until the upload is finished."
+msgstr "Выберите конвейер обработки и добавьте файлы анализа ниже. Нажмите «Обработать». Не закрывайте страницу до завершения загрузки."
+
+msgid "Select report template"
+msgstr "Выберите шаблон отчёта"
+
+msgid "Select the directory to move the item to."
+msgstr "Выберите каталог для перемещения элемента."
+
+msgid "Select the files and destination folder below."
+msgstr "Выберите файлы и папку назначения ниже."
+
+msgid "Server Settings"
+msgstr "Настройки сервера"
+
+msgid "Server Updates"
+msgstr "Обновления сервера"
+
+msgid "Server restarts"
+msgstr "Перезапуск сервера"
+
+msgid "Server stop and update of application"
+msgstr "Остановка сервера и обновление приложения"
+
+msgid "Server versions"
+msgstr "Версии сервера"
+
+msgid "Service Account"
+msgstr "Служебная учётная запись"
+
+msgid "Set access"
+msgstr "Настроить доступ"
+
+msgid "Set access via group"
+msgstr "Настроить доступ через группу"
+
+msgid "Set case access"
+msgstr "Настроить доступ к инциденту"
+
+msgid "Set case access via groups"
+msgstr "Настроить доступ к инциденту через группы"
+
+msgid "Set cases access of group"
+msgstr "Настроить доступ группы к инцидентам"
+
+msgid "Set cases access of user"
+msgstr "Настроить доступ пользователя к инцидентам"
+
+msgid "Set empty to disable"
+msgstr "Оставьте пустым для отключения"
+
+msgid "Set groups case access"
+msgstr "Настроить доступ групп к инциденту"
+
+msgid "Set status"
+msgstr "Задать статус"
+
+msgid "Set to search within"
+msgstr "Область поиска"
+
+msgid "Severity"
+msgstr "Критичность"
+
+msgid "Severity :"
+msgstr "Критичность:"
+
+msgid "Share"
+msgstr "Поделиться"
+
+msgid "Share with team"
+msgstr "Поделиться с командой"
+
+msgid "Shared"
+msgstr "Общий"
+
+msgid "Short description *"
+msgstr "Краткое описание *"
+
+msgid "Shortcut"
+msgstr "Сочетание клавиш"
+
+msgid "Shortcuts"
+msgstr "Сочетания клавиш"
+
+msgid "Show Examples"
+msgstr "Показать примеры"
+
+msgid "Show non case related activity"
+msgstr "Показать активность вне инцидентов"
+
+msgid "Signatures verification"
+msgstr "Проверка подписей"
+
+msgid "Since IRIS v2.0.0, the report generation supports images. Integration of images might fail depending on the situation."
+msgstr "Начиная с IRIS v2.0.0 отчёты поддерживают изображения. В некоторых случаях их вставка может завершиться ошибкой."
+
+msgid "Size (bytes)"
+msgstr "Размер (байт)"
+
+msgid "Size (bytes):"
+msgstr "Размер (байт):"
+
+msgid "Size in bytes"
+msgstr "Размер в байтах"
+
+msgid "Size(bytes)"
+msgstr "Размер (байт)"
+
+msgid "Some great improvements are hopefully on their way, hang tight"
+msgstr "Новые улучшения уже в пути, ожидайте"
+
+msgid "Source"
+msgstr "Источник"
+
+msgid "Source End Date"
+msgstr "Конечная дата источника"
+
+msgid "Source Reference"
+msgstr "Ссылка на источник"
+
+msgid "Source Start Date"
+msgstr "Начальная дата источника"
+
+msgid "Start"
+msgstr "Начало"
+
+msgid "Start review"
+msgstr "Начать проверку"
+
+msgid "Start updates"
+msgstr "Начать обновление"
+
+msgid "State"
+msgstr "Состояние"
+
+msgid "State :"
+msgstr "Состояние:"
+
+msgid "State description"
+msgstr "Описание состояния"
+
+msgid "State name"
+msgstr "Название состояния"
+
+msgid "Statistics filters"
+msgstr "Фильтры статистики"
+
+msgid "Statistics filters help"
+msgstr "Справка о фильтрах статистики"
+
+msgid "Status *"
+msgstr "Статус *"
+
+msgid "Status new"
+msgstr "Новые"
+
+msgid "Status new help"
+msgstr "Справка о новых оповещениях"
+
+msgid "Storage ID:"
+msgstr "ID хранилища:"
+
+msgid "Storage UUID:"
+msgstr "UUID хранилища:"
+
+msgid "Subdomains, SSH, scanning of the IP, BF, and other flavors are"
+msgstr "Поддомены, SSH, сканирование IP, перебор паролей и подобные действия"
+
+msgid "Summary"
+msgstr "Сводка"
+
+msgid "Supports up to 40 files and 10GB at once."
+msgstr "До 40 файлов и 10 ГБ за одну загрузку."
+
+msgid "Switch between the visual builder and raw JSON at any time."
+msgstr "Можно переключаться между визуальным редактором и исходным JSON в любой момент."
+
+msgid "Table"
+msgstr "Таблица"
+
+msgid "Tags:"
+msgstr "Теги:"
+
+msgid "Take screenshot of content"
+msgstr "Снимок содержимого"
+
+msgid "Target package :"
+msgstr "Целевой пакет:"
+
+msgid "Task ID"
+msgstr "ID задачи"
+
+msgid "Task ID #"
+msgstr "ID задачи №"
+
+msgid "Task tags"
+msgstr "Теги задачи"
+
+msgid "Tasks"
+msgstr "Задачи"
+
+msgid "Taxonomy"
+msgstr "Структура"
+
+msgid "Template description"
+msgstr "Описание шаблона"
+
+msgid "Template file :"
+msgstr "Файл шаблона:"
+
+msgid "Template language"
+msgstr "Язык шаблона"
+
+msgid "Template name"
+msgstr "Название шаблона"
+
+msgid "Template name format"
+msgstr "Формат имени шаблона"
+
+msgid "Template type"
+msgstr "Тип шаблона"
+
+msgid "The"
+msgstr "Учётная запись"
+
+msgid "The accounts available on this page cannot be updated nor deleted."
+msgstr "Учётные записи на этой странице нельзя изменять и удалять."
+
+msgid "The administrators account can publish stored XSS on the platform via"
+msgstr "Администратор может публиковать хранимые XSS на платформе через"
+
+msgid "The assets below have been seen for this customer."
+msgstr "Следующие активы замечены у этого заказчика."
+
+msgid "The cases below have been opened for this customer. Click on a case to view its details."
+msgstr "Для этого заказчика открыты следующие инциденты. Нажмите на инцидент, чтобы посмотреть подробности."
+
+msgid "The dates filters uses the same guessing as the date parser in events, so a lots of format are handled."
+msgstr "Фильтры дат используют такое же распознавание, как и обработчик дат событий, и поддерживают множество форматов."
+
+msgid "The file is currently saved in virtual folder"
+msgstr "Файл сейчас сохранён в виртуальной папке"
+
+msgid "The file is not be uploaded on the server nor saved."
+msgstr "Файл не загружается на сервер и не сохраняется."
+
+msgid "The file will be saved in virtual folder"
+msgstr "Файл будет сохранён в виртуальной папке"
+
+msgid "The files will be saved in virtual folder"
+msgstr "Файлы будут сохранены в виртуальной папке"
+
+msgid "The following accounts are available on the instance. These users cannot be updated or deleted. However, new users and groups can be created."
+msgstr "Доступны следующие учётные записи. Их нельзя изменять или удалять. Можно создавать новых пользователей и группы."
+
+msgid "The following steps might occur during updates, depending on the updates scope :"
+msgstr "В зависимости от состава обновления могут выполняться следующие шаги:"
+
+msgid "The following target elements can be used to filter :"
+msgstr "Для фильтрации можно использовать следующие элементы:"
+
+msgid "The module was automatically disabled because mandatory parameters are not set."
+msgstr "Модуль автоматически отключён, поскольку обязательные параметры не заданы."
+
+msgid "The page you’re looking for is only available when a case is selected."
+msgstr "Эта страница доступна только после выбора инцидента."
+
+msgid "The scope of the security tests"
+msgstr "Область проверок безопасности"
+
+msgid "The supported fields types are:"
+msgstr "Поддерживаемые типы полей:"
+
+msgid "The timeline can be filtered thanks to simple queries. The query schema is :"
+msgstr "Временную шкалу можно фильтровать простыми запросами. Структура запроса:"
+
+msgid "The user is neither in a group nor an organisation who has access to this case"
+msgstr "Пользователь не состоит в группе или организации с доступом к этому инциденту"
+
+msgid "There is no"
+msgstr "Отсутствует"
+
+msgid "These attributes are stored in each"
+msgstr "Эти атрибуты хранятся в каждом объекте типа"
+
+msgid "This behavior can however be changed by using the"
+msgstr "Это поведение можно изменить с помощью"
+
+msgid "This demonstration instance is shared and we cannot guarantee the privacy of data you might upload on it. We are not responsible for any data loss or data leak."
+msgstr "Это общий демонстрационный экземпляр. Мы не гарантируем конфиденциальность загружаемых данных и не отвечаем за их потерю или утечку."
+
+msgid "This group is set to automatically include all new cases."
+msgstr "В эту группу автоматически включаются все новые инциденты."
+
+msgid "This is a service account. It cannot login interactively nor have a password."
+msgstr "Это служебная учётная запись. Интерактивный вход и пароль недоступны."
+
+msgid "This is for preview purpose only. Standard object information will be rendered here."
+msgstr "Только для предпросмотра. Здесь будет отображена основная информация об объекте."
+
+msgid "This is the name of the generated report file. Do not input extension.\\n                    Available tags:"
+msgstr "Имя файла создаваемого отчёта. Не указывайте расширение. Доступные подстановки:"
+
+msgid "This means each"
+msgstr "Это означает, что каждый"
+
+msgid "This state is protected and cannot be deleted or updated."
+msgstr "Это состояние защищено от изменения и удаления."
+
+msgid "Time buckets"
+msgstr "Временные интервалы"
+
+msgid "Timeline"
+msgstr "Временная шкала"
+
+msgid "Timeline filtering help"
+msgstr "Справка по фильтрации временной шкалы"
+
+msgid "Timeline of alert creation counts for the selected window."
+msgstr "Количество созданных оповещений по времени за выбранный период."
+
+msgid "Tips: you can develop your own module by following"
+msgstr "Совет: вы можете разработать свой модуль, следуя"
+
+msgid "To avoid this, use the Preview button before saving. It displays a 1-to-1 UI representation of the attributes"
+msgstr "Перед сохранением нажмите «Предпросмотр»: он показывает атрибуты так, как они будут выглядеть в интерфейсе"
+
+msgid "To better understand the use of this instance, DFIR-IRIS uses a privacy-friendly cookie-less analytics. DFIR-IRIS does not collect any personal data. DFIR-IRIS does not use any third-party analytics and uses a self-hosted"
+msgstr "Для анализа использования демонстрационного экземпляра DFIR-IRIS использует аналитику без cookie и сбора персональных данных. Сторонняя аналитика не используется; сервис размещён самостоятельно:"
+
+msgid "To keep this demo instance alive, there are some restrictions put in place."
+msgstr "Для поддержания работы демонстрационного экземпляра действуют ограничения."
+
+msgid "Toggle Graph"
+msgstr "Показать/скрыть граф"
+
+msgid "Toggle Summary"
+msgstr "Показать/скрыть сводку"
+
+msgid "Toggle child events"
+msgstr "Показать/скрыть дочерние события"
+
+msgid "Toggle compact view"
+msgstr "Компактный вид"
+
+msgid "Toggle editor expansion"
+msgstr "Развернуть/свернуть редактор"
+
+msgid "Toggle focus mode"
+msgstr "Режим фокуса"
+
+msgid "Toggle tree view"
+msgstr "Показать/скрыть дерево"
+
+msgid "Toggle view"
+msgstr "Сменить вид"
+
+msgid "Total"
+msgstr "Всего"
+
+msgid "Total alerts"
+msgstr "Всего оповещений"
+
+msgid "Total alerts generated within the selected timeframe."
+msgstr "Общее количество оповещений за выбранный период."
+
+msgid "Total alerts help"
+msgstr "Справка об общем количестве оповещений"
+
+msgid "True"
+msgstr "Да"
+
+msgid "True Positive with impact"
+msgstr "Подтверждённый инцидент с последствиями"
+
+msgid "True Positive without impact"
+msgstr "Подтверждённый инцидент без последствий"
+
+msgid "True positive with impact"
+msgstr "Подтверждённый инцидент с последствиями"
+
+msgid "True positive without impact"
+msgstr "Подтверждённый инцидент без последствий"
+
+msgid "Try not to be destructive."
+msgstr "Избегайте разрушительных действий."
+
+msgid "Try out IRIS, find bugs and security vulnerabilities"
+msgstr "Попробуйте IRIS, найдите ошибки и уязвимости"
+
+msgid "Type"
+msgstr "Тип"
+
+msgid "Type *"
+msgstr "Тип *"
+
+msgid "Type description"
+msgstr "Описание типа"
+
+msgid "Type name"
+msgstr "Название типа"
+
+msgid "Type taxonomy"
+msgstr "Структура типа"
+
+msgid "Type validation expect explanation"
+msgstr "Пояснение проверки типа"
+
+msgid "Type validation regex"
+msgstr "Регулярное выражение проверки типа"
+
+msgid "Unassigned alerts"
+msgstr "Неназначенные оповещения"
+
+msgid "Unassigned alerts help"
+msgstr "Справка о неназначенных оповещениях"
+
+msgid "Unknown"
+msgstr "Неизвестно"
+
+msgid "Update"
+msgstr "Обновить"
+
+msgid "Update current dashboard"
+msgstr "Обновить текущую панель"
+
+msgid "Update server"
+msgstr "Обновить сервер"
+
+msgid "Updated at"
+msgstr "Обновлено"
+
+msgid "Upload"
+msgstr "Загрузить"
+
+msgid "Upload CSV of IOCs"
+msgstr "Загрузить CSV с IOC"
+
+msgid "Upload CSV of assets"
+msgstr "Загрузить CSV с активами"
+
+msgid "Upload CSV of events"
+msgstr "Загрузить CSV с событиями"
+
+msgid "Upload IOC list (CSV format)"
+msgstr "Загрузить список IOC (CSV)"
+
+msgid "Upload assets list (CSV format)"
+msgstr "Загрузить список активов (CSV)"
+
+msgid "Upload case template"
+msgstr "Загрузить шаблон инцидента"
+
+msgid "Upload events list (CSV format)"
+msgstr "Загрузить список событий (CSV)"
+
+msgid "Upload evidence"
+msgstr "Загрузить доказательство"
+
+msgid "Use"
+msgstr "Используйте"
+
+msgid "Use as service account"
+msgstr "Использовать как служебную учётную запись"
+
+msgid "Use the panel on the left to navigate. Each widget pulls data from a table,\\n                      optionally aggregates and filters it, then renders as the chart of your choice."
+msgstr "Используйте панель слева для навигации. Каждый виджет получает данные из таблицы, при необходимости агрегирует и фильтрует их, затем отображает на выбранном графике."
+
+msgid "Use the visual builder to configure widgets interactively, or paste JSON into the advanced editor. This reference lists every supported field, option, and data source."
+msgstr "Настраивайте виджеты в визуальном редакторе или вставляйте JSON в расширенный редактор. Справочник описывает поддерживаемые поля, параметры и источники данных."
+
+msgid "User"
+msgstr "Пользователь"
+
+msgid "User API Key"
+msgstr "Ключ API пользователя"
+
+msgid "User Access"
+msgstr "Доступ пользователя"
+
+msgid "User ID"
+msgstr "ID пользователя"
+
+msgid "User Login"
+msgstr "Логин пользователя"
+
+msgid "User Name"
+msgstr "Имя пользователя"
+
+msgid "User UUID"
+msgstr "UUID пользователя"
+
+msgid "User activities ( max 10k entries + unbound )"
+msgstr "Активность пользователей (до 10 тыс. записей + несвязанные)"
+
+msgid "User cases access"
+msgstr "Доступ пользователя к инцидентам"
+
+msgid "User display name"
+msgstr "Отображаемое имя пользователя"
+
+msgid "User login"
+msgstr "Логин пользователя"
+
+msgid "User permissions"
+msgstr "Права пользователя"
+
+msgid "Users"
+msgstr "Пользователи"
+
+msgid "Users audit"
+msgstr "Аудит пользователей"
+
+msgid "VT Score"
+msgstr "Оценка VT"
+
+msgid "Validate"
+msgstr "Подтвердить"
+
+msgid "Validate module"
+msgstr "Проверить модуль"
+
+msgid "Validation regex"
+msgstr "Регулярное выражение проверки"
+
+msgid "Value"
+msgstr "Значение"
+
+msgid "Verification"
+msgstr "Проверка"
+
+msgid "Version check"
+msgstr "Проверка версии"
+
+msgid "View Alert"
+msgstr "Просмотр оповещения"
+
+msgid "Virtual location:"
+msgstr "Виртуальное расположение:"
+
+msgid "Visual Builder"
+msgstr "Визуальный редактор"
+
+msgid "Visualize"
+msgstr "Визуализировать"
+
+msgid "Visualize by asset"
+msgstr "Визуализация по активам"
+
+msgid "Visualize by category"
+msgstr "Визуализация по категориям"
+
+msgid "We are mostly interested in the following:"
+msgstr "Нас прежде всего интересует следующее:"
+
+msgid "When this happens, IRIS will not update the fields of these objects and let them as is to prevent any data loss."
+msgstr "В этом случае IRIS оставит поля объектов без изменений, чтобы предотвратить потерю данных."
+
+msgid "Widget widths"
+msgstr "Ширина виджетов"
+
+msgid "Work phone:"
+msgstr "Рабочий телефон:"
+
+msgid "You can read more about IRIS on the"
+msgstr "Подробнее об IRIS можно прочитать на"
+
+msgid "You can report anything you find at"
+msgstr "Сообщайте о находках по адресу"
+
+msgid "You do not have permission to share dashboards."
+msgstr "У вас нет прав для публикации панелей."
+
+msgid "You have been requested to review this case."
+msgstr "Вам поручена проверка этого инцидента."
+
+msgid "account cannot be updated nor deleted."
+msgstr "нельзя изменять и удалять."
+
+msgid "and"
+msgstr "и"
+
+msgid "attributes"
+msgstr "атрибуты"
+
+msgid "authentication bypass"
+msgstr "обход аутентификации"
+
+msgid "author: The author of the case template (not related to the current user)."
+msgstr "author: автор шаблона инцидента (не связан с текущим пользователем)."
+
+msgid "basically resets the attributes values of every"
+msgstr "сбрасывает значения атрибутов каждого"
+
+msgid "before going public as it may impact systems already in production."
+msgstr "до публикации, поскольку уязвимость может затрагивать действующие системы."
+
+msgid "button on the top right to select one."
+msgstr "в правом верхнем углу, чтобы выбрать инцидент."
+
+msgid "buttons."
+msgstr "кнопки."
+
+msgid "by"
+msgstr "от"
+
+msgid "can be used to generate the report without them."
+msgstr "позволяет сформировать отчёт без них."
+
+msgid "chars"
+msgstr "символов"
+
+msgid "classification: The classification of the case template. Should be a lowercase name matching an existing classification in IRIS."
+msgstr "classification: классификация шаблона инцидента. Имя в нижнем регистре, совпадающее с существующей классификацией IRIS."
+
+msgid "contact us"
+msgstr "свяжитесь с нами"
+
+msgid "data leakage"
+msgstr "утечка данных"
+
+msgid "days"
+msgstr "дней"
+
+msgid "demonstration instance"
+msgstr "демонстрационный экземпляр"
+
+msgid "description: The description of the case template."
+msgstr "description: описание шаблона инцидента."
+
+msgid "display_name: The displayed name of the case template."
+msgstr "display_name: отображаемое название шаблона инцидента."
+
+msgid "files selected to be moved to"
+msgstr "файлов выбрано для перемещения в"
+
+msgid "get it on docker."
+msgstr "развернуть его в Docker."
+
+msgid "html: A static content rendered as HTML."
+msgstr "html: статическое содержимое, отображаемое как HTML."
+
+msgid "in progress"
+msgstr "в работе"
+
+msgid "input_checkbox: Standard checkbox"
+msgstr "input_checkbox: стандартный флажок"
+
+msgid "input_date: Standard date input"
+msgstr "input_date: стандартное поле даты"
+
+msgid "input_datetime: Standard date and time input"
+msgstr "input_datetime: стандартное поле даты и времени"
+
+msgid "input_select: Standard select input. Need \"options\" tag to describe the available options"
+msgstr "input_select: стандартный список выбора. Тег «options» описывает доступные варианты"
+
+msgid "input_string: Standard input text"
+msgstr "input_string: стандартная строка ввода"
+
+msgid "input_textfield: Standard input textfield"
+msgstr "input_textfield: стандартное текстовое поле"
+
+msgid "instance."
+msgstr "экземпляра."
+
+msgid "is limited to the Web Application IRIS hosted on"
+msgstr "ограничена веб-приложением IRIS по адресу"
+
+msgid "main website"
+msgstr "основном сайте"
+
+msgid "name: The name of the case template (required)."
+msgstr "name: название шаблона инцидента (обязательно)."
+
+msgid "note_directories: A list of dictionaries defining note directories. Note directories are defined by title (required), and list of notes. Notes have title (required) and content"
+msgstr "note_directories: список словарей каталогов заметок. Каждый каталог задаёт обязательный заголовок и список заметок с обязательным заголовком и содержимым"
+
+msgid "note_groups: A list of dictionaries defining note groups. Note groups are defined by title (required), and list of notes. Notes have title (required) and content"
+msgstr "note_groups: список словарей групп заметок. Каждая группа задаёт обязательный заголовок и список заметок с обязательным заголовком и содержимым"
+
+msgid "object (and related widget metadata) are described below."
+msgstr "и связанные метаданные виджета описаны ниже."
+
+msgid "object in the form of a JSON structure."
+msgstr "объекте в виде структуры JSON."
+
+msgid "object may have a different set of attributes.\n                             Updating the default objects here will result in an update of every existing object, which might take a huge amount of time."
+msgstr "объект может иметь собственный набор атрибутов. Изменение атрибутов по умолчанию обновляет все существующие объекты и может занять много времени."
+
+msgid "object."
+msgstr "объекта."
+
+msgid "objects are modified. This only concerns custom attributes."
+msgstr "объектов не меняются. Это касается только пользовательских атрибутов."
+
+msgid "objects that matches the current ones, and then applies the current attributes.\n                                        All associated values are lost. This does not impact attributes pushed by modules."
+msgstr "объектов, совпадающих с текущими, и применяет текущие атрибуты. Все связанные значения теряются. Атрибуты модулей не затрагиваются."
+
+msgid "objects, including the ones created by modules, and then applies the current attributes.\n                                        All associated values are lost."
+msgstr "объектов, включая созданные модулями, и применяет текущие атрибуты. Все связанные значения теряются."
+
+msgid "objects. Existing object are updated if they\n                                        don't hold the specified attributes."
+msgstr "объектов. Существующие объекты обновляются, если в них отсутствуют указанные атрибуты."
+
+msgid "of"
+msgstr "из"
+
+msgid "of 30 days if you find a vulnerability"
+msgstr "30-дневный срок при обнаружении уязвимости"
+
+msgid "official documentation website"
+msgstr "официальной документации"
+
+msgid "out of scope."
+msgstr "не входят в область проверки."
+
+msgid "pending"
+msgstr "ожидает"
+
+msgid "privilege escalations on the host server"
+msgstr "повышение привилегий на сервере"
+
+msgid "privilege escalations within the application"
+msgstr "повышение привилегий в приложении"
+
+msgid "raw: A static content rendered in raw text. HTML is not interpreted."
+msgstr "raw: статическое содержимое в исходном текстовом виде. HTML не интерпретируется."
+
+msgid "related alerts"
+msgstr "связанных оповещений"
+
+msgid "resets all attributes of every"
+msgstr "сбрасывает все атрибуты каждого"
+
+msgid "responsible disclosure"
+msgstr "ответственное раскрытие"
+
+msgid "selected to be moved to"
+msgstr "выбрано для перемещения в"
+
+msgid "shared"
+msgstr "общий"
+
+msgid "summary: content to prefill the summary."
+msgstr "summary: текст для предварительного заполнения сводки."
+
+msgid "supports the keys below:"
+msgstr "поддерживает следующие ключи:"
+
+msgid "tags: A list of case tags."
+msgstr "tags: список тегов инцидента."
+
+msgid "tasks: A list of dictionaries defining tasks. Tasks are defined by title (required), description, and list of tags."
+msgstr "tasks: список словарей задач. Каждая задача задаёт обязательный заголовок, описание и список тегов."
+
+msgid "template"
+msgstr "шаблон"
+
+msgid "the management section"
+msgstr "разделе управления"
+
+msgid "this link"
+msgstr "этой ссылке"
+
+msgid "title_prefix: A prefix to add to case title."
+msgstr "title_prefix: префикс заголовка инцидента."
+
+msgid "to filter by case outcome. The visual builder shows a dropdown automatically; if you edit JSON directly, use the integer values below."
+msgstr "для фильтрации по исходу инцидента. Визуальный редактор автоматически показывает список; в JSON используйте следующие целочисленные значения."
+
+msgid "you"
+msgstr "вы"
+
+
+# Client UI and form labels
+
+msgid "&gt; See more"
+msgstr "Подробнее"
+
+msgid "15 minutes"
+msgstr "15 минут"
+
+msgid "5 minutes"
+msgstr "5 минут"
+
+msgid "A widget must include at least one field."
+msgstr "Виджет должен содержать хотя бы одно поле."
+
+msgid "Above"
+msgstr "Сверху"
+
+msgid "Add at least one widget before saving the dashboard."
+msgstr "Добавьте хотя бы один виджет перед сохранением панели."
+
+msgid "Add custom option"
+msgstr "Добавить пользовательский параметр"
+
+msgid "Add directory"
+msgstr "Добавить каталог"
+
+msgid "Add field"
+msgstr "Добавить поле"
+
+msgid "Add files"
+msgstr "Добавить файлы"
+
+msgid "Add filter"
+msgstr "Добавить фильтр"
+
+msgid "Add from template"
+msgstr "Добавить из шаблона"
+
+msgid "Add grouping"
+msgstr "Добавить группировку"
+
+msgid "Add subfolder"
+msgstr "Добавить вложенную папку"
+
+msgid "Add threshold"
+msgstr "Добавить порог"
+
+msgid "Add widget"
+msgstr "Добавить виджет"
+
+msgid "Add widget from template"
+msgstr "Добавить виджет из шаблона"
+
+msgid "Adding..."
+msgstr "Добавление…"
+
+msgid "Aggregation"
+msgstr "Агрегация"
+
+msgid "Aggregation applied to the field. Required for metrics."
+msgstr "Агрегация поля. Обязательна для метрик."
+
+msgid "Alert Asset Types"
+msgstr "Типы активов оповещения"
+
+msgid "Alert Assets"
+msgstr "Активы оповещения"
+
+msgid "Alert Indicator Types"
+msgstr "Типы IOC оповещения"
+
+msgid "Alert Indicators"
+msgstr "IOC оповещения"
+
+msgid "Alert Owner"
+msgstr "Ответственный за оповещение"
+
+msgid "Alert Status"
+msgstr "Статус оповещения"
+
+msgid "Alert note"
+msgstr "Заметка оповещения"
+
+msgid "Alerts are being deleted, please wait"
+msgstr "Оповещения удаляются, подождите"
+
+msgid "Alerts are being updated, please wait"
+msgstr "Оповещения обновляются, подождите"
+
+msgid "Alias"
+msgstr "Псевдоним"
+
+msgid "Alias for display_mode kept for backward compatibility."
+msgstr "Псевдоним display_mode для обратной совместимости."
+
+msgid "Allowed table key taken from the table reference."
+msgstr "Допустимый ключ таблицы из справочника."
+
+msgid "And value"
+msgstr "И значение"
+
+msgid "Any additional custom keys are stored and sent with the widget payload for advanced use cases."
+msgstr "Дополнительные ключи сохраняются и передаются с конфигурацией виджета для расширенных сценариев."
+
+msgid "Are you sure ?"
+msgstr "Вы уверены?"
+
+msgid "Are you sure you want to delete this folder? All subfolders and notes will be deleted as well."
+msgstr "Удалить эту папку? Все вложенные папки и заметки также будут удалены."
+
+msgid "Are you sure?"
+msgstr "Вы уверены?"
+
+msgid "Area fill"
+msgstr "Заливка области"
+
+msgid "Array of global filters applied to all fields (same structure as field filters)."
+msgstr "Массив общих фильтров для всех полей (структура аналогична фильтрам полей)."
+
+msgid "Array of table.column strings used to group results."
+msgstr "Массив строк table.column для группировки результатов."
+
+msgid "Ascending"
+msgstr "По возрастанию"
+
+msgid "Asset ID #"
+msgstr "ID актива №"
+
+msgid "Asset Info"
+msgstr "Информация об активе"
+
+msgid "Asset Tags"
+msgstr "Теги актива"
+
+msgid "Asset deleted"
+msgstr "Актив удалён"
+
+msgid "Asset description"
+msgstr "Описание актива"
+
+msgid "Asset icon compromised name"
+msgstr "Имя значка скомпрометированного актива"
+
+msgid "Asset icon not compromised name"
+msgstr "Имя значка нескомпрометированного актива"
+
+msgid "Asset type"
+msgstr "Тип актива"
+
+msgid "Asset updated"
+msgstr "Актив обновлён"
+
+msgid "Assets created"
+msgstr "Активы созданы"
+
+msgid "Attribute content"
+msgstr "Содержимое атрибута"
+
+msgid "Auditing case.."
+msgstr "Аудит инцидента…"
+
+msgid "Auditing user.."
+msgstr "Аудит пользователя…"
+
+msgid "Auto"
+msgstr "Авто"
+
+msgid "Automatic"
+msgstr "Автоматически"
+
+msgid "Average"
+msgstr "Среднее"
+
+msgid "Bar"
+msgstr "Столбчатая"
+
+msgid "Bar value labels"
+msgstr "Подписи значений столбцов"
+
+msgid "Below"
+msgstr "Снизу"
+
+msgid "Between"
+msgstr "Между"
+
+msgid "Bootstrap column width for the widget."
+msgstr "Ширина виджета в столбцах Bootstrap."
+
+msgid "Bottom"
+msgstr "Низ"
+
+msgid "Can't copy link. I printed it in console."
+msgstr "Не удалось скопировать ссылку. Она выведена в консоль."
+
+msgid "Case Asset Types"
+msgstr "Типы активов инцидента"
+
+msgid "Case Classification"
+msgstr "Классификация инцидента"
+
+msgid "Case Creator"
+msgstr "Создатель инцидента"
+
+msgid "Case Events"
+msgstr "События инцидента"
+
+msgid "Case ID "
+msgstr "ID инцидента "
+
+msgid "Case Indicator Types"
+msgstr "Типы IOC инцидента"
+
+msgid "Case Indicators"
+msgstr "IOC инцидента"
+
+msgid "Case Notes"
+msgstr "Заметки инцидента"
+
+msgid "Case Owner"
+msgstr "Ответственный за инцидент"
+
+msgid "Case Reviewer"
+msgstr "Проверяющий инцидент"
+
+msgid "Case State"
+msgstr "Состояние инцидента"
+
+msgid "Case Tags"
+msgstr "Теги инцидента"
+
+msgid "Case Template"
+msgstr "Шаблон инцидента"
+
+msgid "Case Template JSON"
+msgstr "JSON шаблона инцидента"
+
+msgid "Case classification description"
+msgstr "Описание классификации инцидента"
+
+msgid "Case classification name"
+msgstr "Название классификации инцидента"
+
+msgid "Case classification name expanded"
+msgstr "Полное название классификации инцидента"
+
+msgid "Case description"
+msgstr "Описание инцидента"
+
+msgid "Case has been successfully created"
+msgstr "Инцидент успешно создан"
+
+msgid "Case state description"
+msgstr "Описание состояния инцидента"
+
+msgid "Case state name"
+msgstr "Название состояния инцидента"
+
+msgid "Cases list refreshed"
+msgstr "Список инцидентов обновлён"
+
+msgid "Changes not saved"
+msgstr "Изменения не сохранены"
+
+msgid "Changes saved"
+msgstr "Изменения сохранены"
+
+msgid "Check Alerts"
+msgstr "Проверить оповещения"
+
+msgid "Checking data.."
+msgstr "Проверка данных…"
+
+msgid "Child events"
+msgstr "Дочерние события"
+
+msgid "Classification:"
+msgstr "Классификация:"
+
+msgid "Click to open note"
+msgstr "Нажмите, чтобы открыть заметку"
+
+msgid "Close Date:"
+msgstr "Дата закрытия:"
+
+msgid "Close alert"
+msgstr "Закрыть оповещение"
+
+msgid "Close alerts"
+msgstr "Закрыть оповещения"
+
+msgid "Close editor"
+msgstr "Закрыть редактор"
+
+msgid "Collapse All"
+msgstr "Свернуть всё"
+
+msgid "Collapse section"
+msgstr "Свернуть раздел"
+
+msgid "Collapse this branch"
+msgstr "Свернуть ветку"
+
+msgid "Color"
+msgstr "Цвет"
+
+msgid "Colors &amp; labels"
+msgstr "Цвета и подписи"
+
+msgid "Column"
+msgstr "Столбец"
+
+msgid "Column from the selected table."
+msgstr "Столбец выбранной таблицы."
+
+msgid "Condition"
+msgstr "Условие"
+
+msgid "Confirm"
+msgstr "Подтвердить"
+
+msgid "Conflict !"
+msgstr "Конфликт!"
+
+msgid "Connection with server lost"
+msgstr "Соединение с сервером потеряно"
+
+msgid "Contact description"
+msgstr "Описание контакта"
+
+msgid "Contact name"
+msgstr "Имя контакта"
+
+msgid "Contact role"
+msgstr "Роль контакта"
+
+msgid "Contains (case-insensitive)"
+msgstr "Содержит (без учёта регистра)"
+
+msgid "Content updated with remote. Local changes copied to clipboard."
+msgstr "Загружена версия с сервера. Локальные изменения скопированы в буфер обмена."
+
+msgid "Context changed successfully"
+msgstr "Контекст успешно изменён"
+
+msgid "Controls numeric formatting of datasets."
+msgstr "Управляет форматированием числовых данных."
+
+msgid "Copied"
+msgstr "Скопировано"
+
+msgid "Copy"
+msgstr "Копировать"
+
+msgid "Copy link"
+msgstr "Копировать ссылку"
+
+msgid "Count"
+msgstr "Количество"
+
+msgid "Create your first dashboard to get started."
+msgstr "Создайте первую панель для начала работы."
+
+msgid "Created alerts"
+msgstr "Созданные оповещения"
+
+msgid "Custom key used when referencing the aggregated result."
+msgstr "Ключ для обращения к результату агрегации."
+
+msgid "Custom label for totals in table widgets."
+msgstr "Подпись итогов в табличных виджетах."
+
+msgid "Custom options"
+msgstr "Пользовательские параметры"
+
+msgid "Customer Name:"
+msgstr "Название заказчика:"
+
+msgid "Customer description"
+msgstr "Описание заказчика"
+
+msgid "Dashboard JSON \"sections\" must be an array when provided."
+msgstr "Поле «sections» в JSON панели должно быть массивом."
+
+msgid "Dashboard JSON \"widgets\" must be an array when provided."
+msgstr "Поле «widgets» в JSON панели должно быть массивом."
+
+msgid "Dashboard JSON cannot be empty."
+msgstr "JSON панели не может быть пустым."
+
+msgid "Dashboard JSON must be an object."
+msgstr "JSON панели должен быть объектом."
+
+msgid "Dashboard JSON must include a \"name\"."
+msgstr "JSON панели должен содержать поле «name»."
+
+msgid "Dashboard JSON must include a \"widgets\" array."
+msgstr "JSON панели должен содержать массив «widgets»."
+
+msgid "Data"
+msgstr "Данные"
+
+msgid "Datastore refreshed"
+msgstr "Хранилище обновлено"
+
+msgid "Date time information"
+msgstr "Информация о дате и времени"
+
+msgid "Day"
+msgstr "День"
+
+msgid "Default"
+msgstr "По умолчанию"
+
+msgid "Delete alert"
+msgstr "Удалить оповещение"
+
+msgid "Delete folder"
+msgstr "Удалить папку"
+
+msgid "Descending"
+msgstr "По убыванию"
+
+msgid "Description:"
+msgstr "Описание:"
+
+msgid "Disabled"
+msgstr "Отключено"
+
+msgid "Display"
+msgstr "Отображение"
+
+msgid "Display mode"
+msgstr "Режим отображения"
+
+msgid "Displays numeric labels on bar charts."
+msgstr "Показывает числовые подписи на столбчатых графиках."
+
+msgid "Done"
+msgstr "Готово"
+
+msgid "Done processing"
+msgstr "Обработка завершена"
+
+msgid "Done!"
+msgstr "Готово!"
+
+msgid "Each field selects data from a table. Add an aggregation (count/sum/avg) to compute a metric, or leave blank for raw values."
+msgstr "Каждое поле выбирает данные из таблицы. Задайте агрегацию (count/sum/avg) для метрики или оставьте пустым для исходных значений."
+
+msgid "Edit dashboard"
+msgstr "Изменить панель"
+
+msgid "Edit raw event data"
+msgstr "Изменить исходные данные события"
+
+msgid "Enter a new name for the folder"
+msgstr "Введите новое имя папки"
+
+msgid "Equal"
+msgstr "Равно"
+
+msgid "Equals"
+msgstr "Равно"
+
+msgid "Error saving !"
+msgstr "Ошибка сохранения!"
+
+msgid "Error saving!"
+msgstr "Ошибка сохранения!"
+
+msgid "Error: hook not found"
+msgstr "Ошибка: обработчик не найден"
+
+msgid "Event Asset"
+msgstr "Актив события"
+
+msgid "Event Category"
+msgstr "Категория события"
+
+msgid "Event Description"
+msgstr "Описание события"
+
+msgid "Event Raw data"
+msgstr "Исходные данные события"
+
+msgid "Event Source"
+msgstr "Источник события"
+
+msgid "Event Tags"
+msgstr "Теги события"
+
+msgid "Event Timezone"
+msgstr "Часовой пояс события"
+
+msgid "Event Title"
+msgstr "Заголовок события"
+
+msgid "Evidence type"
+msgstr "Тип доказательства"
+
+msgid "Evidence type description"
+msgstr "Описание типа доказательства"
+
+msgid "Evidence type name"
+msgstr "Название типа доказательства"
+
+msgid "Expand section"
+msgstr "Развернуть раздел"
+
+msgid "Expand this branch"
+msgstr "Развернуть ветку"
+
+msgid "Failed to fetch alerts"
+msgstr "Не удалось получить оповещения"
+
+msgid "Failed to load data for the selected dashboard."
+msgstr "Не удалось загрузить данные выбранной панели."
+
+msgid "Failed to load templates"
+msgstr "Не удалось загрузить шаблоны"
+
+msgid "Fetching relationships..."
+msgstr "Загрузка связей…"
+
+msgid "Field key used as the denominator for percentage widgets."
+msgstr "Ключ поля знаменателя для процентных виджетов."
+
+msgid "Field key used as the numerator for percentage widgets."
+msgstr "Ключ поля числителя для процентных виджетов."
+
+msgid "Fields"
+msgstr "Поля"
+
+msgid "File is uploading"
+msgstr "Файл загружается"
+
+msgid "File link copied"
+msgstr "Ссылка на файл скопирована"
+
+msgid "File password"
+msgstr "Пароль файла"
+
+msgid "Files are being processed in background.\nYou can follow the progress in DIM Tasks"
+msgstr "Файлы обрабатываются в фоне. Ход обработки доступен в разделе «Задачи DIM»."
+
+msgid "Fill"
+msgstr "Заливка"
+
+msgid "Fills the area under line charts when true."
+msgstr "Включает заливку под линиями графика."
+
+msgid "First page"
+msgstr "Первая страница"
+
+msgid "Full width"
+msgstr "Полная ширина"
+
+msgid "Go to dashboard"
+msgstr "Перейти на панель управления"
+
+msgid "Go to my default case"
+msgstr "Перейти к моему инциденту по умолчанию"
+
+msgid "Got bad news for you"
+msgstr "Ошибка"
+
+msgid "Got news for you"
+msgstr "Готово"
+
+msgid "Greater or equal"
+msgstr "Больше или равно"
+
+msgid "Greater than"
+msgstr "Больше"
+
+msgid "Group description"
+msgstr "Описание группы"
+
+msgid "Group results by one or more columns (e.g. by client, by status). Required for bar/pie charts."
+msgstr "Группирует результаты по столбцам (например, заказчику или статусу). Обязательно для столбчатых и круговых графиков."
+
+msgid "Grouping"
+msgstr "Группировка"
+
+msgid "Half width"
+msgstr "Половина ширины"
+
+msgid "Highlight values when they cross a threshold (great for KPI/percentage widgets)."
+msgstr "Выделяет значения при пересечении порога (для KPI и процентных виджетов)."
+
+msgid "History"
+msgstr "История"
+
+msgid "Hooks refreshed"
+msgstr "Обработчики обновлены"
+
+msgid "Hour"
+msgstr "Час"
+
+msgid "I really wanna help you but I still can't read your mind"
+msgstr "Укажите данные для поиска"
+
+msgid "IOC Description"
+msgstr "Описание IOC"
+
+msgid "IOC TLP"
+msgstr "TLP индикатора компрометации"
+
+msgid "IOC Tags"
+msgstr "Теги IOC"
+
+msgid "IOC Type"
+msgstr "Тип IOC"
+
+msgid "IOC Value"
+msgstr "Значение IOC"
+
+msgid "Import files again"
+msgstr "Импортировать файлы снова"
+
+msgid "In list"
+msgstr "В списке"
+
+msgid "Inline filter applied before aggregation (table, column, operator, value)."
+msgstr "Фильтр перед агрегацией (таблица, столбец, оператор, значение)."
+
+msgid "Label (optional)"
+msgstr "Подпись (необязательно)"
+
+msgid "Label displayed for percentage widgets."
+msgstr "Подпись процентного виджета."
+
+msgid "Label max length"
+msgstr "Максимальная длина подписи"
+
+msgid "Last page"
+msgstr "Последняя страница"
+
+msgid "Last saved by "
+msgstr "Последнее сохранение: "
+
+msgid "Last saved by you"
+msgstr "Последнее сохранение выполнено вами"
+
+msgid "Last synced: "
+msgstr "Последняя синхронизация: "
+
+msgid "Last update:"
+msgstr "Последнее обновление:"
+
+msgid "Last updated: "
+msgstr "Последнее обновление: "
+
+msgid "Left"
+msgstr "Слева"
+
+msgid "Legend"
+msgstr "Легенда"
+
+msgid "Less or equal"
+msgstr "Меньше или равно"
+
+msgid "Less than"
+msgstr "Меньше"
+
+msgid "Limit"
+msgstr "Лимит"
+
+msgid "Line"
+msgstr "Линейная"
+
+msgid "Line chart with a chronological axis that supports time buckets."
+msgstr "Линейный график с временной осью и поддержкой интервалов."
+
+msgid "Link copied"
+msgstr "Ссылка скопирована"
+
+msgid "List of conditional styling rules (mode, value, optional end_value, color, label)."
+msgstr "Список правил оформления (mode, value, необязательный end_value, color, label)."
+
+msgid "Loading dashboard data..."
+msgstr "Загрузка данных панели…"
+
+msgid "Loading manager..."
+msgstr "Загрузка управления…"
+
+msgid "Lookback (days)"
+msgstr "Период ретроспективы (дни)"
+
+msgid "MD link copied"
+msgstr "Ссылка Markdown скопирована"
+
+msgid "Markdown file link copied"
+msgstr "Markdown-ссылка на файл скопирована"
+
+msgid "Maximum"
+msgstr "Максимум"
+
+msgid "Maximum number of grouped rows returned."
+msgstr "Максимальное число возвращаемых групп строк."
+
+msgid "Members of this group won't be able to access these cases anymore"
+msgstr "Участники этой группы потеряют доступ к этим инцидентам"
+
+msgid "Merge multiple alerts in a new case"
+msgstr "Объединить несколько оповещений в новый инцидент"
+
+msgid "Metadata"
+msgstr "Метаданные"
+
+msgid "Minimum"
+msgstr "Минимум"
+
+msgid "Minute"
+msgstr "Минута"
+
+msgid "Mobile phone"
+msgstr "Мобильный телефон"
+
+msgid "Modules refreshed"
+msgstr "Модули обновлены"
+
+msgid "New alerts available"
+msgstr "Доступны новые оповещения"
+
+msgid "Next"
+msgstr "Следующая"
+
+msgid "No columns listed."
+msgstr "Нет столбцов."
+
+msgid "No comments yet"
+msgstr "Комментариев пока нет"
+
+msgid "No custom options."
+msgstr "Нет пользовательских параметров."
+
+msgid "No custom options. Use this area for advanced settings."
+msgstr "Нет пользовательских параметров. Здесь можно задать расширенные настройки."
+
+msgid "No data available."
+msgstr "Нет данных."
+
+msgid "No destination folder selected"
+msgstr "Папка назначения не выбрана"
+
+msgid "No events in current view"
+msgstr "В текущем представлении нет событий"
+
+msgid "No events in graph"
+msgstr "На графе нет событий"
+
+msgid "No events in summary"
+msgstr "В сводке нет событий"
+
+msgid "No file to move selected"
+msgstr "Файлы для перемещения не выбраны"
+
+msgid "No filters applied."
+msgstr "Фильтры не применены."
+
+msgid "No grouping columns configured."
+msgstr "Столбцы группировки не настроены."
+
+msgid "No initial folder to move"
+msgstr "Исходная папка для перемещения не задана"
+
+msgid "No parent event"
+msgstr "Нет родительского события"
+
+msgid "No results"
+msgstr "Нет результатов"
+
+msgid "No review"
+msgstr "Нет проверки"
+
+msgid "No reviewer"
+msgstr "Нет проверяющего"
+
+msgid "No tasks"
+msgstr "Нет задач"
+
+msgid "No templates available"
+msgstr "Нет доступных шаблонов"
+
+msgid "No thresholds configured."
+msgstr "Пороги не настроены."
+
+msgid "No thresholds configured. Add one to adjust colors based on values."
+msgstr "Пороги не настроены. Добавьте порог для изменения цвета в зависимости от значения."
+
+msgid "No timeframe selected"
+msgstr "Период не выбран"
+
+msgid "No widgets configured for this dashboard."
+msgstr "Для этой панели не настроены виджеты."
+
+msgid "No widgets yet"
+msgstr "Виджетов пока нет"
+
+msgid "Nodes limit"
+msgstr "Лимит узлов"
+
+msgid "None"
+msgstr "Нет"
+
+msgid "Not Applicable"
+msgstr "Неприменимо"
+
+msgid "Not equals"
+msgstr "Не равно"
+
+msgid "Not in list"
+msgstr "Не в списке"
+
+msgid "Note conflict"
+msgstr "Конфликт заметки"
+
+msgid "Note content"
+msgstr "Содержимое заметки"
+
+msgid "Note reverted to revision #"
+msgstr "Заметка восстановлена до версии №"
+
+msgid "Note title"
+msgstr "Заголовок заметки"
+
+msgid "Notifying for new import"
+msgstr "Уведомление о новом импорте"
+
+msgid "Number"
+msgstr "Число"
+
+msgid "Number & percentage"
+msgstr "Число и процент"
+
+msgid "Observed"
+msgstr "Наблюдался"
+
+msgid "Oh no !"
+msgstr "Ошибка"
+
+msgid "One third"
+msgstr "Треть ширины"
+
+msgid "Oops error loading the alerts - Check logs"
+msgstr "Ошибка загрузки оповещений — проверьте журналы"
+
+msgid "Open Date:"
+msgstr "Дата открытия:"
+
+msgid "Opening User:"
+msgstr "Открыл:"
+
+msgid "Operator"
+msgstr "Оператор"
+
+msgid "Optional bucket applied to the time column when rendering time-series data."
+msgstr "Необязательный интервал временного столбца для временных рядов."
+
+msgid "Organisation description"
+msgstr "Описание организации"
+
+msgid "Organisation email"
+msgstr "Электронная почта организации"
+
+msgid "Organisation logo"
+msgstr "Логотип организации"
+
+msgid "Organisation name"
+msgstr "Название организации"
+
+msgid "Organisation nationality"
+msgstr "Страна организации"
+
+msgid "Organisation type"
+msgstr "Тип организации"
+
+msgid "Organisation url"
+msgstr "URL организации"
+
+msgid "Outcome:"
+msgstr "Исход:"
+
+msgid "Override the timestamp column used for timeframe filtering."
+msgstr "Переопределяет столбец времени для фильтрации по периоду."
+
+msgid "Override which column is used for the dashboard timeframe filter. Leave blank to use the default (alerts.alert_creation_time)."
+msgstr "Задаёт столбец для фильтра периода панели. Оставьте пустым для значения по умолчанию (alerts.alert_creation_time)."
+
+msgid "Overwrite"
+msgstr "Перезаписать"
+
+msgid "Owner:"
+msgstr "Ответственный:"
+
+msgid "Palette (comma separated)"
+msgstr "Палитра (через запятую)"
+
+msgid "Palette for multi-series charts."
+msgstr "Палитра графиков с несколькими рядами."
+
+msgid "Pass arbitrary key/value pairs into the widget options for advanced settings not covered above."
+msgstr "Передаёт произвольные пары ключ/значение в параметры виджета для расширенных настроек."
+
+msgid "Password and verification are not the same"
+msgstr "Пароль и подтверждение не совпадают"
+
+msgid "Percentage"
+msgstr "Процент"
+
+msgid "Pfew, that was close"
+msgstr "Удаление отменено"
+
+msgid "Pie"
+msgstr "Круговая"
+
+msgid "Placement of the chart legend."
+msgstr "Положение легенды графика."
+
+msgid "Please note this will only remove the reference of the module in Iris. The module will stay installed on the server."
+msgstr "Будет удалена только запись о модуле в IRIS. Сам модуль останется установленным на сервере."
+
+msgid "Please select a file"
+msgstr "Выберите файл"
+
+msgid "Please select at least one alert to perform this action on."
+msgstr "Выберите хотя бы одно оповещение для этого действия."
+
+msgid "Please wait"
+msgstr "Подождите"
+
+msgid "Please wait. This window will close automatically when the file is uploaded."
+msgstr "Подождите. Окно закроется после загрузки файла."
+
+msgid "Please wait. We are updating users access."
+msgstr "Подождите. Обновляются права доступа пользователей."
+
+msgid "Previous"
+msgstr "Предыдущая"
+
+msgid "Primary color for single-series charts or numeric widgets."
+msgstr "Основной цвет графиков с одним рядом или числовых виджетов."
+
+msgid "Processing "
+msgstr "Обработка "
+
+msgid "Proportional breakdown of a single dataset."
+msgstr "Распределение долей одного набора данных."
+
+msgid "Quarter width"
+msgstr "Четверть ширины"
+
+msgid "Quick view"
+msgstr "Быстрый просмотр"
+
+msgid "Ratio (requires filter)"
+msgstr "Отношение (требует фильтра)"
+
+msgid "Refreshed"
+msgstr "Обновлено"
+
+msgid "Refreshing.."
+msgstr "Обновление…"
+
+msgid "Related alerts:"
+msgstr "Связанные оповещения:"
+
+msgid "Relationships"
+msgstr "Связи"
+
+msgid "Reloading..."
+msgstr "Перезагрузка…"
+
+msgid "Rename"
+msgstr "Переименовать"
+
+msgid "Renewing.."
+msgstr "Перевыпуск…"
+
+msgid "Report Type"
+msgstr "Тип отчёта"
+
+msgid "Report description"
+msgstr "Описание отчёта"
+
+msgid "Report name"
+msgstr "Название отчёта"
+
+msgid "Report name formating"
+msgstr "Формат имени отчёта"
+
+msgid "Report type"
+msgstr "Тип отчёта"
+
+msgid "Request a case review from "
+msgstr "Запросить проверку инцидента у "
+
+msgid "Required fields are not set"
+msgstr "Обязательные поля не заполнены"
+
+msgid "Resetting.."
+msgstr "Сброс…"
+
+msgid "Restrict the widget data. For example, filter cases by outcome, client, or owner. Filters apply to all fields below."
+msgstr "Ограничивает данные виджета, например по исходу, заказчику или ответственному. Фильтры применяются ко всем полям ниже."
+
+msgid "Retrieving alerts..."
+msgstr "Получение оповещений…"
+
+msgid "Retry"
+msgstr "Повторить"
+
+msgid "Revert"
+msgstr "Восстановить"
+
+msgid "Review:"
+msgstr "Проверка:"
+
+msgid "Reviewer:"
+msgstr "Проверяющий:"
+
+msgid "Right"
+msgstr "Справа"
+
+msgid "Root"
+msgstr "Корень"
+
+msgid "SOC ID:"
+msgstr "ID SOC:"
+
+msgid "Save again"
+msgstr "Сохранить повторно"
+
+msgid "Saved"
+msgstr "Сохранено"
+
+msgid "Saving data.."
+msgstr "Сохранение данных…"
+
+msgid "Saving.."
+msgstr "Сохранение…"
+
+msgid "Search Type"
+msgstr "Тип поиска"
+
+msgid "Search Value"
+msgstr "Значение поиска"
+
+msgid "Searching.."
+msgstr "Поиск…"
+
+msgid "Searching..."
+msgstr "Поиск…"
+
+msgid "Section description"
+msgstr "Описание раздела"
+
+msgid "Section no longer exists."
+msgstr "Раздел больше не существует."
+
+msgid "Section title"
+msgstr "Заголовок раздела"
+
+msgid "Select All"
+msgstr "Выбрать всё"
+
+msgid "Select a dashboard to export."
+msgstr "Выберите панель для экспорта."
+
+msgid "Select a dashboard to update."
+msgstr "Выберите панель для обновления."
+
+msgid "Select a parent event"
+msgstr "Выберите родительское событие"
+
+msgid "Select a template"
+msgstr "Выберите шаблон"
+
+msgid "Select assignee(s)"
+msgstr "Выберите исполнителей"
+
+msgid "Select case to audit"
+msgstr "Выберите инцидент для аудита"
+
+msgid "Select classification"
+msgstr "Выберите классификацию"
+
+msgid "Select customer *"
+msgstr "Выберите заказчика *"
+
+msgid "Select user to audit"
+msgstr "Выберите пользователя для аудита"
+
+msgid "Severities"
+msgstr "Уровни критичности"
+
+msgid "Severity:"
+msgstr "Критичность:"
+
+msgid "Shared link copied"
+msgstr "Общая ссылка скопирована"
+
+msgid "Show closed alerts"
+msgstr "Показать закрытые оповещения"
+
+msgid "Show horizontal divider after this section"
+msgstr "Показать разделитель после этого раздела"
+
+msgid "Show open alerts"
+msgstr "Показать открытые оповещения"
+
+msgid "Show open cases"
+msgstr "Показать открытые инциденты"
+
+msgid "Show values above bars"
+msgstr "Показывать значения над столбцами"
+
+msgid "Single KPI rendered as a percentage with numerator/denominator support."
+msgstr "Один KPI в процентах с поддержкой числителя и знаменателя."
+
+msgid "Single KPI value with optional thresholds."
+msgstr "Один KPI с необязательными порогами."
+
+msgid "Sort"
+msgstr "Сортировка"
+
+msgid "Sort direction for grouped results."
+msgstr "Направление сортировки группированных результатов."
+
+msgid "Standard category or trend line chart."
+msgstr "Линейный график категорий или тенденций."
+
+msgid "Start date must be earlier than end date"
+msgstr "Начальная дата должна предшествовать конечной"
+
+msgid "Starting pipeline"
+msgstr "Запуск конвейера"
+
+msgid "State:"
+msgstr "Состояние:"
+
+msgid "Stop everything !"
+msgstr "Требуется внимание!"
+
+msgid "Sum"
+msgstr "Сумма"
+
+msgid "Switch to newly created case"
+msgstr "Перейти к созданному инциденту"
+
+msgid "Syncing.."
+msgstr "Синхронизация…"
+
+msgid "Tabular view of grouped results and totals."
+msgstr "Табличное представление группированных результатов и итогов."
+
+msgid "Task Tags"
+msgstr "Теги задачи"
+
+msgid "Task Title"
+msgstr "Заголовок задачи"
+
+msgid "Task assignee"
+msgstr "Исполнитель задачи"
+
+msgid "Task description"
+msgstr "Описание задачи"
+
+msgid "Task status"
+msgstr "Статус задачи"
+
+msgid "Tasks:"
+msgstr "Задачи:"
+
+msgid "Templates load on first use"
+msgstr "Шаблоны загружаются при первом использовании"
+
+msgid "That's done !"
+msgstr "Готово!"
+
+msgid "The case you are working on was deleted"
+msgstr "Текущий инцидент удалён"
+
+msgid "The case you attempted to reach wasn't found.\nYou have been redirected to a default case."
+msgstr "Запрошенный инцидент не найден. Открыт инцидент по умолчанию."
+
+msgid "The current key will be revoked and cannot be used anymore"
+msgstr "Текущий ключ будет отозван и станет недействительным"
+
+msgid "The file is uploading in background. Don't leave the page"
+msgstr "Файл загружается в фоне. Не покидайте страницу"
+
+msgid "The following relationships are automatically generated by IRIS based on the alert's IOCs and assets \n                        in the system. They are an indication only and may not be accurate."
+msgstr "Связи автоматически сформированы IRIS по IOC и активам оповещения. Они носят справочный характер и могут быть неточными."
+
+msgid "The note has been saved by someone else. Do you want to overwrite your changes?"
+msgstr "Другой пользователь сохранил заметку. Заменить ваши изменения?"
+
+msgid "There is no JSON content to download."
+msgstr "Нет JSON для скачивания."
+
+msgid "These alerts will be merged into a new case. Set the case title and select the IOCs and Assets to escalate into the case."
+msgstr "Оповещения будут объединены в новый инцидент. Задайте название и выберите IOC и активы для переноса."
+
+msgid "These alerts will be merged into the selected case. Select the IOCs and Assets to merge into the case."
+msgstr "Оповещения будут объединены с выбранным инцидентом. Выберите IOC и активы для переноса."
+
+msgid "This alert will be escalated into a new case. Set a title and select the IOCs and Assets to escalate into the case."
+msgstr "Оповещение будет передано в новый инцидент. Задайте название и выберите IOC и активы для переноса."
+
+msgid "This alert will be merged into a new case. Set the case title and select the IOCs and Assets to merge into the case."
+msgstr "Оповещение будет объединено в новый инцидент. Задайте название и выберите IOC и активы для переноса."
+
+msgid "This alert will be merged into the selected case. Select the IOCs and Assets to merge into the case."
+msgstr "Оповещение будет объединено с выбранным инцидентом. Выберите IOC и активы для переноса."
+
+msgid "This section has no widgets yet. Add one to get started."
+msgstr "В разделе пока нет виджетов. Добавьте первый."
+
+msgid "This user might not be able access these cases anymore"
+msgstr "Пользователь может потерять доступ к этим инцидентам"
+
+msgid "This user might not be able access this case anymore"
+msgstr "Пользователь может потерять доступ к этому инциденту"
+
+msgid "This will delete all files included and sub-folders"
+msgstr "Будут удалены все файлы и вложенные папки"
+
+msgid "This will delete the file on the server and any manual reference will become invalid"
+msgstr "Файл будет удалён с сервера, а ссылки на него станут недействительными"
+
+msgid "This will delete the report template\nAre you sure?"
+msgstr "Шаблон отчёта будет удалён. Вы уверены?"
+
+msgid "This will remove the user from the group"
+msgstr "Пользователь будет удалён из группы"
+
+msgid "This window will close automatically when it's done"
+msgstr "Окно закроется автоматически после завершения"
+
+msgid "Thresholds"
+msgstr "Пороги"
+
+msgid "Time bucket"
+msgstr "Временной интервал"
+
+msgid "Time column"
+msgstr "Столбец времени"
+
+msgid "Time column override"
+msgstr "Переопределение столбца времени"
+
+msgid "Time series"
+msgstr "Временной ряд"
+
+msgid "Title displayed above the widget card."
+msgstr "Заголовок над карточкой виджета."
+
+msgid "Toggle Relations"
+msgstr "Показать/скрыть связи"
+
+msgid "Toggle columns"
+msgstr "Показать/скрыть столбцы"
+
+msgid "Top"
+msgstr "Верх"
+
+msgid "Total label"
+msgstr "Подпись итога"
+
+msgid "Tree  refreshed"
+msgstr "Дерево обновлено"
+
+msgid "True Positive (Impact)"
+msgstr "Подтверждённый инцидент с последствиями"
+
+msgid "True Positive (No Impact)"
+msgstr "Подтверждённый инцидент без последствий"
+
+msgid "Truncates long axis labels after the specified number of characters."
+msgstr "Обрезает длинные подписи осей после указанного числа символов."
+
+msgid "Two-thirds"
+msgstr "Две трети ширины"
+
+msgid "Type validation expectation"
+msgstr "Ожидаемый результат проверки типа"
+
+msgid "Unable to copy link. Error "
+msgstr "Не удалось скопировать ссылку. Ошибка: "
+
+msgid "Unable to find a matching pattern for the date"
+msgstr "Не удалось распознать формат даты"
+
+msgid "Unable to load dashboard data."
+msgstr "Не удалось загрузить данные панели."
+
+msgid "Unable to read the selected file."
+msgstr "Не удалось прочитать выбранный файл."
+
+msgid "Unable to save content to remote server"
+msgstr "Не удалось сохранить содержимое на сервере"
+
+msgid "Unassigned"
+msgstr "Не назначено"
+
+msgid "Unknown resolution"
+msgstr "Неизвестный результат"
+
+msgid "Unsaved"
+msgstr "Не сохранено"
+
+msgid "Unsupported direct paste of this item. Use datastore to upload."
+msgstr "Прямая вставка этого элемента не поддерживается. Загрузите его через хранилище."
+
+msgid "Updates available"
+msgstr "Доступны обновления"
+
+msgid "Updating access"
+msgstr "Обновление доступа"
+
+msgid "Updating and migrating..."
+msgstr "Обновление и перенос данных…"
+
+msgid "Updating.."
+msgstr "Обновление…"
+
+msgid "Updating..."
+msgstr "Обновление…"
+
+msgid "Vertical bar chart for categorical comparisons."
+msgstr "Вертикальная столбчатая диаграмма для сравнения категорий."
+
+msgid "View Enrichment"
+msgstr "Просмотр обогащения"
+
+msgid "View case"
+msgstr "Просмотр инцидента"
+
+msgid "Visualization"
+msgstr "Визуализация"
+
+msgid "Visualization options"
+msgstr "Параметры визуализации"
+
+msgid "Visualization to render. See chart types below."
+msgstr "Тип визуализации. См. типы графиков ниже."
+
+msgid "Week"
+msgstr "Неделя"
+
+msgid "Widget filters"
+msgstr "Фильтры виджета"
+
+msgid "Widget name"
+msgstr "Название виджета"
+
+msgid "Widget no longer exists."
+msgstr "Виджет больше не существует."
+
+msgid "Widget width"
+msgstr "Ширина виджета"
+
+msgid "Widgets in this section"
+msgstr "Виджеты раздела"
+
+msgid "Work phone"
+msgstr "Рабочий телефон"
+
+msgid "Yes"
+msgstr "Да"
+
+msgid "You are about to delete "
+msgstr "Будет удалён объект: "
+
+msgid "You are about to delete IOC #"
+msgstr "Будет удалён IOC №"
+
+msgid "You are about to delete asset #"
+msgstr "Будет удалён актив №"
+
+msgid "You are about to delete comment #"
+msgstr "Будет удалён комментарий №"
+
+msgid "You are about to delete event #"
+msgstr "Будет удалено событие №"
+
+msgid "You are about to delete evidence #"
+msgstr "Будет удалено доказательство №"
+
+msgid "You are about to delete note #"
+msgstr "Будет удалена заметка №"
+
+msgid "You are about to delete revision #"
+msgstr "Будет удалена версия №"
+
+msgid "You are about to delete task #"
+msgstr "Будет удалена задача №"
+
+msgid "You are about to delete this case forever. This cannot be reverted.\nAll associated data will be deleted"
+msgstr "Инцидент и все связанные данные будут удалены без возможности восстановления."
+
+msgid "You started this review. Press \"Confirm review\" when you are done."
+msgstr "Вы начали проверку. По завершении нажмите «Подтвердить проверку»."
+
+msgid "You will be redirected in 5 seconds"
+msgstr "Вы будете перенаправлены через 5 секунд"
+
+msgid "You won't be able to revert this !"
+msgstr "Это действие нельзя отменить!"
+
+msgid "You won't be able to revert this!\nPlease make sure a group remains with enough rights to avoid a lockdown!"
+msgstr "Это действие нельзя отменить! Убедитесь, что остаётся группа с достаточными правами доступа."
+
+msgid "You've been redirected"
+msgstr "Вы перенаправлены"
+
+msgid "compromised"
+msgstr "скомпрометирован"
+
+msgid "condition and searching without target does not work."
+msgstr "условия, и поиск без указания поля не работает."
+
+msgid "file_description"
+msgstr "Описание файла"
+
+msgid "not compromised"
+msgstr "не скомпрометирован"
+
+msgid "password"
+msgstr "пароль"
+
+msgid "this event"
+msgstr "это событие"
+
+msgid "unselected destination"
+msgstr "назначение не выбрано"
+
+msgid "unspecified"
+msgstr "не указан"
+
+msgid "Invalid email address."
+msgstr "Некорректный адрес электронной почты."
+
+msgid "Assignee(s)"
+msgstr "Исполнители"
+
+msgid "No selected file"
+msgstr "Файл не выбран"
+
+msgid "Processing..."
+msgstr "Обработка…"
+
+msgid "Copied one row"
+msgstr "Скопирована одна строка"
+
+msgid "Copied %d rows"
+msgstr "Скопировано строк: %d"
+
+msgid "Nothing selected"
+msgstr "Ничего не выбрано"
+
+msgid "No results matched {0}"
+msgstr "Нет результатов для {0}"
+
+msgid "Selected {0} of {1}"
+msgstr "Выбрано {0} из {1}"
+
+msgid "No data available in table"
+msgstr "В таблице нет данных"
+
+msgid "Showing _START_ to _END_ of _TOTAL_ entries"
+msgstr "Показаны записи с _START_ по _END_ из _TOTAL_"
+
+msgid "Showing 0 to 0 of 0 entries"
+msgstr "Показаны 0 записей"
+
+msgid "(filtered from _MAX_ total entries)"
+msgstr "(отфильтровано из _MAX_ записей)"
+
+msgid "Show _MENU_ entries"
+msgstr "Показать _MENU_ записей"
+
+msgid "Search:"
+msgstr "Поиск:"
+
+msgid "No matching records found"
+msgstr "Совпадений не найдено"
+
+msgid "First"
+msgstr "Первая"
+
+msgid "Last"
+msgstr "Последняя"
+
+msgid "Activate to sort column ascending"
+msgstr "Нажмите для сортировки по возрастанию"
+
+msgid "Activate to sort column descending"
+msgstr "Нажмите для сортировки по убыванию"
+
+msgid "Alert ID"
+msgstr "ID оповещения"
+
+msgid "Alert UUID"
+msgstr "UUID оповещения"
+
+msgid "Asset Description"
+msgstr "Описание актива"
+
+msgid "Asset Domain"
+msgstr "Домен актива"
+
+msgid "Asset ID"
+msgstr "ID актива"
+
+msgid "Asset IP"
+msgstr "IP актива"
+
+msgid "Asset Name"
+msgstr "Имя актива"
+
+msgid "Asset Type Description"
+msgstr "Описание типа актива"
+
+msgid "Asset Type ID"
+msgstr "ID типа актива"
+
+msgid "Asset Type Name"
+msgstr "Название типа актива"
+
+msgid "Asset UUID"
+msgstr "UUID актива"
+
+msgid "Classification ID"
+msgstr "ID классификации"
+
+msgid "Classification Name"
+msgstr "Название классификации"
+
+msgid "Classification Name (Expanded)"
+msgstr "Полное название классификации"
+
+msgid "Client ID"
+msgstr "ID заказчика"
+
+msgid "Client Name"
+msgstr "Название заказчика"
+
+msgid "Close Date"
+msgstr "Дата закрытия"
+
+msgid "Closed By User ID"
+msgstr "ID закрывшего пользователя"
+
+msgid "Compromise Status ID"
+msgstr "ID статуса компрометации"
+
+msgid "Context"
+msgstr "Контекст"
+
+msgid "Created At"
+msgstr "Дата создания"
+
+msgid "Creation Time"
+msgstr "Время создания"
+
+msgid "Creator ID"
+msgstr "ID создателя"
+
+msgid "Creator Name"
+msgstr "Имя создателя"
+
+msgid "Creator Username"
+msgstr "Логин создателя"
+
+msgid "Date Added"
+msgstr "Дата добавления"
+
+msgid "Date Updated"
+msgstr "Дата обновления"
+
+msgid "Delete this dashboard? This action cannot be undone."
+msgstr "Удалить эту панель? Это действие нельзя отменить."
+
+msgid "Directory ID"
+msgstr "ID каталога"
+
+msgid "Event Added"
+msgstr "Дата добавления события"
+
+msgid "Event Color"
+msgstr "Цвет события"
+
+msgid "Event Content"
+msgstr "Содержимое события"
+
+msgid "Event Date"
+msgstr "Дата события"
+
+msgid "Event Date (With TZ)"
+msgstr "Дата события с часовым поясом"
+
+msgid "Event ID"
+msgstr "ID события"
+
+msgid "Event Raw"
+msgstr "Исходные данные события"
+
+msgid "IOC ID"
+msgstr "ID индикатора компрометации"
+
+msgid "IOC UUID"
+msgstr "UUID индикатора компрометации"
+
+msgid "IOCs"
+msgstr "Индикаторы компрометации"
+
+msgid "IRIS Creation Time:"
+msgstr "Время создания в IRIS:"
+
+msgid "Icon (Compromised)"
+msgstr "Значок скомпрометированного актива"
+
+msgid "Icon (Not Compromised)"
+msgstr "Значок нескомпрометированного актива"
+
+msgid "In Graph"
+msgstr "На графе"
+
+msgid "In Summary"
+msgstr "В сводке"
+
+msgid "Indicator Description"
+msgstr "Описание индикатора"
+
+msgid "Indicator Tags"
+msgstr "Теги индикатора"
+
+msgid "Indicator Type ID"
+msgstr "ID типа индикатора"
+
+msgid "Indicator Value"
+msgstr "Значение индикатора"
+
+msgid "Initial Date"
+msgstr "Начальная дата"
+
+msgid "Is Flagged"
+msgstr "Отмечен флагом"
+
+msgid "Last Update"
+msgstr "Последнее обновление"
+
+msgid "MISP Reference"
+msgstr "Ссылка MISP"
+
+msgid "No description provided"
+msgstr "Описание не указано"
+
+msgid "No module available"
+msgstr "Нет доступных модулей"
+
+msgid "No source provided"
+msgstr "Источник не указан"
+
+msgid "No title provided"
+msgstr "Заголовок не указан"
+
+msgid "No valid link provided"
+msgstr "Корректная ссылка не указана"
+
+msgid "Note Content"
+msgstr "Содержимое заметки"
+
+msgid "Note ID"
+msgstr "ID заметки"
+
+msgid "Note Title"
+msgstr "Заголовок заметки"
+
+msgid "Note UUID"
+msgstr "UUID заметки"
+
+msgid "Open Date"
+msgstr "Дата открытия"
+
+msgid "Opened By User ID"
+msgstr "ID открывшего пользователя"
+
+msgid "Owner ID"
+msgstr "ID ответственного"
+
+msgid "Owner Name"
+msgstr "Имя ответственного"
+
+msgid "Owner Username"
+msgstr "Логин ответственного"
+
+msgid "Raw Alert"
+msgstr "Исходные данные оповещения"
+
+msgid "Resolution Status ID"
+msgstr "ID результата обработки"
+
+msgid "Resolution Status Name"
+msgstr "Название результата обработки"
+
+msgid "Review Status ID"
+msgstr "ID статуса проверки"
+
+msgid "Reviewer ID"
+msgstr "ID проверяющего"
+
+msgid "Reviewer Name"
+msgstr "Имя проверяющего"
+
+msgid "Reviewer Username"
+msgstr "Логин проверяющего"
+
+msgid "Set in progress"
+msgstr "Перевести в работу"
+
+msgid "Severity ID"
+msgstr "ID критичности"
+
+msgid "Severity Name"
+msgstr "Название критичности"
+
+msgid "Source Event Time"
+msgstr "Время события источника"
+
+msgid "Source Event Time:"
+msgstr "Время события источника:"
+
+msgid "Source Link:"
+msgstr "Ссылка источника:"
+
+msgid "Source Reference:"
+msgstr "Идентификатор источника:"
+
+msgid "Source:"
+msgstr "Источник:"
+
+msgid "State Description"
+msgstr "Описание состояния"
+
+msgid "State ID"
+msgstr "ID состояния"
+
+msgid "State Name"
+msgstr "Название состояния"
+
+msgid "Status ID"
+msgstr "ID статуса"
+
+msgid "Status Name"
+msgstr "Название статуса"
+
+msgid "TLP ID"
+msgstr "ID уровня TLP"
+
+msgid "Tag Creation Date"
+msgstr "Дата создания тега"
+
+msgid "Tag ID"
+msgstr "ID тега"
+
+msgid "Tag Namespace"
+msgstr "Пространство имён тега"
+
+msgid "Tag Title"
+msgstr "Название тега"
+
+msgid "Task Description"
+msgstr "Описание задачи"
+
+msgid "Task UUID"
+msgstr "UUID задачи"
+
+msgid "Toggle Raw Alert"
+msgstr "Показать/скрыть исходные данные оповещения"
+
+msgid "Type Description"
+msgstr "Описание типа"
+
+msgid "Type ID"
+msgstr "ID типа"
+
+msgid "Type Name"
+msgstr "Название типа"
+
+msgid "Type Taxonomy"
+msgstr "Структура типа"
+
+msgid "Updated At"
+msgstr "Дата обновления"
+
+msgid "Updated By User ID"
+msgstr "ID обновившего пользователя"
+
+msgid "Validation Expectation"
+msgstr "Ожидаемый результат проверки"
+
+msgid "Validation Regex"
+msgstr "Регулярное выражение проверки"
+
+msgid "See less"
+msgstr "Свернуть"
+
+msgid "See more"
+msgstr "Подробнее"

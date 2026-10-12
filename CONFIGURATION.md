@@ -43,5 +43,5 @@ The POSTGRES section has the following configurations:
 
 ## IRIS
 
-- `IRIS_SECRET_KEY` - The secret key used by Flask.
+- `IRIS_SECRET_KEY` - The secret key used to sign session cookies and CSRF tokens.
 - `IRIS_SECURITY_PASSWORD_SALT` - ??

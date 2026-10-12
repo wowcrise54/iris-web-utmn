@@ -21,23 +21,35 @@
 
 
 
-target=${1-:app}
+set -euo pipefail
 
-if [[ -z $LOG_LEVEL ]]; then
-  LOG_LEVEL='info'
-fi
+target=${1:-iriswebapp}
+LOG_LEVEL=${LOG_LEVEL:-info}
 
-printf "Running ${target} ...\n"
+printf 'Running %s ...\n' "$target"
 
-if [[ "${target}" == iris-worker ]] ; then
-    if [[ -z $NUMBER_OF_CHILD ]]; then
-        celery -A app.celery worker -E -B -l $LOG_LEVEL &
+# The in-place updater deliberately stops and replaces the service process.
+# Retain the container supervisor while that happens, and forward Docker stop.
+shutdown() {
+    trap - TERM INT
+    pkill -TERM -P "$$" || true
+    wait || true
+    exit 0
+}
+trap shutdown TERM INT
+
+if [[ "$target" == iris-worker ]]; then
+    if [[ -n "${NUMBER_OF_CHILD:-}" ]]; then
+        celery -A app.celery worker -c "$NUMBER_OF_CHILD" -E -B -l "$LOG_LEVEL" &
     else
-        celery -A app.celery worker -c $NUMBER_OF_CHILD -E -B -l $LOG_LEVEL &
+        celery -A app.celery worker -E -B -l "$LOG_LEVEL" &
     fi
 else
-    gunicorn app:app --bind 0.0.0.0:8000 --timeout 180 --worker-connections 1000 --threads 100 -w 1 --log-level=info &
+    uvicorn run:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 180 --log-level "$LOG_LEVEL" &
 fi
 
-while true; do sleep 2; done
+while true; do
+    sleep 2 &
+    wait $! || true
+done
 

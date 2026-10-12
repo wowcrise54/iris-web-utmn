@@ -1,0 +1,492 @@
+{% extends "layouts/default.html" %}
+{% block title %}{{ _("Custom Dashboards") }}{% endblock title %}
+
+{% block stylesheets %}
+  <link rel="stylesheet" href="/static/assets/css/select2.css">
+  <link rel="stylesheet" href="/static/assets/css/custom_dashboards.css?v=2026042701">
+{% endblock stylesheets %}
+
+{% block content %}
+<div class="page-inner" id="customDashboardsRoot">
+  {{ form.hidden_tag() }}
+  <input type="hidden" id="currentCaseId" value="{{ case_id }}">
+  <input type="hidden" id="dashboardCanShare" value="{% if can_share %}1{% else %}0{% endif %}">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">{{ _("Custom Dashboards") }}</h3>
+    <div class="btn-group">
+      <button class="btn btn-outline-secondary btn-sm" id="dashboardHelpBtn" type="button"><i class="fas fa-question-circle mr-2"></i> {{ _("Help") }}</button>
+      <button class="btn btn-primary btn-sm" id="createDashboardBtn" type="button"><i class="fas fa-plus mr-2"></i> {{ _("New dashboard") }}</button>
+      <button class="btn btn-primary btn-sm" id="dashboardJsonImportBtn" type="button"><i class="fas fa-file-import mr-2"></i> {{ _("Import") }}</button>
+    </div>
+  </div>
+
+  <div class="card mb-4" id="dashboardFiltersCard">
+    <div class="card-header">
+      <h5 class="mb-0">{{ _("Filters") }}</h5>
+    </div>
+    <div class="card-body">
+      <form id="dashboardFilterForm" autocomplete="off">
+        <div class="row">
+            <div class="form-group col-md-4 col-xl-3">
+                <label for="dashboardSelector" class="text-uppercase text-muted small font-weight-bold">{{ _("Saved dashboards") }}</label>
+                <select class="custom-select" id="dashboardSelector">
+                <option value="">{{ _("Select a dashboard") }}</option>
+                </select>
+            </div>
+            <div class="text-muted small d-none" id="dashboardSelectorEmptyState">{{ _("No custom dashboards yet. Create one to get started.") }}</div>
+          <div class="form-group col-md-4 col-xl-3">
+            <label for="dashboardStart" class="small text-muted text-uppercase">{{ _("Start") }}</label>
+            <input type="datetime-local" class="form-control" id="dashboardStart" name="start">
+          </div>
+          <div class="form-group col-md-4 col-xl-3">
+            <label for="dashboardEnd" class="small text-muted text-uppercase">{{ _("End") }}</label>
+            <input type="datetime-local" class="form-control" id="dashboardEnd" name="end">
+          </div>
+          <div class="form-group col-md-4 col-xl-3 d-flex align-items-end">
+            <div class="w-100 mb-1">
+              <div class="btn-group btn-group-sm w-100" role="group" aria-label="{{ _('Filter actions') }}">
+                <button type="submit" class="btn btn-primary" id="dashboardApplyBtn">{{ _("Apply") }}</button>
+                <button type="button" class="btn btn-outline-secondary" id="dashboardResetBtn">{{ _("Reset") }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+  <div class="preset-range-container bg-light rounded px-2 py-2 mt-2">
+          <div class="d-flex align-items-center mb-3">
+            <h6 class="mb-0 text-uppercase text-muted small">{{ _("Preset ranges") }}</h6>
+          </div>
+          <div class="d-flex flex-wrap align-items-center">
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last15m" data-minutes="15">{{ _("Last 15 minutes") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last1h" data-hours="1">{{ _("Last hour") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last12h" data-hours="12">{{ _("Last 12 hours") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last7d" data-days="7">{{ _("Last 7 days") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last30d" data-days="30">{{ _("Last 30 days") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last90d" data-days="90">{{ _("Last 90 days") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last6m" data-months="6">{{ _("Last 6 months") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last1y" data-years="1">{{ _("Last 1 year") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last2y" data-years="2">{{ _("Last 2 years") }}</button>
+            <button type="button" class="btn btn-outline-primary btn-sm rounded-pill shadow-sm mr-2 mb-2 dashboard-quick-range" data-range-key="last5y" data-years="5">{{ _("Last 5 years") }}</button>
+          </div>
+        </div>
+      </form>
+      <div class="text-danger small mt-2 d-none" id="dashboardFilterError"></div>
+    </div>
+  </div>
+
+  <div class="card card-transparent mb-4" id="dashboardViewerCard">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <div class="d-flex align-items-center">
+          <h5 class="card-title mb-0" id="selectedDashboardName">{{ _("Select a dashboard") }}</h5>
+          <span class="badge badge-primary ml-2 d-none" id="selectedDashboardSharedBadge">{{ _("Shared") }}</span>
+        </div>
+        <small class="text-muted" id="dashboardViewerRange">--</small>
+      </div>
+      <div class="d-flex align-items-center">
+        <div class="custom-control custom-checkbox mr-3 mb-0">
+          <input type="checkbox" class="custom-control-input" id="dashboardAutoRefresh">
+          <label class="custom-control-label" for="dashboardAutoRefresh">{{ _("Auto-refresh") }}</label>
+        </div>
+        <small class="text-muted mb-0" id="dashboardViewerStatus">{{ _("Idle") }}</small>
+            <button type="button" class="btn btn-sm btn-outline-dark ml-2" id="editDashboardBtn">{{ _("Edit") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-dark ml-2" id="dashboardJsonExportBtn">{{ _("Export") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-danger ml-2" id="removeDashboardBtn">{{ _("Delete") }}</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="text-center my-4 d-none" id="dashboardViewerLoading">{{ _("Loading...") }}</div>
+      <div class="text-center text-muted" id="dashboardViewerEmptyState">{{ _("Choose a dashboard to display its widgets.") }}</div>
+      <div class="row" id="dashboardWidgets"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="dashboardEditorModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-xxl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dashboardEditorTitle">{{ _("New dashboard") }}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="{{ _('Close') }}">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form id="dashboardEditorForm">
+          <input type="hidden" id="dashboardId" value="">
+          <div class="form-group">
+            <label for="dashboardName">{{ _("Name") }}</label>
+            <input type="text" class="form-control" id="dashboardName" required>
+          </div>
+          <div class="form-group">
+            <label for="dashboardDescription">{{ _("Description") }}</label>
+            <textarea class="form-control" id="dashboardDescription" rows="2"></textarea>
+          </div>
+          <div class="form-group form-check" id="dashboardShareGroup">
+            <input type="checkbox" class="form-check-input" id="dashboardIsShared"{% if not can_share %} disabled{% endif %}>
+            <label class="form-check-label" for="dashboardIsShared">{{ _("Share with team") }}</label>
+            {% if not can_share %}
+              <small class="form-text text-muted">{{ _("You do not have permission to share dashboards.") }}</small>
+            {% endif %}
+          </div>
+          <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 mb-3" id="dashboardEditorModeControls">
+            <div>
+              <h6 class="mb-0 text-uppercase text-muted small">{{ _("Editor Mode") }}</h6>
+              <small class="text-muted">{{ _("Switch between the visual builder and raw JSON at any time.") }}</small>
+            </div>
+            <div class="btn-group btn-group-sm" id="dashboardEditorModeToggle" role="group" aria-label="{{ _('Dashboard editor mode') }}">
+              <button type="button" class="btn btn-primary" data-mode="builder" id="dashboardModeBuilderBtn"><i class="fas fa-sliders-h mr-1"></i> {{ _("Visual Builder") }}</button>
+              <button type="button" class="btn btn-outline-secondary" data-mode="json" id="dashboardModeJsonBtn"><i class="fas fa-code mr-1"></i> {{ _("Raw JSON") }}</button>
+            </div>
+          </div>
+
+          <div id="dashboardBuilderPanel" class="dashboard-builder-panel">
+            <div class="dashboard-builder-layout">
+              <aside class="dashboard-builder-rail" id="dashboardBuilderRail">
+                <div class="dashboard-builder-rail-header">
+                  <span class="dashboard-builder-rail-title">{{ _("Layout") }}</span>
+                  <button type="button" class="btn btn-primary btn-sm" id="addSectionBtn" title="{{ _('Add section') }}">
+                    <i class="fas fa-plus"></i>
+                  </button>
+                </div>
+                <div class="dashboard-builder-rail-list" id="dashboardBuilderRailList"></div>
+                <div class="dashboard-builder-rail-empty d-none" id="dashboardBuilderRailEmpty">
+                  <p class="small text-muted mb-2">{{ _("No sections yet.") }}</p>
+                  <button type="button" class="btn btn-outline-primary btn-sm" id="dashboardBuilderRailEmptyAddBtn">
+                    <i class="fas fa-plus mr-1"></i>{{ _("Add a section") }}
+                  </button>
+                </div>
+              </aside>
+
+              <section class="dashboard-builder-editor" id="dashboardBuilderEditor">
+                <div class="dashboard-builder-editor-empty" id="dashboardBuilderEditorEmpty">
+                  <div class="dashboard-builder-editor-empty-inner">
+                    <i class="fas fa-th-large dashboard-builder-editor-empty-icon"></i>
+                    <h6 class="mb-1">{{ _("Pick a section or widget to edit") }}</h6>
+                    <p class="small text-muted mb-3">
+                      {{ _("Use the panel on the left to navigate. Each widget pulls data from a table,\\n                      optionally aggregates and filters it, then renders as the chart of your choice.") }}
+                    </p>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="dashboardBuilderEditorEmptyAddBtn">
+                      <i class="fas fa-plus mr-1"></i>{{ _("Add a section") }}
+                    </button>
+                  </div>
+                </div>
+                <div class="dashboard-builder-editor-content" id="dashboardBuilderEditorContent"></div>
+              </section>
+            </div>
+
+            <div class="d-none" id="dashboardBuilderEmptyHint"></div>
+            <div class="d-none" id="dashboardSectionsContainer"></div>
+          </div>
+
+          <div id="dashboardJsonPanel" class="dashboard-json-panel d-none">
+            <div class="border rounded" id="dashboardEditorJson" style="min-height: 320px; height: 320px;"></div>
+            <textarea class="form-control d-none" id="dashboardEditorJsonTextarea" rows="12" spellcheck="false"></textarea>
+            <small class="form-text text-muted">{{ _("Edit the full dashboard payload. Switch back to the visual builder to continue using the guided UI.") }}</small>
+          </div>
+
+          <datalist id="dashboardBuilderColumnOptions">
+            <option value="alerts.alert_id">
+            <option value="alerts.alert_uuid">
+            <option value="alerts.alert_title">
+            <option value="alerts.alert_source">
+            <option value="alerts.alert_source_ref">
+            <option value="alerts.alert_description">
+            <option value="alerts.alert_creation_time">
+            <option value="alerts.alert_source_event_time">
+            <option value="alerts.alert_customer_id">
+            <option value="alerts.alert_resolution_status_id">
+            <option value="alerts.alert_status_id">
+            <option value="alerts.alert_severity_id">
+            <option value="alerts.alert_classification_id">
+            <option value="client.client_id">
+            <option value="client.name">
+            <option value="alert_resolution_status.resolution_status_id">
+            <option value="alert_resolution_status.resolution_status_name">
+            <option value="alert_status.status_id">
+            <option value="alert_status.status_name">
+            <option value="severities.severity_id">
+            <option value="severities.severity_name">
+            <option value="case_classification.id">
+            <option value="case_classification.name">
+            <option value="case_classification.name_expanded">
+            <option value="cases.case_id">
+            <option value="cases.name">
+            <option value="cases.owner_id">
+            <option value="cases.creator_id">
+            <option value="cases.reviewer_id">
+            <option value="cases.review_status_id">
+            <option value="cases.state_id">
+            <option value="cases.status_id">
+            <option value="cases.severity_id">
+            <option value="cases.classification_id">
+            <option value="cases.client_id">
+            <option value="cases.open_date">
+            <option value="cases.close_date">
+            <option value="cases.initial_date">
+            <option value="case_state.state_id">
+            <option value="case_state.state_name">
+            <option value="case_reviewer.id">
+            <option value="case_reviewer.username">
+            <option value="case_reviewer.name">
+            <option value="review_status.id">
+            <option value="review_status.status_name">
+          </datalist>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ _("Close") }}</button>
+        <button type="button" class="btn btn-danger" id="dashboardDeleteBtn" style="display:none;">{{ _("Delete") }}</button>
+        <button type="button" class="btn btn-primary" id="dashboardSaveBtn">{{ _("Save") }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="dashboardHelpModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ _("Custom Dashboard Reference") }}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="{{ _('Close') }}">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Overview") }}</h6>
+          <p class="mb-2">{{ _("Custom dashboards are composed of widgets. Each widget definition includes") }} <code>name</code>, <code>chart_type</code>, <code>fields</code>{{ _(", optional") }} <code>filters</code>, <code>group_by</code>, <code>time_bucket</code>{{ _(", and an") }} <code>options</code> {{ _("object.") }}</p>
+          <p class="mb-2">{{ _("Use the visual builder to configure widgets interactively, or paste JSON into the advanced editor. This reference lists every supported field, option, and data source.") }}</p>
+          <ul class="small mb-0">
+            <li><code>fields</code> {{ _("(required): controls what data is selected and how it is aggregated.") }}</li>
+            <li><code>filters</code> {{ _("(optional): applies global filters to the widget.") }}</li>
+            <li><code>group_by</code> {{ _("(optional): sets grouping columns for aggregated widgets and tables.") }}</li>
+            <li><code>time_bucket</code> {{ _("(optional): normalizes time-series groupings to the chosen bucket.") }}</li>
+            <li><code>options</code> {{ _("(optional): formatting, layout, and widget-specific settings.") }}</li>
+          </ul>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Field attributes") }}</h6>
+          <p class="mb-2">{{ _("Each entry inside") }} <code>fields</code> {{ _("supports the keys below:") }}</p>
+          <ul class="small mb-0">
+            <li><code>table</code> {{ _("(required): allowed table key from the reference list.") }}</li>
+            <li><code>column</code> {{ _("(required): column name from that table.") }}</li>
+            <li><code>aggregation</code> {{ _("(optional): aggregation to apply. Leave empty to return raw values.") }}</li>
+            <li><code>alias</code> {{ _("(optional): name used when referencing the aggregated value in options.") }}</li>
+            <li><code>filter</code> {{ _("(optional): per-field filter object using") }} <code>table</code>, <code>column</code>, <code>operator</code>{{ _(", and") }} <code>value</code>.</li>
+          </ul>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Available aggregations") }}</h6>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 160px;">{{ _("Value") }}</th>
+                  <th>{{ _("Label") }}</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardHelpAggregationBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Filter operators") }}</h6>
+          <p class="mb-2">{{ _("Filters (both widget-level and per-field) support the operators below.") }}</p>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 160px;">{{ _("Value") }}</th>
+                  <th>{{ _("Description") }}</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardHelpOperatorBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Case outcomes") }}</h6>
+          <p class="mb-2">{{ _("Use") }} <code>cases.status_id</code> {{ _("to filter by case outcome. The visual builder shows a dropdown automatically; if you edit JSON directly, use the integer values below.") }}</p>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 100px;">{{ _("Value") }}</th>
+                  <th>{{ _("Outcome") }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><code>0</code></td><td>{{ _("Unknown") }}</td></tr>
+                <tr><td><code>1</code></td><td>{{ _("False positive") }}</td></tr>
+                <tr><td><code>2</code></td><td>{{ _("True positive with impact") }}</td></tr>
+                <tr><td><code>3</code></td><td>{{ _("Not applicable") }}</td></tr>
+                <tr><td><code>4</code></td><td>{{ _("True positive without impact") }}</td></tr>
+                <tr><td><code>5</code></td><td>{{ _("Legitimate") }}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Allowed tables &amp; columns") }}</h6>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 220px;">{{ _("Table") }}</th>
+                  <th>{{ _("Columns") }}</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardHelpTablesBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Field example") }}</h6>
+          <pre class="bg-light p-2"><code>[
+  {
+    "table": "alerts",
+    "column": "alert_id",
+    "aggregation": "count",
+    "alias": "alert_count"
+  },
+  {
+    "table": "client",
+    "column": "name",
+    "alias": "client_name"
+  }
+]</code></pre>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Chart &amp; time settings") }}</h6>
+          <div class="row">
+            <div class="col-md-6">
+              <h6 class="dashboard-help-subheading">{{ _("Chart types") }}</h6>
+              <ul class="list-unstyled small mb-3" id="dashboardHelpChartTypesList"></ul>
+            </div>
+            <div class="col-md-6">
+              <h6 class="dashboard-help-subheading">{{ _("Time buckets") }}</h6>
+              <ul class="list-unstyled small mb-3" id="dashboardHelpTimeBucketsList"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Display presets") }}</h6>
+          <div class="row">
+            <div class="col-md-4">
+              <h6 class="dashboard-help-subheading">{{ _("Display modes") }}</h6>
+              <ul class="list-unstyled small mb-3" id="dashboardHelpDisplayModesList"></ul>
+            </div>
+            <div class="col-md-4">
+              <h6 class="dashboard-help-subheading">{{ _("Legend positions") }}</h6>
+              <ul class="list-unstyled small mb-3" id="dashboardHelpLegendPositionsList"></ul>
+            </div>
+            <div class="col-md-4">
+              <h6 class="dashboard-help-subheading">{{ _("Widget widths") }}</h6>
+              <ul class="list-unstyled small mb-3" id="dashboardHelpWidgetSizesList"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Options reference") }}</h6>
+          <p class="mb-2">{{ _("Keys inside the") }} <code>options</code> {{ _("object (and related widget metadata) are described below.") }}</p>
+          <div class="table-responsive mb-3">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th style="width: 110px;">{{ _("Scope") }}</th>
+                  <th style="width: 220px;">{{ _("Key") }}</th>
+                  <th>{{ _("Description") }}</th>
+                  <th style="width: 200px;">{{ _("Example") }}</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardHelpOptionBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="dashboard-help-section">
+          <h6 class="dashboard-help-heading">{{ _("Example: False Positive Rate KPI") }}</h6>
+  <pre class="bg-light p-2"><code>{
+  "name": "False Positive Rate KPI",
+  "chart_type": "percentage",
+  "fields": [
+    {
+      "table": "alerts",
+      "column": "alert_id",
+      "aggregation": "count",
+      "alias": "total_alerts"
+    },
+    {
+      "table": "alerts",
+      "column": "alert_id",
+      "aggregation": "count",
+      "alias": "false_positive_alerts",
+      "filter": {
+        "table": "alert_resolution_status",
+        "column": "resolution_status_name",
+        "operator": "eq",
+        "value": "False Positive"
+      }
+    }
+  ],
+  "options": {
+    "widget_size": "col-lg-4",
+    "display_mode": "number_percentage",
+    "percentage_numerator": "false_positive_alerts",
+    "percentage_denominator": "total_alerts",
+    "thresholds": [
+      {"mode": "above", "value": 40, "color": "#dc3545", "label": "Critical"},
+      {"mode": "between", "value": 20, "end_value": 40, "color": "#fd7e14", "label": "Monitor"},
+      {"mode": "below", "value": 20, "color": "#1cc88a", "label": "Healthy"}
+    ]
+  }
+}</code></pre>
+    </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">{{ _("Close") }}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="dashboardJsonModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ _("Dashboard JSON Tools") }}</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="{{ _('Close') }}">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">{{ _("Import, export, or edit dashboards directly via JSON. Load an existing dashboard, update it, or paste a new configuration below.") }}</p>
+  <div id="dashboardJsonEditor" class="border rounded d-none" style="min-height: 320px; height: 320px;"></div>
+  <textarea class="form-control" id="dashboardJsonTextarea" rows="12" spellcheck="false"></textarea>
+        <small class="form-text text-muted">{{ _("Expected keys:") }} <code>name</code>, <code>description</code>, <code>is_shared</code>{{ _(", and") }} <code>widgets</code>{{ _(". Widget definitions mirror the examples in the help modal.") }}</small>
+        <input type="file" id="dashboardJsonFileInput" accept="application/json" class="d-none">
+      </div>
+      <div class="modal-footer flex-wrap">
+        <div class="btn-group mr-auto mb-2" role="group" aria-label="{{ _('JSON actions') }}">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardJsonDownloadBtn">{{ _("Download") }}</button>
+        </div>
+        <div class="btn-group ml-2 mb-2" role="group" aria-label="{{ _('JSON actions') }}">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardJsonImportFileBtn">{{ _("Load from file") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dashboardJsonCreateBtn">{{ _("Import as new") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-success" id="dashboardJsonUpdateBtn">{{ _("Update current dashboard") }}</button>
+        </div>
+        <div class="btn-group ml-auto mb-2" role="group" aria-label="{{ _('JSON actions') }}">
+          <button type="button" class="btn btn-sm btn-outline-danger" id="dashboardJsonClearBtn">{{ _("Clear") }}</button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-dismiss="modal">{{ _("Close") }}</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock content %}
+
+{% block javascripts %}
+  <script src="/static/assets/js/plugin/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+  <script src="/static/assets/js/plugin/ace/src-noconflict/ext-language_tools.js" type="text/javascript" charset="utf-8"></script>
+  <script src="/static/assets/js/core/charts.js"></script>
+  <script src="/static/assets/js/iris/custom_dashboards/custom_dashboards.js?v=2026042701"></script>
+{% endblock javascripts %}

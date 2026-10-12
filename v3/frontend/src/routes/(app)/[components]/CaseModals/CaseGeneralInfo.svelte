@@ -1,0 +1,107 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { getContext, onMount } from 'svelte';
+	import type { Case } from '$lib/types/resources/case';
+	import type { RequestResponse } from '$lib/services/api.service';
+	import { type User, UsersService } from '$lib/services/users.service';
+	import {
+		CaseClassificationsService,
+		type CaseClassification
+	} from '$lib/services/case-classifications.service';
+	import { CASES_CTX, type CasesContext } from '$lib/contexts/cases.context.svelte';
+	import { TagDisplay } from '$lib/components/common/tag';
+	import MarkDownPreview from '$lib/components/common/MarkDown/MarkDownPreview.svelte';
+
+	const cases = getContext<CasesContext>(CASES_CTX);
+	const currentCase = $derived<Case | null>(cases.currentCase() ?? null);
+
+	let openingUser = $state<User>();
+	let classifications = $state<CaseClassification[]>([]);
+
+	onMount(async () => {
+		if (currentCase?.user_id) {
+			const res = (await UsersService.get(currentCase.user_id))
+				.data as unknown as RequestResponse<User>;
+			openingUser = res.data as User;
+		}
+	});
+
+	onMount(async () => {
+		// Paginated v2 list: rows sit under the `{ data: [...] }` envelope.
+		const res = await CaseClassificationsService.list();
+		const envelope = res.data as unknown as RequestResponse<CaseClassification[]> | null;
+		classifications = (envelope?.data ?? []) as CaseClassification[];
+	});
+
+	const classificationName = $derived.by(() => {
+		const id = currentCase?.classification_id;
+		if (id === null || id === undefined) return null;
+		const hit = classifications.find((k) => k.id === id);
+		return hit?.name_expanded || hit?.name || `#${id}`;
+	});
+
+	// The /api/v2/cases response returns tags as objects but without a stable
+	// tag_id (sometimes just `id`, sometimes missing entirely). Flatten to a
+	// CSV string and let TagDisplay's stringToTags normalize it — that path
+	// generates synthetic negative tag_ids and guarantees unique keys.
+	const tagsCsv = $derived(
+		(currentCase?.tags ?? [])
+			.map((t) => (typeof t === 'string' ? t : t.tag_title))
+			.filter(Boolean)
+			.join(',')
+	);
+	const hasTags = $derived(tagsCsv.length > 0);
+
+	const closingNote = $derived(currentCase?.closing_note?.trim() ?? '');
+</script>
+
+<dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+	{#snippet row(label: string, value: unknown)}
+		{#if value !== null && value !== undefined && value !== ''}
+			<div class="flex items-baseline gap-2 border-b border-border/40 py-1.5">
+				<dt class="w-28 shrink-0 text-muted-foreground">{label}</dt>
+				<dd class="min-w-0 flex-1 truncate text-foreground" title={String(value)}>
+					{value}
+				</dd>
+			</div>
+		{/if}
+	{/snippet}
+
+	{@render row('Case name', currentCase?.case_name)}
+	{@render row('Customer', currentCase?.case_customer?.customer_name)}
+	{@render row('Case ID', currentCase?.case_id)}
+	{@render row('SOC ID', currentCase?.case_soc_id)}
+	{@render row('UUID', currentCase?.case_uuid)}
+	{@render row('Classification', classificationName)}
+	{@render row('State', currentCase?.state?.state_name)}
+	{@render row('Severity', currentCase?.severity?.severity_name)}
+	{@render row('Open date', currentCase?.open_date)}
+	{@render row('Opening user', openingUser?.user_name)}
+	{@render row('Owner', currentCase?.owner?.user_name)}
+
+	{#if hasTags}
+		<div class="flex items-baseline gap-2 border-b border-border/40 py-1.5 sm:col-span-2">
+			<dt class="w-28 shrink-0 text-muted-foreground">{irisT("Tags", $irisLocale)}</dt>
+			<dd class="min-w-0 flex-1">
+				<TagDisplay tags={tagsCsv} size="small" />
+			</dd>
+		</div>
+	{/if}
+
+	<!--
+	  Deliberately not the `row` snippet above: that one is single-line and
+	  `truncate`d, which would swallow all but the first line of a note that
+	  is routinely a multi-line post-mortem. Rendered as markdown to match
+	  how the cases-list overview already renders this same field.
+	-->
+	{#if closingNote}
+		<div class="flex flex-col gap-1 border-b border-border/40 py-1.5 sm:col-span-2">
+			<dt class="text-muted-foreground">{irisT("Closing note", $irisLocale)}</dt>
+			<dd class="min-w-0">
+				<MarkDownPreview markdown={closingNote} />
+			</dd>
+		</div>
+	{/if}
+</dl>

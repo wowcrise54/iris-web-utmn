@@ -1,0 +1,211 @@
+<!--
+  Inline multi-select user picker.
+
+  Simpler than `CaseScopePicker` — the workspace user list is small and
+  rarely changes, so we fetch it once into a client-side cache and
+  filter against it locally. No pagination, no debounced server calls.
+
+  Trigger summary follows the same conventions as `CaseScopePicker`:
+    • `[]`  → "All users"
+    • `1`   → that user's name
+    • `2`   → both names
+    • `3+`  → "N users selected"
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { CheckIcon, SearchIcon, UserIcon } from 'lucide-svelte';
+	import * as Popover from '$lib/components/ui/popover';
+	import { Button } from '$lib/components/ui/button';
+	import Input from '$lib/components/ui/input/input.svelte';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { UsersService, type MentionableUser } from '$lib/services/users.service';
+
+	type Props = {
+		// Stringified user ids currently in scope; `[]` ≡ "all".
+		values: string[];
+		// Optional label cache keyed by stringified user id, so a parent
+		// hydrating from URL state can show friendly labels before the
+		// fetch lands.
+		labels?: Record<string, string>;
+		onChange: (ids: string[], labels: Record<string, string>) => void;
+		triggerClass?: string;
+	};
+
+	let { values, labels = {}, onChange, triggerClass = '' }: Props = $props();
+
+	let open = $state(false);
+	let users = $state<MentionableUser[]>([]);
+	let loading = $state(false);
+	let error = $state<string | null>(null);
+	let searchText = $state('');
+
+	let didLoad = false;
+
+	const load = async () => {
+		if (didLoad) return;
+		loading = true;
+		error = null;
+		try {
+			// `/users/mentionable`, not `/manage/users`: this picker is used
+			// on the activities page, which any holder of `activities_read`
+			// can reach — the admin-only user list 403s for them and the
+			// filter comes up empty. The response wraps its payload as
+			// `{ data: MentionableUser[] }`; the mention-list loader in
+			// MarkDownEditor does the same unwrap dance.
+			const res = await UsersService.listMentionable();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const inner = (res?.data as any)?.data;
+			if (Array.isArray(inner)) {
+				users = inner as MentionableUser[];
+			} else if (Array.isArray(res?.data)) {
+				users = res.data as unknown as MentionableUser[];
+			} else {
+				users = [];
+			}
+			didLoad = true;
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			loading = false;
+		}
+	};
+
+	$effect(() => {
+		if (open) void load();
+	});
+
+	const filtered = $derived.by(() => {
+		const q = searchText.trim().toLowerCase();
+		if (!q) return users;
+		return users.filter(
+			(u) => u.user_name.toLowerCase().includes(q) || u.user_login.toLowerCase().includes(q)
+		);
+	});
+
+	const isSelected = (id: number) => values.includes(String(id));
+
+	const toggle = (u: MentionableUser) => {
+		const key = String(u.user_id);
+		let nextIds: string[];
+		const nextLabels = { ...labels, [key]: u.user_name };
+		if (values.includes(key)) {
+			nextIds = values.filter((v) => v !== key);
+		} else {
+			nextIds = [...values, key];
+		}
+		onChange(nextIds, nextLabels);
+	};
+
+	const selectAllVisible = () => {
+		const nextLabels = { ...labels };
+		const merged = new Set(values);
+		for (const u of filtered) {
+			const key = String(u.user_id);
+			merged.add(key);
+			nextLabels[key] = u.user_name;
+		}
+		onChange([...merged], nextLabels);
+	};
+
+	const deselectAllVisible = () => {
+		const removeSet = new Set(filtered.map((u) => String(u.user_id)));
+		const next = values.filter((v) => !removeSet.has(v));
+		onChange(next, labels);
+	};
+
+	const clearScope = () => onChange([], labels);
+
+	const summary = $derived.by(() => {
+		if (values.length === 0) return 'All users';
+		if (values.length === 1) return labels[values[0]] ?? `User #${values[0]}`;
+		if (values.length === 2) {
+			return values.map((id) => labels[id] ?? `#${id}`).join(', ');
+		}
+		return `${values.length} users selected`;
+	});
+</script>
+
+<Popover.Root bind:open>
+	<Popover.Trigger>
+		<Button
+			variant="outline"
+			role="combobox"
+			aria-expanded={open}
+			class={`w-full justify-between truncate ${triggerClass}`}
+		>
+			<span class="inline-flex min-w-0 items-center gap-2 truncate">
+				<UserIcon size={14} class="shrink-0 opacity-70" />
+				<span class="truncate">{summary}</span>
+			</span>
+		</Button>
+	</Popover.Trigger>
+
+	<Popover.Content
+		align="end"
+		class="w-[24rem] min-w-[24rem] max-w-[calc(100vw-3rem)] p-0 sm:w-[28rem] sm:min-w-[28rem]"
+	>
+		<div class="flex items-center gap-2 border-b px-3 py-2">
+			<SearchIcon size={14} class="shrink-0 opacity-60" />
+			<Input
+				bind:value={searchText}
+				placeholder={irisT("Filter users…", $irisLocale)}
+				class="h-7 border-0 px-0 shadow-none focus-visible:ring-0"
+			/>
+		</div>
+
+		<div
+			class="flex items-center justify-between border-b px-3 py-1.5 text-2xs text-muted-foreground"
+		>
+			<div class="flex items-center gap-2">
+				<button type="button" class="hover:text-foreground" onclick={selectAllVisible}>
+					{irisT("Select all", $irisLocale)}
+				</button>
+				<span class="opacity-40">·</span>
+				<button type="button" class="hover:text-foreground" onclick={deselectAllVisible}>
+					{irisT("Deselect all", $irisLocale)}
+				</button>
+			</div>
+			{#if values.length > 0}
+				<button type="button" class="hover:text-foreground" onclick={clearScope}>
+					{irisT("Clear scope", $irisLocale)}
+				</button>
+			{/if}
+		</div>
+
+		<div class="max-h-72 overflow-y-auto">
+			{#if loading && users.length === 0}
+				<p class="px-3 py-4 text-center text-xs text-muted-foreground">{irisT("Loading users…", $irisLocale)}</p>
+			{:else if error}
+				<p class="px-3 py-4 text-center text-xs text-destructive">{error}</p>
+			{:else if filtered.length === 0}
+				<p class="px-3 py-4 text-center text-xs text-muted-foreground">{irisT("No users.", $irisLocale)}</p>
+			{:else}
+				<ul class="py-1">
+					{#each filtered as u (u.user_id)}
+						{@const selected = isSelected(u.user_id)}
+						<li>
+							<button
+								type="button"
+								onclick={() => toggle(u)}
+								class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors hover:bg-muted/50"
+							>
+								<Checkbox checked={selected} class="pointer-events-none" />
+								<div class="flex min-w-0 flex-1 flex-col">
+									<span class="truncate font-medium" title={u.user_name}>{u.user_name}</span>
+									<span class="truncate text-2xs text-muted-foreground" title={u.user_login}>
+										{u.user_login}
+									</span>
+								</div>
+								{#if selected}
+									<CheckIcon size={12} class="shrink-0 text-primary" />
+								{/if}
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	</Popover.Content>
+</Popover.Root>

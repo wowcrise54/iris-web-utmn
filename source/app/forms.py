@@ -16,7 +16,8 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from flask_wtf import FlaskForm
+from app.web_forms import WebForm
+from app.i18n import lazy_gettext
 from wtforms import BooleanField
 from wtforms import PasswordField
 from wtforms import SelectField
@@ -30,34 +31,38 @@ from wtforms.validators import Email
 from wtforms.validators import InputRequired
 
 
-class LoginForm(FlaskForm):
-    username = StringField(u'Username', validators=[DataRequired()])
-    password = PasswordField(u'Password', validators=[DataRequired()])
+class LoginForm(WebForm):
+    username = StringField(lazy_gettext(u'Username'),
+                           validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    password = PasswordField(lazy_gettext(u'Password'),
+                             validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class MFASetupForm(FlaskForm):
-    token = StringField('Token', validators=[DataRequired()])
-    mfa_secret = StringField('MFA Secret')
-    user_password = PasswordField('Password', validators=[DataRequired()])
-    submit = SubmitField('Verify')
+class MFASetupForm(WebForm):
+    token = StringField(lazy_gettext('Token'),
+                        validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    mfa_secret = StringField(lazy_gettext('MFA Secret'))
+    user_password = PasswordField(lazy_gettext('Password'),
+                                  validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    submit = SubmitField(lazy_gettext('Verify'))
 
 
-class RegisterForm(FlaskForm):
-    name = StringField(u'Name', validators=[DataRequired()])
-    username = StringField(u'Username', validators=[DataRequired()])
-    password = PasswordField(u'Password', validators=[DataRequired()])
-    email = StringField(u'Email', validators=[DataRequired(), Email()])
+class RegisterForm(WebForm):
+    name = StringField(lazy_gettext(u'Name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    username = StringField(lazy_gettext(u'Username'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    password = PasswordField(lazy_gettext(u'Password'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    email = StringField(lazy_gettext(u'Email'), validators=[DataRequired(message=lazy_gettext('This field is required.')), Email(message=lazy_gettext('Invalid email address.'))])
 
 
-class SearchForm(FlaskForm):
-    search_type = StringField(u'Search Type', validators=[DataRequired()])
-    search_value = StringField(u'Search Value', validators=[DataRequired()])
+class SearchForm(WebForm):
+    search_type = StringField(lazy_gettext(u'Search Type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    search_value = StringField(lazy_gettext(u'Search Value'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddCustomerForm(FlaskForm):
-    customer_name = StringField(u'Customer name', validators=[DataRequired()])
-    customer_description = TextAreaField(u'Customer description', validators=[DataRequired()])
-    customer_sla = TextAreaField(u'Customer SLAs', validators=[DataRequired()])
+class AddCustomerForm(WebForm):
+    customer_name = StringField(lazy_gettext(u'Customer name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    customer_description = TextAreaField(lazy_gettext(u'Customer description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    customer_sla = TextAreaField(lazy_gettext(u'Customer SLAs'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
 class MultiCheckboxField(SelectMultipleField):
@@ -65,169 +70,169 @@ class MultiCheckboxField(SelectMultipleField):
     option_widget = widgets.CheckboxInput()
 
 
-class AddAssetForm(FlaskForm):
-    asset_name = StringField(u'Asset name', validators=[DataRequired()])
-    asset_description = StringField(u'Asset description', validators=[DataRequired()])
-    asset_icon_compromised = StringField(u'Asset icon compromised name', default="ioc_question-mark.png")
-    asset_icon_not_compromised = StringField(u'Asset icon not compromised name', default="question-mark.png")
+class AddAssetForm(WebForm):
+    asset_name = StringField(lazy_gettext(u'Asset name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    asset_description = StringField(lazy_gettext(u'Asset description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    asset_icon_compromised = StringField(lazy_gettext(u'Asset icon compromised name'), default="ioc_question-mark.png")
+    asset_icon_not_compromised = StringField(lazy_gettext(u'Asset icon not compromised name'), default="question-mark.png")
 
 
-class AttributeForm(FlaskForm):
-    attribute_content = TextAreaField(u'Attribute content', validators=[DataRequired()])
+class AttributeForm(WebForm):
+    attribute_content = TextAreaField(lazy_gettext(u'Attribute content'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddIocTypeForm(FlaskForm):
-    type_name = StringField(u'Type name', validators=[DataRequired()])
-    type_description = StringField(u'Type description', validators=[DataRequired()])
-    type_taxonomy = TextAreaField(u'Type taxonomy')
-    type_validation_regex = StringField(u'Type validation regex')
-    type_validation_expect = StringField(u'Type validation expectation')
+class AddIocTypeForm(WebForm):
+    type_name = StringField(lazy_gettext(u'Type name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    type_description = StringField(lazy_gettext(u'Type description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    type_taxonomy = TextAreaField(lazy_gettext(u'Type taxonomy'))
+    type_validation_regex = StringField(lazy_gettext(u'Type validation regex'))
+    type_validation_expect = StringField(lazy_gettext(u'Type validation expectation'))
 
 
-class CaseClassificationForm(FlaskForm):
-    name = StringField(u'Case classification name', validators=[DataRequired()])
-    name_expanded = StringField(u'Case classification name expanded', validators=[DataRequired()])
-    description = StringField(u'Case classification description', validators=[DataRequired()])
+class CaseClassificationForm(WebForm):
+    name = StringField(lazy_gettext(u'Case classification name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    name_expanded = StringField(lazy_gettext(u'Case classification name expanded'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    description = StringField(lazy_gettext(u'Case classification description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class EvidenceTypeForm(FlaskForm):
-    name = StringField(u'Evidence type name', validators=[DataRequired()])
-    description = StringField(u'Evidence type description', validators=[DataRequired()])
+class EvidenceTypeForm(WebForm):
+    name = StringField(lazy_gettext(u'Evidence type name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    description = StringField(lazy_gettext(u'Evidence type description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class CaseStateForm(FlaskForm):
-    state_name = StringField(u'Case state name', validators=[DataRequired()])
-    state_description = StringField(u'Case state description', validators=[DataRequired()])
+class CaseStateForm(WebForm):
+    state_name = StringField(lazy_gettext(u'Case state name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    state_description = StringField(lazy_gettext(u'Case state description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddReportTemplateForm(FlaskForm):
-    report_name = StringField(u'Report name', validators=[DataRequired()])
-    report_description = StringField(u'Report description', validators=[DataRequired()])
-    report_name_format = StringField(u'Report name formating', validators=[DataRequired()])
-    report_language = SelectField(u'Language', validators=[DataRequired()])
-    report_type = SelectField(u'Report Type', validators=[DataRequired()])
+class AddReportTemplateForm(WebForm):
+    report_name = StringField(lazy_gettext(u'Report name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    report_description = StringField(lazy_gettext(u'Report description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    report_name_format = StringField(lazy_gettext(u'Report name formating'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    report_language = SelectField(lazy_gettext(u'Language'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    report_type = SelectField(lazy_gettext(u'Report Type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class CaseTemplateForm(FlaskForm):
-    case_template_json = TextAreaField(u'Case Template JSON', validators=[DataRequired()])
+class CaseTemplateForm(WebForm):
+    case_template_json = TextAreaField(lazy_gettext(u'Case Template JSON'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddUserForm(FlaskForm):
-    user_login = StringField(u'Name', validators=[DataRequired()])
-    user_name = StringField(u'Username', validators=[DataRequired()])
-    user_password = PasswordField(u'Password', validators=[DataRequired()])
-    user_email = StringField(u'Email', validators=[DataRequired(), Email()])
-    user_is_service_account = BooleanField(u'Use as service account')
+class AddUserForm(WebForm):
+    user_login = StringField(lazy_gettext(u'Name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    user_name = StringField(lazy_gettext(u'Username'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    user_password = PasswordField(lazy_gettext(u'Password'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    user_email = StringField(lazy_gettext(u'Email'), validators=[DataRequired(message=lazy_gettext('This field is required.')), Email(message=lazy_gettext('Invalid email address.'))])
+    user_is_service_account = BooleanField(lazy_gettext(u'Use as service account'))
 
 
-class AddGroupForm(FlaskForm):
-    group_name = StringField(u'Group name', validators=[DataRequired()])
-    group_description = StringField(u'Group description', validators=[DataRequired()])
+class AddGroupForm(WebForm):
+    group_name = StringField(lazy_gettext(u'Group name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    group_description = StringField(lazy_gettext(u'Group description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddOrganisationForm(FlaskForm):
-    org_name = StringField(u'Organisation name', validators=[DataRequired()])
-    org_description = StringField(u'Organisation description', validators=[DataRequired()])
-    org_url = StringField(u'Organisation url', validators=[DataRequired()])
-    org_logo = StringField(u'Organisation logo', validators=[DataRequired()])
-    org_email = StringField(u'Organisation email', validators=[DataRequired()])
-    org_nationality = StringField(u'Organisation nationality', validators=[DataRequired()])
-    org_sector = StringField(u'Organisation nationality', validators=[DataRequired()])
-    org_type = StringField(u'Organisation type', validators=[DataRequired()])
+class AddOrganisationForm(WebForm):
+    org_name = StringField(lazy_gettext(u'Organisation name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_description = StringField(lazy_gettext(u'Organisation description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_url = StringField(lazy_gettext(u'Organisation url'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_logo = StringField(lazy_gettext(u'Organisation logo'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_email = StringField(lazy_gettext(u'Organisation email'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_nationality = StringField(lazy_gettext(u'Organisation nationality'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_sector = StringField(lazy_gettext(u'Organisation nationality'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    org_type = StringField(lazy_gettext(u'Organisation type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class ModalAddCaseAssetForm(FlaskForm):
-    asset_id = SelectField(u'Asset type', validators=[DataRequired()])
+class ModalAddCaseAssetForm(WebForm):
+    asset_id = SelectField(lazy_gettext(u'Asset type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class AddCaseForm(FlaskForm):
-    case_name = StringField(u'Case name', validators=[InputRequired()])
-    case_description = StringField(u'Case description', validators=[InputRequired()])
-    case_soc_id = StringField(u'SOC Ticket')
-    case_customer = SelectField(u'Customer', validators=[InputRequired()])
+class AddCaseForm(WebForm):
+    case_name = StringField(lazy_gettext(u'Case name'), validators=[InputRequired(message=lazy_gettext('This field is required.'))])
+    case_description = StringField(lazy_gettext(u'Case description'), validators=[InputRequired(message=lazy_gettext('This field is required.'))])
+    case_soc_id = StringField(lazy_gettext(u'SOC Ticket'))
+    case_customer = SelectField(lazy_gettext(u'Customer'), validators=[InputRequired(message=lazy_gettext('This field is required.'))])
     case_organisations = SelectMultipleField(u'Organisations')
-    classification_id = SelectField(u'Classification')
-    case_template_id = SelectField(u'Case Template')
+    classification_id = SelectField(lazy_gettext(u'Classification'))
+    case_template_id = SelectField(lazy_gettext(u'Case Template'))
 
 
-class ContactForm(FlaskForm):
-    contact_name = StringField(u'Contact name', validators=[DataRequired()])
-    contact_role = StringField(u'Contact role', validators=[DataRequired()])
-    contact_email = StringField(u'Contact email', validators=[DataRequired(), Email()])
-    contact_work_phone = StringField(u'Work phone', validators=[DataRequired()])
-    contact_mobile_phone = StringField(u'Mobile phone', validators=[DataRequired()])
-    contact_note = TextAreaField(u'Contact description', validators=[DataRequired()])
+class ContactForm(WebForm):
+    contact_name = StringField(lazy_gettext(u'Contact name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    contact_role = StringField(lazy_gettext(u'Contact role'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    contact_email = StringField(lazy_gettext(u'Contact email'), validators=[DataRequired(message=lazy_gettext('This field is required.')), Email(message=lazy_gettext('Invalid email address.'))])
+    contact_work_phone = StringField(lazy_gettext(u'Work phone'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    contact_mobile_phone = StringField(lazy_gettext(u'Mobile phone'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    contact_note = TextAreaField(lazy_gettext(u'Contact description'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class PipelinesCaseForm(FlaskForm):
-    pipeline = SelectField(u'Processing pipeline')
+class PipelinesCaseForm(WebForm):
+    pipeline = SelectField(lazy_gettext(u'Processing pipeline'))
 
 
-class AssetBasicForm(FlaskForm):
-    asset_name = StringField(u'Name', validators=[DataRequired()])
-    asset_description = TextAreaField(u'Description')
-    asset_domain = StringField(u'Domain')
-    asset_ip = StringField(u'Domain')
-    asset_info = TextAreaField(u'Asset Info')
-    asset_compromise_status_id = SelectField(u'Compromise Status')
-    asset_type_id = SelectField(u'Asset Type', validators=[DataRequired()])
-    analysis_status_id = SelectField(u'Analysis Status', validators=[DataRequired()])
-    asset_tags = StringField(u'Asset Tags')
+class AssetBasicForm(WebForm):
+    asset_name = StringField(lazy_gettext(u'Name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    asset_description = TextAreaField(lazy_gettext(u'Description'))
+    asset_domain = StringField(lazy_gettext(u'Domain'))
+    asset_ip = StringField(lazy_gettext(u'Domain'))
+    asset_info = TextAreaField(lazy_gettext(u'Asset Info'))
+    asset_compromise_status_id = SelectField(lazy_gettext(u'Compromise Status'))
+    asset_type_id = SelectField(lazy_gettext(u'Asset Type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    analysis_status_id = SelectField(lazy_gettext(u'Analysis Status'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    asset_tags = StringField(lazy_gettext(u'Asset Tags'))
 
 
-class CaseEventForm(FlaskForm):
-    event_title = StringField(u'Event Title', validators=[DataRequired()])
-    event_source = StringField(u'Event Source')
-    event_content = TextAreaField(u'Event Description')
-    event_raw = TextAreaField(u'Event Raw data')
-    event_assets = SelectField(u'Event Asset')
-    event_category_id = SelectField(u'Event Category')
-    event_tz = StringField(u'Event Timezone', validators=[DataRequired()])
-    event_in_summary = BooleanField(u'Add to summary')
-    event_tags = StringField(u'Event Tags')
-    event_in_graph = BooleanField(u'Display in graph')
+class CaseEventForm(WebForm):
+    event_title = StringField(lazy_gettext(u'Event Title'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    event_source = StringField(lazy_gettext(u'Event Source'))
+    event_content = TextAreaField(lazy_gettext(u'Event Description'))
+    event_raw = TextAreaField(lazy_gettext(u'Event Raw data'))
+    event_assets = SelectField(lazy_gettext(u'Event Asset'))
+    event_category_id = SelectField(lazy_gettext(u'Event Category'))
+    event_tz = StringField(lazy_gettext(u'Event Timezone'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    event_in_summary = BooleanField(lazy_gettext(u'Add to summary'))
+    event_tags = StringField(lazy_gettext(u'Event Tags'))
+    event_in_graph = BooleanField(lazy_gettext(u'Display in graph'))
 
 
-class CaseTaskForm(FlaskForm):
-    task_title = StringField(u'Task Title', validators=[DataRequired()])
-    task_description = TextAreaField(u'Task description')
-    task_status_id = SelectField(u'Task status', validators=[DataRequired()])
-    task_assignees_id = SelectMultipleField(u'Assignee(s)')
-    task_tags = StringField(u'Task Tags')
+class CaseTaskForm(WebForm):
+    task_title = StringField(lazy_gettext(u'Task Title'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    task_description = TextAreaField(lazy_gettext(u'Task description'))
+    task_status_id = SelectField(lazy_gettext(u'Task status'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    task_assignees_id = SelectMultipleField(lazy_gettext(u'Assignee(s)'))
+    task_tags = StringField(lazy_gettext(u'Task Tags'))
 
 
-class CaseGlobalTaskForm(FlaskForm):
-    task_title = StringField(u'Task Title')
-    task_description = TextAreaField(u'Task description')
-    task_assignee_id = SelectField(u'Task assignee')
-    task_status_id = SelectField(u'Task status')
-    task_tags = StringField(u'Task Tags')
+class CaseGlobalTaskForm(WebForm):
+    task_title = StringField(lazy_gettext(u'Task Title'))
+    task_description = TextAreaField(lazy_gettext(u'Task description'))
+    task_assignee_id = SelectField(lazy_gettext(u'Task assignee'))
+    task_status_id = SelectField(lazy_gettext(u'Task status'))
+    task_tags = StringField(lazy_gettext(u'Task Tags'))
 
 
-class ModalAddCaseIOCForm(FlaskForm):
-    ioc_tags = StringField(u'IOC Tags')
-    ioc_value = TextAreaField(u'IOC Value', validators=[DataRequired()])
-    ioc_description = TextAreaField(u'IOC Description')
-    ioc_type_id = SelectField(u'IOC Type', validators=[DataRequired()])
-    ioc_tlp_id = SelectField(u'IOC TLP', validators=[DataRequired()])
+class ModalAddCaseIOCForm(WebForm):
+    ioc_tags = StringField(lazy_gettext(u'IOC Tags'))
+    ioc_value = TextAreaField(lazy_gettext(u'IOC Value'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    ioc_description = TextAreaField(lazy_gettext(u'IOC Description'))
+    ioc_type_id = SelectField(lazy_gettext(u'IOC Type'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    ioc_tlp_id = SelectField(lazy_gettext(u'IOC TLP'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class ModalDSFileForm(FlaskForm):
-    file_original_name = StringField(u'Filename', validators=[DataRequired()])
-    file_description = TextAreaField(u'file_description')
-    file_password = StringField(u'File password')
-    file_is_ioc = BooleanField(u'File is IOC')
-    file_is_evidence = BooleanField(u'File is Evidence')
+class ModalDSFileForm(WebForm):
+    file_original_name = StringField(lazy_gettext(u'Filename'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    file_description = TextAreaField(lazy_gettext(u'file_description'))
+    file_password = StringField(lazy_gettext(u'File password'))
+    file_is_ioc = BooleanField(lazy_gettext(u'File is IOC'))
+    file_is_evidence = BooleanField(lazy_gettext(u'File is Evidence'))
 
 
-class CaseNoteForm(FlaskForm):
-    note_title = StringField(u'Note title', validators=[DataRequired()])
-    note_content = StringField(u'Note content')
+class CaseNoteForm(WebForm):
+    note_title = StringField(lazy_gettext(u'Note title'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
+    note_content = StringField(lazy_gettext(u'Note content'))
 
 
-class AddModuleForm(FlaskForm):
-    module_name = StringField(u'Module name', validators=[DataRequired()])
+class AddModuleForm(WebForm):
+    module_name = StringField(lazy_gettext(u'Module name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])
 
 
-class UpdateModuleParameterForm(FlaskForm):
-    module_name = StringField(u'Module name', validators=[DataRequired()])
+class UpdateModuleParameterForm(WebForm):
+    module_name = StringField(lazy_gettext(u'Module name'), validators=[DataRequired(message=lazy_gettext('This field is required.'))])

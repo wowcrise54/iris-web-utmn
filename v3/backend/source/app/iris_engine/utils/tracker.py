@@ -1,0 +1,89 @@
+#  IRIS Source Code
+#  Copyright (C) 2021 - Airbus CyberSecurity (SAS)
+#  ir@cyberactionlab.net
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU Lesser General Public
+#  License as published by the Free Software Foundation; either
+#  version 3 of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#  Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+from datetime import datetime
+from app.web import request
+
+from app.logger import logger
+from app.db import db
+from app.blueprints.iris_user import iris_current_user
+from app.models.models import UserActivity
+
+
+def track_activity(message, caseid=None, war_room_id=None, ctx_less=False, user_input=False, display_in_ui=True, user_id_override=None):
+    """
+    Register a user activity in DB.
+    :param message: Message to save as activity
+    :param user_id_override: attribute the row to this user id instead of
+        the current request's principal. Used by paths that run outside a
+        normal request context — notably the collab flush that fires on
+        socket disconnect, where `iris_current_user` is unbound and the
+        last-editor is authoritative anyway (tracked on CollabDoc).
+    :return: Nothing
+    """
+    ua = UserActivity()
+
+    if user_id_override is not None:
+        ua.user_id = user_id_override
+    else:
+        try:
+
+            ua.user_id = iris_current_user.id
+
+        except:
+            pass
+
+    try:
+        ua.case_id = caseid if ctx_less is False else None
+        ua.war_room_id = war_room_id if ctx_less is False else None
+    except Exception:
+        pass
+
+    ua.activity_date = datetime.utcnow()
+    ua.activity_desc = message.capitalize()
+
+    scope = f"Case {caseid}" if caseid else (f"War room {war_room_id}" if war_room_id else "-")
+    try:
+        if iris_current_user.is_authenticated:
+            logger.info(f"{iris_current_user.user} [#{iris_current_user.id}] :: {scope} :: {ua.activity_desc}")
+        else:
+            logger.info(f"Anonymous :: {scope} :: {ua.activity_desc}")
+    except Exception:
+        # No request context (e.g. socket disconnect flushing a collab
+        # doc). Fall back to the override id if we have one.
+        who = f"user #{user_id_override}" if user_id_override else "Anonymous"
+        logger.info(f"{who} :: {scope} :: {ua.activity_desc}")
+
+    ua.user_input = user_input
+    ua.display_in_ui = display_in_ui
+
+    try:
+        ua.is_from_api = (request.cookies.get('session') is None if request else False)
+    except Exception:
+        # No request context — treat as non-API (background flush).
+        ua.is_from_api = False
+
+    db.session.add(ua)
+    db.session.commit()
+
+    # War-room streams pull `UserActivity` rows live at render time via
+    # `business.war_room_chat.list_messages`, so no chat-table backfill
+    # is needed. A case attached to a war room after this row is written
+    # will surface it on the next stream load automatically.
+
+    return ua

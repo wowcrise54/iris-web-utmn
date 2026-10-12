@@ -1,0 +1,38 @@
+<div class="modal-header">
+    <h4>{{ _("Add Module") }}</h4>
+    <button type="button" class="close" data-dismiss="modal" aria-label="{{ _('Close') }}"><span
+            aria-hidden="true">&times;</span></button>
+</div>
+<div class="modal-body">
+
+        <div class="container col-md-12">
+        <form method="post" action="" id="form_new_module">
+            <div class="col-md-12 col-lg-12 col-sm-12">
+                {{ form.hidden_tag() }}
+
+                <div class="form-group">
+                    <h3>{{ _("Module extensions") }}</h3>
+                    <p>{{ _("Iris can be extended with compatible modules. Modules are pip packages providing a specific interface which allows\n                        Iris and the module to communicate. Enter below a pip package name already installed.") }}</p>
+                    <p>{{ _("Ex: iris_evtx") }}</p>
+                    <i class="">{{ _("Tips: you can develop your own module by following") }} <a target=”_blank” href="https://docs.dfir-iris.org/development/modules/" >{{ _("this link") }}</a></i>
+                    <div class="mt-4">
+                      <strong class="text-danger">{{ _("Note :") }}</strong> {{ _("Modules are running as the same trust level as Iris. They can thus access all the information\n                        stored on Iris as well as run code on the server. Please be cautious and review modules before installing them.") }}
+                    </div>
+                    <label for="module_name" class="mr-4 mt-3">{{ _("Module name") }}</label>
+                    {{ form.module_name(class='form-control',  autocomplete="off") }}
+                    <div class="alert-std alert-warning" style="display:none;" role="alert" id="alert_mod_add">
+                    </div>
+                    <div class="alert-std alert-warning" style="display:none;" role="alert" id="alert_mod_details">
+                        <b>{{ _("Logs") }}</b>
+                        <ul id="details_list">
+                        </ul>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-outline-success ml-4 mt-5 float-right"
+                id="submit_new_module">{{ _("Validate module") }}</button>
+
+        </form>
+    </div>
+
+</div>

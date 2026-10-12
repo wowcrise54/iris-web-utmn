@@ -1,0 +1,2 @@
+FROM iris-v3-frontend-ru:baseline
+COPY --chown=node:node build /app/build

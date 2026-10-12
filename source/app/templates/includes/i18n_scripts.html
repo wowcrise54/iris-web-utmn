@@ -1,0 +1,3 @@
+{# Inject the active catalog and load the client runtime before page scripts. #}
+<script>window.IRIS_I18N = {{ i18n_js_catalog|safe }};</script>
+<script src="/static/assets/js/iris/i18n.js"></script>

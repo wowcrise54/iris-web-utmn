@@ -1,0 +1,16 @@
+# Local application on port 18543, using the existing incident database and files.
+# Always combine with docker-compose.upgrade-validation.yml and the explicit
+# project iris-upgrade-2-4-29-fastapi. External volumes must already exist.
+volumes:
+  upgrade-db:
+    external: true
+    name: iris-web-utmn_upgrade-db
+  upgrade-downloads:
+    external: true
+    name: iris-web-utmn_upgrade-downloads
+  upgrade-templates:
+    external: true
+    name: iris-web-utmn_upgrade-templates
+  upgrade-server-data:
+    external: true
+    name: iris-web-utmn_upgrade-server-data

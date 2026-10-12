@@ -1,0 +1,342 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { getContext } from 'svelte';
+	import { mode } from 'mode-watcher';
+	import DOMPurify from 'dompurify';
+	import type { IdType, Network, Options } from 'vis-network';
+	import { EyeIcon, ExternalLinkIcon } from 'lucide-svelte';
+	import alertSvg from 'lucide-static/icons/bell.svg?raw';
+	import iocSvg from 'lucide-static/icons/link.svg?raw';
+	import caseSvg from 'lucide-static/icons/briefcase-business.svg?raw';
+	import caseClosedSvg from 'lucide-static/icons/briefcase-business.svg?raw';
+	import { goto } from '$app/navigation';
+	import { ALERTS_CTX, type AlertsContext } from '$lib/contexts/alerts.context.svelte';
+	import type { RelatedAlert } from '$lib/services/alerts.service';
+	import VisNetwork, {
+		type VisNode,
+		type VisEdge,
+		svgToDataUrl,
+		withStroke,
+		applyAssetImageTheme
+	} from '$lib/components/common/VisNetwork';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { openAlertPivot } from '$lib/utils/alert-pivot';
+	import { AlertRelationshipsFilters, defaultAlertRelationshipsFilters } from '.';
+
+	type ContextMenuState = {
+		open: boolean;
+		x: number;
+		y: number;
+		node?: VisNode;
+	};
+
+	const createTooltip = (html: string) => {
+		if (typeof document === 'undefined') return html;
+
+		const el = document.createElement('div');
+
+		el.className = 'related-alert-tooltip';
+		el.innerHTML = DOMPurify.sanitize(html, {
+			ALLOWED_TAGS: ['b', 'br', 'i', 'em', 'strong', 'span'],
+			ALLOWED_ATTR: []
+		});
+
+		return el;
+	};
+
+	let {
+		alertId
+	}: {
+		alertId: number;
+	} = $props();
+
+	const alerts = getContext<AlertsContext>(ALERTS_CTX);
+
+	const isDark = $derived($mode === 'dark');
+	const strokeColor = $derived(isDark ? '#f9fafb' : '#111827');
+	const caseOpenColor = $derived(isDark ? '#4ade80' : '#16a34a');
+	const caseClosedColor = $derived(isDark ? '#fb923c' : '#c2410c');
+	const alertClosedColor = $derived(isDark ? '#fb923c' : '#c2410c');
+
+	const alertIcon = $derived(svgToDataUrl(withStroke(alertSvg, strokeColor)));
+	const alertClosedIcon = $derived(svgToDataUrl(withStroke(alertSvg, alertClosedColor)));
+	const iocIcon = $derived(svgToDataUrl(withStroke(iocSvg, strokeColor)));
+	const caseOpenIcon = $derived(svgToDataUrl(withStroke(caseSvg, caseOpenColor)));
+	const caseClosedIcon = $derived(svgToDataUrl(withStroke(caseClosedSvg, caseClosedColor)));
+
+	let loading = $state(false);
+	let error = $state<string | null>(null);
+	let graph = $state<RelatedAlert>({ nodes: [], edges: [] });
+
+	let filters = $state(defaultAlertRelationshipsFilters());
+
+	let contextMenu = $state<ContextMenuState>({
+		open: false,
+		x: 0,
+		y: 0
+	});
+
+	// Remount the network for every new data set and theme. Freezing is
+	// tied to `stabilizationIterationsDone`, which only fires for the
+	// stabilization run at construction — fresh data fed into a live,
+	// frozen network would never be laid out, and a theme change rebuilds
+	// every node (see `VisNetwork`), dropping their positions.
+	const layoutKey = $derived({ graph, isDark });
+	// The `layoutKey` whose layout has settled; see `options.physics`.
+	let frozenKey = $state<object | null>(null);
+
+	const options = $derived({
+		autoResize: true,
+		layout: {
+			improvedLayout: true,
+			randomSeed: alertId
+		},
+		nodes: {
+			font: {
+				color: strokeColor
+			}
+		},
+		clickToUse: true,
+		interaction: {
+			zoomView: true,
+			hover: true
+		},
+		// Physics only computes the initial layout: `handleReady` freezes it
+		// once stabilization ends. Left running, forceAtlas2 never quite
+		// settles and the graph keeps drifting and spinning on its own, and
+		// dragging a node drags the whole graph along with it. Keyed on the
+		// layout rather than a plain flag so the next mount starts unfrozen,
+		// and so an `alertId` change (which re-applies these options to the
+		// still-mounted graph while the new one loads) can't wake it up.
+		physics: {
+			enabled: frozenKey !== layoutKey,
+			solver: 'forceAtlas2Based',
+			forceAtlas2Based: {
+				avoidOverlap: 1
+			},
+			stabilization: {
+				enabled: true,
+				fit: true
+			}
+		}
+	} satisfies Options);
+
+	const load = async () => {
+		if (!alertId) return;
+
+		loading = true;
+		error = null;
+		contextMenu = { open: false, x: 0, y: 0 };
+
+		const data = await alerts.getRelatedAlerts(alertId, {
+			open_alerts: filters.openAlerts,
+			closed_alerts: filters.closedAlerts,
+			open_cases: filters.openCases,
+			closed_cases: filters.closedCases,
+			number_of_nodes: filters.numberOfNodes,
+			days_back: filters.daysBack
+		});
+
+		if (!data) {
+			graph = { nodes: [], edges: [] };
+			error = 'Failed to load relationships';
+			loading = false;
+			return;
+		}
+
+		graph = data;
+		loading = false;
+	};
+
+	$effect(() => {
+		if (!alertId) return;
+
+		load();
+	});
+
+	const nodes = $derived(
+		graph.nodes.map((node) => {
+			const font = {
+				color: strokeColor
+			};
+
+			const title = node.title?.includes('<') ? createTooltip(node.title) : node.title;
+
+			if (node.group === 'alert') {
+				const isClosed = typeof node.label === 'string' && node.label.startsWith('[Closed]');
+				return {
+					...node,
+					title,
+					shape: 'image',
+					image: isClosed ? alertClosedIcon : alertIcon,
+					font
+				};
+			}
+
+			if (node.group === 'ioc') {
+				return {
+					...node,
+					title,
+					shape: 'image',
+					image: iocIcon,
+					font
+				};
+			}
+
+			if (node.group === 'case') {
+				return {
+					...node,
+					title,
+					shape: 'image',
+					image:
+						typeof node.label === 'string' && node.label.startsWith('[Closed]')
+							? caseClosedIcon
+							: caseOpenIcon,
+					font
+				};
+			}
+
+			if (node.group === 'asset' && typeof node.image === 'string') {
+				return {
+					...node,
+					title,
+					image: applyAssetImageTheme(node.image, isDark),
+					font
+				};
+			}
+
+			return {
+				...node,
+				title,
+				font
+			};
+		}) as VisNode[]
+	);
+
+	const edges = $derived(graph.edges as VisEdge[]);
+
+	const handleReady = (network: Network | null) => {
+		const key = layoutKey;
+		network?.once('stabilizationIterationsDone', () => (frozenKey = key));
+	};
+
+	const closeContextMenu = () => (contextMenu = { open: false, x: 0, y: 0 });
+
+	const openContextMenu = (detail: { x: number; y: number; nodeId?: IdType }) => {
+		if (!detail.nodeId) {
+			closeContextMenu();
+			return;
+		}
+
+		const node = nodes.find((n) => n.id === detail.nodeId);
+
+		if (!node) {
+			closeContextMenu();
+			return;
+		}
+
+		contextMenu = {
+			...detail,
+			open: true,
+			node
+		};
+	};
+
+	const getId = (nodeId: string): string => nodeId.split(/_/)[1];
+
+	const handleNodeAction = () => {
+		if (!contextMenu.node) return;
+
+		if (contextMenu.node.group === 'case') {
+			goto(`/case/${getId(contextMenu.node.id as string)}`);
+		} else if (contextMenu.node.group === 'alert') {
+			goto(`/alerts/${getId(contextMenu.node.id as string)}`);
+		} else if (contextMenu.node.group === 'asset' || contextMenu.node.group === 'ioc') {
+			// The pivot has to carry the IOC/asset *value* — that is what the alerts
+			// list matches on server-side. This graph's ids do embed the value
+			// (`ioc_<ioc_value>`, `asset_<asset_name>`), but `getId` splits on the
+			// first underscore, so `evil_domain.com` pivoted as `evil` and matched
+			// nothing. The label is the same value, whole.
+			//
+			// New tab, unlike the case/alert branches above: the pivot is a lookup
+			// made *while* reading the graph, so keep the graph where it is. A
+			// labelless node is a no-op rather than an early `return` — the menu
+			// below still has to close either way.
+			openAlertPivot(
+				contextMenu.node.group,
+				contextMenu.node.label as string | undefined,
+				window.location.href
+			);
+		}
+
+		closeContextMenu();
+	};
+</script>
+
+<div class="mb-4 flex">
+	<AlertRelationshipsFilters bind:value={filters} />
+</div>
+
+<div class="relative h-[32rem] w-full rounded-md border bg-muted/20">
+	{#if graph.nodes.length}
+		{#key layoutKey}
+			<VisNetwork
+				{nodes}
+				{edges}
+				{options}
+				className="h-full w-full"
+				onClick={closeContextMenu}
+				onContextMenu={openContextMenu}
+				onReady={handleReady}
+			/>
+		{/key}
+	{/if}
+
+	{#if contextMenu.open && contextMenu.node}
+		<div
+			class="absolute z-20 rounded-2xl border bg-background px-2 shadow-xl"
+			style={`left:${contextMenu.x}px;top:${contextMenu.y}px;transform:translate(8px, 8px);`}
+		>
+			<!--
+			  The icon says where the click lands: the eye for viewing a case or
+			  alert in this tab, the external-link glyph for the pivot, which
+			  opens a new tab (see `handleNodeAction`).
+			-->
+			{#if contextMenu.node.group === 'case' || contextMenu.node.group === 'alert'}
+				<Button variant="link" size="xs" onclick={() => handleNodeAction()}>
+					<EyeIcon class="size-4" />
+					{irisT("View", $irisLocale)} {contextMenu.node.group}
+					#{getId(contextMenu.node.id as string)}
+				</Button>
+			{:else}
+				<Button
+					size="xs"
+					variant="link"
+					title={irisT("Opens the filtered alert list in a new tab", $irisLocale)}
+					onclick={() => handleNodeAction()}
+				>
+					<ExternalLinkIcon class="size-4" />
+					{irisT("Pivot on", $irisLocale)} {contextMenu.node.group}
+					{contextMenu.node.label}
+					<span class="sr-only">{irisT("(opens in a new tab)", $irisLocale)}</span>
+				</Button>
+			{/if}
+		</div>
+	{/if}
+
+	{#if loading}
+		<div class="absolute inset-0 flex items-center justify-center text-sm opacity-70">
+			{irisT("Loading relationships...", $irisLocale)}
+		</div>
+	{:else if error}
+		<div class="absolute inset-0 flex items-center justify-center text-sm text-red-500">
+			{error}
+		</div>
+	{:else if !graph.nodes.length}
+		<div class="absolute inset-0 flex items-center justify-center text-sm opacity-70">
+			{irisT("No related entities found.", $irisLocale)}
+		</div>
+	{/if}
+</div>

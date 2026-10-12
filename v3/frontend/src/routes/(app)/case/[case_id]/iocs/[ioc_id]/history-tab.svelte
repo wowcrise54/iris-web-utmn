@@ -1,0 +1,17 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import type { Ioc } from '$lib/types/resources/ioc';
+	import ActivityHistory from '$lib/components/common/ActivityHistory.svelte';
+
+	let { ioc }: { ioc: Ioc } = $props();
+</script>
+
+<ActivityHistory
+	modificationHistory={ioc.modification_history}
+	entityType="ioc"
+	title={irisT("Activity History", $irisLocale)}
+	emptyStateTitle="No activity yet"
+	emptyStateDescription="When changes are made to this IOC, they'll be recorded here in the activity history."
+/>

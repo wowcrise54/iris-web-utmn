@@ -19,21 +19,24 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import datetime
+import logging
 from pathlib import Path
 
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 from sqlalchemy import func
 
 from app import app
 from app import db
-from app.models.models import CaseReceivedFile
-from app.models.models import DataStoreFile
-from app.models.models import DataStorePath
-from app.models.models import Ioc
-from app.models.models import IocType
-from app.models.models import Tlp
+from app.datamgmt.case.case_iocs_db import add_ioc_link
+from app.models import CaseReceivedFile
+from app.models import DataStoreFile
+from app.models import DataStorePath
+from app.models import Ioc
+from app.models import IocType
+from app.models import Tlp
 
+log = logging.getLogger(__name__)
 
 def datastore_get_root(cid):
     dsp_root = DataStorePath.query.filter(
@@ -52,7 +55,6 @@ def datastore_get_root(cid):
         ).first()
 
     return dsp_root
-
 
 def ds_list_tree(cid):
     dsp_root = datastore_get_root(cid)
@@ -88,7 +90,6 @@ def ds_list_tree(cid):
     for dfile in dsf:
         dfnode = dfile.__dict__
         dfnode.pop('_sa_instance_state')
-        dfnode.pop('file_local_name')
         dfnode['type'] = "file"
         dnode_id = f"f-{dfile.file_id}"
         dnode_parent_id = f"d-{dfile.file_parent_id}"
@@ -340,7 +341,13 @@ def datastore_delete_file(cur_id, cid):
 
     fln = Path(dsf.file_local_name)
     if fln.is_file():
-        fln.unlink(missing_ok=True)
+        # Ensure the file is from the datastore directory
+        datastore_path = Path(app.config['DATASTORE_PATH']).resolve()
+        file_path = fln.resolve()
+        if datastore_path in file_path.parents or datastore_path == file_path:
+            fln.unlink(missing_ok=True)
+        else:
+            log.warning(f"File {file_path} physically not deleted - attempted deletion outside datastore directory.")
 
     db.session.delete(dsf)
     db.session.commit()
@@ -373,6 +380,10 @@ def datastore_add_file_as_ioc(dsf, caseid):
         db.session.add(ioc)
         db.session.commit()
 
+    add_ioc_link(ioc.ioc_id, caseid)
+
+    return
+
 
 def datastore_add_file_as_evidence(dsf, caseid):
     crf = CaseReceivedFile.query.filter(
@@ -404,7 +415,15 @@ def datastore_get_local_file_path(file_id, caseid):
     if dsf is None:
         return True, 'Invalid DS file ID for this case'
 
-    return False, dsf
+    # Ensure the path is within the datastore directory
+    datastore_path = Path(app.config['DATASTORE_PATH']).resolve()
+    file_path = Path(dsf.file_local_name).resolve()
+    if datastore_path in file_path.parents or datastore_path == file_path:
+        return False, dsf
+    else:
+        # The file path is outside the datastore directory, which is not allowed
+        log.warning(f"File {file_path} not found in datastore - attempted access outside datastore directory.")
+        return True, None
 
 
 def datastore_filter_tree(filter_d, caseid):
@@ -519,7 +538,6 @@ def datastore_filter_tree(filter_d, caseid):
     for dfile in dsf:
         dfnode = dfile.__dict__
         dfnode.pop('_sa_instance_state')
-        dfnode.pop('file_local_name')
         dfnode['type'] = "file"
         dnode_id = f"f-{dfile.file_id}"
         dnode_parent_id = f"d-{dfile.file_parent_id}"
@@ -559,4 +577,3 @@ def datastore_filter_tree(filter_d, caseid):
             datastore_iter_tree(dpath_parent_id, path_node, droot_children)
 
     return path_tree, 'Success'
-

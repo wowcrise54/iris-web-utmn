@@ -1,0 +1,76 @@
+{
+  "cases": {
+    "source": 2,
+    "target": 2,
+    "all_saved_rows_preserved": true
+  },
+  "alerts": {
+    "source": 1,
+    "target": 1,
+    "all_saved_rows_preserved": true
+  },
+  "client": {
+    "source": 1,
+    "target": 1,
+    "all_saved_rows_preserved": true
+  },
+  "notes": {
+    "source": 2,
+    "target": 2,
+    "all_saved_rows_preserved": true
+  },
+  "notes_group": {
+    "source": 0,
+    "target": 0,
+    "all_saved_rows_preserved": true
+  },
+  "case_assets": {
+    "source": 2,
+    "target": 2,
+    "all_saved_rows_preserved": true
+  },
+  "ioc": {
+    "source": 3,
+    "target": 3,
+    "all_saved_rows_preserved": true
+  },
+  "case_tasks": {
+    "source": 3,
+    "target": 3,
+    "all_saved_rows_preserved": true
+  },
+  "task_assignee": {
+    "source": 3,
+    "target": 3,
+    "all_saved_rows_preserved": true
+  },
+  "cases_events": {
+    "source": 4,
+    "target": 4,
+    "all_saved_rows_preserved": true
+  },
+  "case_received_file": {
+    "source": 1,
+    "target": 1,
+    "all_saved_rows_preserved": true
+  },
+  "data_store_file": {
+    "source": 1,
+    "target": 1,
+    "all_saved_rows_preserved": true
+  },
+  "custom_dashboard": {
+    "source": 0,
+    "target": 1,
+    "all_saved_rows_preserved": true
+  },
+  "custom_dashboard_widget": {
+    "source": 0,
+    "target": 12,
+    "all_saved_rows_preserved": true
+  },
+  "users": {
+    "source": 1,
+    "identities_and_password_hashes_preserved": true
+  }
+}

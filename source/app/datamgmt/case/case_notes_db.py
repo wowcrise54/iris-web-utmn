@@ -15,19 +15,17 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 
 from app import db
 from app.datamgmt.manage.manage_attribute_db import get_default_custom_attributes
 from app.datamgmt.states import update_notes_state
-from app.models.models import Comments
-from app.models.models import NoteDirectory
-from app.models.models import NoteRevisions
-from app.models.models import Notes
-from app.models.models import NotesComments
-from app.models.models import NotesGroup
-from app.models.models import NotesGroupLink
+from app.models import Comments, NoteDirectory, NoteRevisions
+from app.models import Notes
+from app.models import NotesComments
+from app.models import NotesGroup
+from app.models import NotesGroupLink
 from app.models.authorization import User
 
 

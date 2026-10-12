@@ -1,0 +1,322 @@
+<!--
+	Manual alert creation.
+
+	Alerts normally arrive from a feed, but not every signal does: a call
+	to the SOC hotline, an out-of-band report from a colleague, a walk-up.
+	Those used to be reachable only through the API, which is not a
+	realistic ask for someone whose job is done in the browser.
+
+	The form deliberately mirrors the fields the edit dialog exposes, so
+	an alert raised by hand is the same object as an ingested one — no
+	second-class "manual alert" shape to reason about later.
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import type { CreateAlertBody } from '$lib/services/alerts.service';
+	import type { AlertStatus } from '$lib/services/alert-status.service';
+	import type { CaseClassification } from '$lib/services/case-classifications.service';
+	import type { Customer } from '$lib/services/customers.service';
+	import type { Severity } from '$lib/services/severities.service';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import Label from '$lib/components/ui/label/label.svelte';
+	import SearchSelect, {
+		type SelectOption
+	} from '$lib/components/common/selects/SearchSelect.svelte';
+	import TagInput from '$lib/components/common/tag/TagInput.svelte';
+	import { alertEventTimeForApi } from '../helpers/alert-event-time';
+	import { canCreateAlert } from '../helpers/alert-create-validation';
+
+	type Props = {
+		open: boolean;
+		onClose: () => void;
+		onCreate: (body: CreateAlertBody) => void | Promise<void>;
+		saving?: boolean;
+		alertStatuses: AlertStatus[];
+		caseClassifications: CaseClassification[];
+		severities: Severity[];
+		customers: Customer[];
+	};
+
+	let {
+		open = $bindable(),
+		onClose,
+		onCreate,
+		saving = false,
+		alertStatuses,
+		caseClassifications,
+		severities,
+		customers
+	}: Props = $props();
+
+	let title = $state('');
+	let description = $state('');
+	let customerId = $state('');
+	let severityId = $state('');
+	let statusId = $state('');
+	let classificationId = $state('');
+	let source = $state('');
+	let sourceRef = $state('');
+	let sourceLink = $state('');
+	let eventTimeLocal = $state('');
+	let note = $state('');
+	let tags = $state('');
+
+	const customerOptions = $derived.by<SelectOption[]>(() =>
+		customers.map((customer) => ({
+			value: String(customer.customer_id),
+			label: customer.customer_name
+		}))
+	);
+
+	const severityOptions = $derived.by<SelectOption[]>(() =>
+		severities.map((severity) => ({
+			value: String(severity.severity_id),
+			label: severity.severity_name
+		}))
+	);
+
+	const statusOptions = $derived.by<SelectOption[]>(() =>
+		alertStatuses.map((status) => ({
+			value: String(status.status_id),
+			label: status.status_name
+		}))
+	);
+
+	const classificationOptions = $derived.by<SelectOption[]>(() =>
+		caseClassifications.map((classification) => ({
+			value: String(classification.id),
+			label: classification.name_expanded
+		}))
+	);
+
+	// The API only refuses title, customer and severity, but an alert
+	// raised by hand is expected to arrive triaged: a status and a
+	// classification are asked for up front rather than left for someone
+	// to notice later in the queue. The rule itself lives in
+	// `canCreateAlert` so it can be tested.
+	const canSubmit = $derived(
+		canCreateAlert({ title, customerId, severityId, statusId, classificationId }) && !saving
+	);
+
+	const reset = () => {
+		title = '';
+		description = '';
+		customerId = '';
+		severityId = '';
+		statusId = '';
+		classificationId = '';
+		source = '';
+		sourceRef = '';
+		sourceLink = '';
+		eventTimeLocal = '';
+		note = '';
+		tags = '';
+	};
+
+	// Seeded once per opening rather than on mount: the dialog is kept
+	// mounted by the page, so a fresh set of defaults has to be applied
+	// each time it is reopened.
+	$effect(() => {
+		if (!open) return;
+
+		if (customerId === '' && customers.length === 1) {
+			customerId = String(customers[0].customer_id);
+		}
+	});
+
+	const close = () => {
+		open = false;
+		reset();
+		onClose();
+	};
+
+	const submit = async () => {
+		if (!canSubmit) return;
+
+		// Status and classification are gated by `canSubmit`, so both are
+		// answered by the time we get here and go out unconditionally.
+		const body = {
+			alert_title: title.trim(),
+			alert_severity_id: Number(severityId),
+			alert_customer_id: Number(customerId),
+			alert_status_id: Number(statusId),
+			alert_classification_id: Number(classificationId)
+		} as CreateAlertBody;
+
+		if (description.trim() !== '') body.alert_description = description.trim();
+		if (source.trim() !== '') body.alert_source = source.trim();
+		if (sourceRef.trim() !== '') body.alert_source_ref = sourceRef.trim();
+		if (sourceLink.trim() !== '') body.alert_source_link = sourceLink.trim();
+		if (note.trim() !== '') body.alert_note = note.trim();
+		if (tags.trim() !== '') body.alert_tags = tags.trim();
+
+		const eventTime = alertEventTimeForApi(eventTimeLocal);
+		if (eventTime) body.alert_source_event_time = eventTime;
+
+		await onCreate(body);
+	};
+</script>
+
+<Dialog.Root
+	bind:open
+	onOpenChange={(nextOpen) => {
+		if (!nextOpen) {
+			reset();
+			onClose();
+		}
+	}}
+>
+	<Dialog.Content class="flex max-h-[85vh] max-w-[980px] flex-col p-0">
+		<Dialog.Header class="border-b px-6 py-4">
+			<Dialog.Title class="text-base font-medium">{irisT("New alert", $irisLocale)}</Dialog.Title>
+			<Dialog.Description class="text-sm text-muted-foreground">
+				{irisT("Raise an alert by hand — a hotline call, an out-of-band report, anything that did not come\n\t\t\t\tin through a feed.", $irisLocale)}
+			</Dialog.Description>
+		</Dialog.Header>
+
+		<div class="flex-1 overflow-auto px-6 py-5">
+			<div class="space-y-5">
+				<div class="space-y-2">
+					<Label for="new-alert-title" class="block text-sm font-medium">{irisT("Title *", $irisLocale)}</Label>
+					<input
+						id="new-alert-title"
+						type="text"
+						class="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+						placeholder={irisT("What happened?", $irisLocale)}
+						bind:value={title}
+					/>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="new-alert-description" class="block text-sm font-medium">{irisT("Description", $irisLocale)}</Label>
+					<textarea
+						id="new-alert-description"
+						class="min-h-28 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+						placeholder={irisT("Who reported it, what they saw, anything already checked.", $irisLocale)}
+						bind:value={description}
+					></textarea>
+					<p class="text-xs text-muted-foreground">{irisT("Supports markdown.", $irisLocale)}</p>
+				</div>
+
+				<div class="grid gap-5 md:grid-cols-2">
+					<div class="space-y-2">
+						<Label class="block text-sm font-medium">{irisT("Customer *", $irisLocale)}</Label>
+						<SearchSelect
+							value={customerId}
+							options={customerOptions}
+							placeholder={irisT("Customer", $irisLocale)}
+							searchPlaceholder="Search customer..."
+							onChange={(value) => (customerId = value as string)}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label class="block text-sm font-medium">{irisT("Severity *", $irisLocale)}</Label>
+						<SearchSelect
+							value={severityId}
+							options={severityOptions}
+							placeholder={irisT("Severity", $irisLocale)}
+							searchPlaceholder="Search severity..."
+							onChange={(value) => (severityId = value as string)}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label class="block text-sm font-medium">{irisT("Status *", $irisLocale)}</Label>
+						<SearchSelect
+							value={statusId}
+							options={statusOptions}
+							placeholder={irisT("Status", $irisLocale)}
+							searchPlaceholder="Search status..."
+							onChange={(value) => (statusId = value as string)}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label class="block text-sm font-medium">{irisT("Classification *", $irisLocale)}</Label>
+						<SearchSelect
+							value={classificationId}
+							options={classificationOptions}
+							placeholder={irisT("Classification", $irisLocale)}
+							searchPlaceholder="Search classification..."
+							onChange={(value) => (classificationId = value as string)}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="new-alert-source" class="block text-sm font-medium">{irisT("Source", $irisLocale)}</Label>
+						<input
+							id="new-alert-source"
+							type="text"
+							class="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+							placeholder={irisT("e.g. SOC hotline", $irisLocale)}
+							bind:value={source}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="new-alert-event-time" class="block text-sm font-medium">{irisT("Event time", $irisLocale)}</Label>
+						<input
+							id="new-alert-event-time"
+							type="datetime-local"
+							class="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 focus:border-ring"
+							bind:value={eventTimeLocal}
+						/>
+						<p class="text-xs text-muted-foreground">
+							{irisT("When it happened. Defaults to now if left empty.", $irisLocale)}
+						</p>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="new-alert-source-ref" class="block text-sm font-medium">
+							{irisT("Source reference", $irisLocale)}
+						</Label>
+						<input
+							id="new-alert-source-ref"
+							type="text"
+							class="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+							placeholder={irisT("Ticket or call reference", $irisLocale)}
+							bind:value={sourceRef}
+						/>
+					</div>
+
+					<div class="space-y-2">
+						<Label for="new-alert-source-link" class="block text-sm font-medium">{irisT("Source link", $irisLocale)}</Label>
+						<input
+							id="new-alert-source-link"
+							type="url"
+							class="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+							placeholder="https://…"
+							bind:value={sourceLink}
+						/>
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<Label class="block text-sm font-medium">{irisT("Tags", $irisLocale)}</Label>
+					<TagInput bind:tags outputFormat="string" placeholder={irisT("Add tags...", $irisLocale)} maxTags={20} />
+				</div>
+
+				<div class="space-y-2">
+					<Label for="new-alert-note" class="block text-sm font-medium">{irisT("Note", $irisLocale)}</Label>
+					<textarea
+						id="new-alert-note"
+						class="min-h-20 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none ring-0 placeholder:text-muted-foreground focus:border-ring"
+						bind:value={note}
+					></textarea>
+					<p class="text-xs text-muted-foreground">{irisT("Supports markdown.", $irisLocale)}</p>
+				</div>
+			</div>
+		</div>
+
+		<div class="flex items-center justify-end gap-2 border-t px-6 py-4">
+			<Button variant="outline" onclick={close}>{irisT("Cancel", $irisLocale)}</Button>
+			<Button disabled={!canSubmit} onclick={submit}>
+				{saving ? irisT("Creating…", $irisLocale) : irisT("Create alert", $irisLocale)}
+			</Button>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

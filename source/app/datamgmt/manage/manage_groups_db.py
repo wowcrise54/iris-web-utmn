@@ -14,7 +14,7 @@
 #  You should have received a copy of the GNU Lesser General Public License
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-from flask_login import current_user
+from app.auth_login import current_user
 from sqlalchemy import and_
 
 from app import db
@@ -24,7 +24,7 @@ from app.iris_engine.access_control.utils import ac_access_level_mask_from_val_l
 from app.iris_engine.access_control.utils import ac_access_level_to_list
 from app.iris_engine.access_control.utils import ac_auto_update_user_effective_access
 from app.iris_engine.access_control.utils import ac_permission_to_list
-from app.models.cases import Cases
+from app.models import Cases
 from app.models.authorization import Group
 from app.models.authorization import GroupCaseAccess
 from app.models.authorization import User

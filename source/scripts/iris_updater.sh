@@ -2,11 +2,11 @@ echo "=== IRIS UPDATES ==="
 echo "Will unpack $1"
 echo "Target IRIS directory is $2"
 
-pkill gunicorn
+pkill uvicorn
 
 sleep 2
 
-pkill gunicorn
+pkill uvicorn
 
 TMP_DIR=/tmp/iris_updates
 
@@ -47,7 +47,7 @@ then
 
   else
     echo "Restarting IRIS Web app"
-    exec gunicorn app:app --worker-class eventlet --bind 0.0.0.0:8000 --timeout 180 --worker-connections 1000 --log-level=info
+    exec uvicorn run:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 180 --log-level info
 
   fi # Worker condition
 

@@ -1,0 +1,3466 @@
+<!--
+  War-room chat. Slack-ish stream: bubbles for operator messages,
+  inline system rows for activity. A composer with an attachments
+  popover that lets the operator paste a reference to an event / IOC /
+  asset / task from any of the war-room's attached cases without
+  leaving the chat — the picker reads the existing case sub-resource
+  APIs (no new backend) and inserts a markdown stub the chat renders.
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { formatDate, formatDateTime, parseServerDate } from '$lib/utils/time-formatter';
+	import { onMount, onDestroy, tick } from 'svelte';
+	import { page } from '$app/state';
+	import {
+		AlertCircle,
+		AlertOctagon,
+		Archive,
+		ArchiveRestore,
+		BarChart3,
+		Bell,
+		ChevronDown,
+		ChevronRight,
+		FileText,
+		Filter,
+		Gavel,
+		Hash,
+		Loader2,
+		MessageSquare,
+		Paperclip,
+		Pencil,
+		Pin,
+		PinOff,
+		ListChecks,
+		Plus,
+		Search,
+		Send,
+		Slash,
+		SmilePlus,
+		StickyNote,
+		Trash2,
+		Waypoints,
+		WaypointsIcon,
+		X
+	} from 'lucide-svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Input } from '$lib/components/ui/input';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Resizable from '$lib/components/ui/resizable/index.js';
+	import * as Popover from '$lib/components/ui/popover';
+	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
+	import { toast } from '$lib/components/ui/toast';
+	import UserAvatar from '$lib/components/common/UserAvatar.svelte';
+	import ChatMessageBody from './components/ChatMessageBody.svelte';
+	import ChatMessageEditor from './components/ChatMessageEditor.svelte';
+	import ChatMessageAttachments from './components/ChatMessageAttachments.svelte';
+	import ChatComposerMentions from './components/ChatComposerMentions.svelte';
+	import AttachmentPreviewDialog, {
+		type AttachmentTarget
+	} from './components/AttachmentPreviewDialog.svelte';
+	import StreamRefCard from './components/StreamRefCard.svelte';
+	import WarRoomThreadPane from './components/WarRoomThreadPane.svelte';
+	import MessageReactions from './components/MessageReactions.svelte';
+	import EmojiPickerPopover from './components/EmojiPickerPopover.svelte';
+	import PollCard from './components/PollCard.svelte';
+	import PollComposer from './components/PollComposer.svelte';
+	import {
+		WarRoomChatService,
+		type ChatMessage,
+		type ChatMessageKind,
+		type ChatPoll,
+		type ChatThreadRoot,
+		type ChatTopic
+	} from '$lib/services/war-room-chat.service';
+	import { WarRoomsService, type WarRoomCaseAttachment } from '$lib/services/war-rooms.service';
+	import { current_user } from '$lib/stores/auth.store';
+	import { UsersService } from '$lib/services/users.service';
+	import { CaseIocsService } from '$lib/services/case-iocs.service';
+	import { CaseAssetsService } from '$lib/services/case-assets.service';
+	import { CaseTimelineService } from '$lib/services/case-timeline.service';
+	import { CaseTasksService } from '$lib/services/case-tasks.service';
+
+	const warRoomId = $derived(Number(page.params.war_room_id));
+
+	let messages = $state<ChatMessage[]>([]);
+	let loading = $state(true);
+	let loadingMore = $state(false);
+	let exhausted = $state(false);
+	let body = $state('');
+	let sending = $state(false);
+	let composerEl: HTMLTextAreaElement | null = $state(null);
+	let listEl: HTMLDivElement | null = $state(null);
+
+	// --- Composer file attachments (drag-and-drop) ---
+	// Files dropped on the composer are queued as `PendingAttachment`
+	// entries and uploaded to the war-room datastore only when the
+	// operator hits Send. This avoids orphan files if they abandon
+	// the draft (per the "no orphans" UX decision).
+	type PendingAttachment = {
+		id: string;
+		file: File;
+	};
+	let pendingAttachments = $state<PendingAttachment[]>([]);
+	let isDropTarget = $state(false);
+
+	const humanBytes = (n: number): string => {
+		if (n < 1024) return `${n} B`;
+		if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+		if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+		return `${(n / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+	};
+
+	const queueFiles = (files: FileList | File[] | null) => {
+		if (!files) return;
+		const list = Array.from(files as ArrayLike<File>);
+		const additions: PendingAttachment[] = [];
+		for (const f of list) {
+			// Simple id — good enough for a client-side keyed list.
+			additions.push({
+				id: `${f.name}-${f.size}-${f.lastModified ?? 0}-${additions.length}`,
+				file: f
+			});
+		}
+		if (additions.length) {
+			pendingAttachments = [...pendingAttachments, ...additions];
+		}
+	};
+
+	const removePendingAttachment = (id: string) => {
+		pendingAttachments = pendingAttachments.filter((p) => p.id !== id);
+	};
+
+	const onComposerDragOver = (e: DragEvent) => {
+		if (!e.dataTransfer) return;
+		const types = e.dataTransfer.types;
+		if (!types || !Array.from(types).includes('Files')) return;
+		e.preventDefault();
+		isDropTarget = true;
+		e.dataTransfer.dropEffect = 'copy';
+	};
+
+	const onComposerDragLeave = (e: DragEvent) => {
+		// A `dragleave` fires when the pointer crosses a child boundary;
+		// guard by checking the related target is outside the form.
+		if (!e.currentTarget || !(e.currentTarget instanceof HTMLElement)) return;
+		if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return;
+		isDropTarget = false;
+	};
+
+	const onComposerDrop = (e: DragEvent) => {
+		if (!e.dataTransfer) return;
+		e.preventDefault();
+		isDropTarget = false;
+		if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+			queueFiles(e.dataTransfer.files);
+		}
+	};
+
+	// --- Topics ----------------------------------------------------------
+	//
+	// Topics are top-level partitions of the chat stream. Every war room
+	// has a non-archivable Main topic (materialised on first read by the
+	// backend); operators create extras via the sidebar `+` button or the
+	// `/topic <name>` slash command.
+	//
+	// `selectedTopicIds` is a multi-select — the stream renders messages
+	// from any selected topic and tags each message with its topic name
+	// when more than one is selected. `composerTopicId` picks which topic
+	// a new message lands on when the selection is multi (defaults to
+	// Main, or the last-clicked live topic). Archived topics can be
+	// selected for reading but never for posting.
+	//
+	// `topicUnread` is a purely client-side counter that ticks up when a
+	// poll returns a message on a topic not in `selectedTopicIds`; it
+	// clears the moment the topic is selected.
+	let topics = $state<ChatTopic[]>([]);
+	let selectedTopicIds = $state<Set<number>>(new Set());
+	let composerTopicId = $state<number | null>(null);
+	let topicUnread = $state<Record<number, number>>({});
+	let showArchivedTopics = $state(false);
+	let newTopicOpen = $state(false);
+	let newTopicName = $state('');
+	let creatingTopic = $state(false);
+
+	const mainTopic = $derived(topics.find((t) => t.is_main) ?? null);
+	const liveTopics = $derived(topics.filter((t) => !t.archived_at));
+	const archivedTopics = $derived(topics.filter((t) => t.archived_at));
+	const topicById = $derived(new Map(topics.map((t) => [t.topic_id, t] as const)));
+
+	// The effective topic to post into. `composerTopicId` wins when it
+	// still resolves to a live topic; otherwise fall back to Main. An
+	// archived topic in `composerTopicId` (e.g. because it was archived
+	// while selected) is treated as "no valid composer topic" — the
+	// composer button below is disabled in that case.
+	const effectiveComposerTopic = $derived.by((): ChatTopic | null => {
+		if (composerTopicId != null) {
+			const c = topicById.get(composerTopicId);
+			if (c && !c.archived_at) return c;
+		}
+		return mainTopic;
+	});
+	const composerLocked = $derived(effectiveComposerTopic == null);
+
+	// True when the stream is showing more than one topic — that's when
+	// each message needs an inline topic chip so the operator can tell
+	// them apart. Single-topic views suppress the chip to keep bubbles
+	// visually calm.
+	const showTopicChips = $derived(selectedTopicIds.size > 1);
+
+	const topicChipName = (m: ChatMessage): string | null => {
+		if (m.message_id < 0) return null; // user-activity row — no topic
+		const id = m.topic_id ?? mainTopic?.topic_id ?? null;
+		if (id == null) return null;
+		return topicById.get(id)?.name ?? null;
+	};
+
+	// --- Stream filter model ---------------------------------------------
+	//
+	// The Stream tab shows every kind of war-room event: operator
+	// messages, war-room-level system rows, and the firehose of case
+	// activity mirrored from every attached case. The filter pane lets
+	// the operator turn each lane off individually:
+	//
+	//   * `globalFilters` controls the non-case-activity kinds via a
+	//     single set of opt-in keys (Messages, Tasks, SitReps, Notes,
+	//     System, Case attached/detached).
+	//
+	//   * `excludedCases` opts an entire case out of the stream — useful
+	//     when a quiet case is generating noise during a triage.
+	//
+	//   * `excludedCaseActivities` opts specific activity types out per
+	//     case (so the operator can mute "note.updated" on Case #12 but
+	//     keep seeing IOC events on it).
+	//
+	// Default state: everything on. Exclusions are opt-out, additions are
+	// noticed automatically — a case attached later simply starts
+	// streaming.
+
+	const GLOBAL_FILTERS = [
+		{ key: 'message', label: irisT("Messages", $irisLocale), kinds: ['message'] as const },
+		{ key: 'tasks', label: irisT("Tasks", $irisLocale), kinds: ['task_assigned', 'task_completed'] as const },
+		{ key: 'sitreps', label: irisT("SitReps", $irisLocale), kinds: ['sitrep_published'] as const },
+		{ key: 'notes', label: irisT("Notes / Pins", $irisLocale), kinds: ['note', 'pin'] as const },
+		{ key: 'system', label: irisT("System", $irisLocale), kinds: ['system'] as const },
+		{
+			key: 'case_link',
+			label: irisT("Case attached / detached", $irisLocale),
+			kinds: ['case_attached', 'case_detached'] as const
+		}
+	];
+
+	let globalFilters = $state<Set<string>>(new Set(GLOBAL_FILTERS.map((f) => f.key)));
+
+	// Per-case exclusions. Empty by default — operator opts out.
+	let excludedCases = $state<Set<number>>(new Set());
+	let excludedCaseActivities = $state<Record<number, Set<string>>>({});
+
+	// --- Persistent filter preferences ----------------------------------
+	//
+	// One preference bag per user, keyed as `war_room_stream`, applies
+	// across every war room they open. Loaded once on mount from the
+	// server; saved with a debounce whenever the operator flips a
+	// toggle. Sets aren't JSON — we serialize them as arrays and
+	// rehydrate back into Sets on read. The `filtersHydrated` gate
+	// stops us from persisting the initial-render defaults before the
+	// server round-trip finishes, which would race the server-side
+	// preference back to defaults.
+	type StreamPrefs = {
+		globalFilters: string[];
+		excludedCases: number[];
+		excludedCaseActivities: Record<string, string[]>;
+	};
+	const STREAM_PREF_KEY = 'war_room_stream';
+	let filtersHydrated = $state(false);
+	let savePrefTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const loadFilterPrefs = async () => {
+		try {
+			const res = await UsersService.getMyPreference<StreamPrefs>(STREAM_PREF_KEY);
+			if (res.ok && res.data && typeof res.data !== 'string') {
+				const value = (res.data as { value: StreamPrefs | null }).value;
+				if (value && typeof value === 'object') {
+					if (Array.isArray(value.globalFilters)) {
+						globalFilters = new Set(value.globalFilters);
+					}
+					if (Array.isArray(value.excludedCases)) {
+						excludedCases = new Set(value.excludedCases);
+					}
+					if (value.excludedCaseActivities && typeof value.excludedCaseActivities === 'object') {
+						const next: Record<number, Set<string>> = {};
+						for (const [k, v] of Object.entries(value.excludedCaseActivities)) {
+							const caseId = Number(k);
+							if (Number.isFinite(caseId) && Array.isArray(v)) {
+								next[caseId] = new Set(v);
+							}
+						}
+						excludedCaseActivities = next;
+					}
+				}
+			}
+		} finally {
+			filtersHydrated = true;
+		}
+	};
+
+	const saveFilterPrefsNow = async () => {
+		const payload: StreamPrefs = {
+			globalFilters: Array.from(globalFilters),
+			excludedCases: Array.from(excludedCases),
+			excludedCaseActivities: Object.fromEntries(
+				Object.entries(excludedCaseActivities).map(([k, v]) => [k, Array.from(v)])
+			)
+		};
+		await UsersService.setMyPreference(STREAM_PREF_KEY, payload);
+	};
+
+	// Every relevant state change schedules a save 500ms later. That
+	// coalesces bursts (e.g. toggling several checkboxes in a row) into
+	// a single PUT while still feeling responsive if the operator moves
+	// on. The `$effect` reads all three states so any of them changing
+	// arms the timer.
+	$effect(() => {
+		void globalFilters;
+		void excludedCases;
+		void excludedCaseActivities;
+		if (!filtersHydrated) return;
+		if (savePrefTimer) clearTimeout(savePrefTimer);
+		savePrefTimer = setTimeout(() => {
+			void saveFilterPrefsNow();
+		}, 500);
+	});
+
+	// Grouped activity types. Categories collapse the 27 flat checkboxes
+	// from earlier into 8 expandable groups so the sidebar stays compact
+	// without losing granularity. Each group has its own checkbox: ticking
+	// it toggles every slug in the group at once; the parent shows an
+	// indeterminate state when some — but not all — child slugs are on.
+	const ACTIVITY_GROUPS: {
+		key: string;
+		label: string;
+		slugs: { slug: string; label: string }[];
+	}[] = [
+		{
+			key: 'notes',
+			label: irisT("Notes", $irisLocale),
+			slugs: [
+				{ slug: 'note.created', label: irisT("Created", $irisLocale) },
+				{ slug: 'note.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'note.deleted', label: irisT("Deleted", $irisLocale) },
+				{ slug: 'directory.created', label: irisT("Folder created", $irisLocale) },
+				{ slug: 'directory.updated', label: irisT("Folder updated", $irisLocale) },
+				{ slug: 'directory.deleted', label: irisT("Folder deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'iocs',
+			label: irisT("IOCs", $irisLocale),
+			slugs: [
+				{ slug: 'ioc.created', label: irisT("Created", $irisLocale) },
+				{ slug: 'ioc.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'ioc.deleted', label: irisT("Deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'assets',
+			label: irisT("Assets", $irisLocale),
+			slugs: [
+				{ slug: 'asset.created', label: irisT("Created", $irisLocale) },
+				{ slug: 'asset.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'asset.deleted', label: irisT("Deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'evidence',
+			label: irisT("Evidence", $irisLocale),
+			slugs: [
+				{ slug: 'evidence.created', label: irisT("Added", $irisLocale) },
+				{ slug: 'evidence.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'evidence.deleted', label: irisT("Deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'tasks',
+			label: irisT("Tasks", $irisLocale),
+			slugs: [
+				{ slug: 'task.created', label: irisT("Added", $irisLocale) },
+				{ slug: 'task.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'task.deleted', label: irisT("Deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'events',
+			label: irisT("Timeline events", $irisLocale),
+			slugs: [
+				{ slug: 'event.created', label: irisT("Added", $irisLocale) },
+				{ slug: 'event.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'event.deleted', label: irisT("Deleted", $irisLocale) }
+			]
+		},
+		{
+			key: 'case',
+			label: irisT("Case lifecycle", $irisLocale),
+			slugs: [
+				{ slug: 'case.created', label: irisT("Created", $irisLocale) },
+				{ slug: 'case.closed', label: irisT("Closed", $irisLocale) },
+				{ slug: 'case.reopened', label: irisT("Re-opened", $irisLocale) },
+				{ slug: 'case.updated', label: irisT("Updated", $irisLocale) },
+				{ slug: 'case.reviewer_changed', label: irisT("Reviewer changed", $irisLocale) },
+				{ slug: 'alert.linked', label: irisT("Alert linked / unlinked", $irisLocale) }
+			]
+		},
+		{
+			key: 'other',
+			label: irisT("Other", $irisLocale),
+			slugs: [{ slug: 'case.other', label: irisT("Uncategorised", $irisLocale) }]
+		}
+	];
+
+	// Flat list of all known slugs — used by `selectNone`-style bulk ops
+	// and by the bookkeeping when an entire case is muted (not yet wired up).
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	const ALL_ACTIVITY_SLUGS = ACTIVITY_GROUPS.flatMap((g) => g.slugs.map((s) => s.slug));
+
+	const globalKeyForKind = (k: ChatMessageKind): string | null => {
+		for (const f of GLOBAL_FILTERS) {
+			if ((f.kinds as readonly string[]).includes(k)) return f.key;
+		}
+		return null;
+	};
+
+	const visibleMessages = $derived.by(() =>
+		messages.filter((m) => {
+			if (m.deleted_at) return false;
+
+			// Case activity: gated by per-case + per-type exclusions.
+			if (m.kind === 'case_activity') {
+				if (m.ref_case_id == null) return true;
+				if (excludedCases.has(m.ref_case_id)) return false;
+				const slug = m.activity_type ?? 'case.other';
+				const set = excludedCaseActivities[m.ref_case_id];
+				if (set && set.has(slug)) return false;
+				return true;
+			}
+
+			// Case attached / detached are case-scoped too — let the
+			// operator mute a specific case across all event types.
+			if (m.kind === 'case_attached' || m.kind === 'case_detached') {
+				if (m.ref_case_id != null && excludedCases.has(m.ref_case_id)) {
+					return false;
+				}
+				return globalFilters.has('case_link');
+			}
+
+			// Everything else is gated by the global toggles.
+			const key = globalKeyForKind(m.kind);
+			return key ? globalFilters.has(key) : true;
+		})
+	);
+
+	const toggleGlobal = (key: string) => {
+		const next = new Set(globalFilters);
+		if (next.has(key)) next.delete(key);
+		else next.add(key);
+		globalFilters = next;
+	};
+
+	const toggleCase = (caseId: number) => {
+		const next = new Set(excludedCases);
+		if (next.has(caseId)) next.delete(caseId);
+		else next.add(caseId);
+		excludedCases = next;
+	};
+
+	const toggleCaseActivity = (caseId: number, slug: string) => {
+		const current = excludedCaseActivities[caseId] ?? new Set<string>();
+		const next = new Set(current);
+		if (next.has(slug)) next.delete(slug);
+		else next.add(slug);
+		excludedCaseActivities = { ...excludedCaseActivities, [caseId]: next };
+	};
+
+	const isCaseActivityOn = (caseId: number, slug: string) =>
+		!(excludedCaseActivities[caseId]?.has(slug) ?? false);
+
+	const isCaseOn = (caseId: number) => !excludedCases.has(caseId);
+
+	const selectAll = () => {
+		globalFilters = new Set(GLOBAL_FILTERS.map((f) => f.key));
+		excludedCases = new Set();
+		excludedCaseActivities = {};
+	};
+
+	const selectNone = () => {
+		globalFilters = new Set();
+		excludedCases = new Set(attachedCases.map((c) => c.case_id));
+	};
+
+	// Slash-commands reference is low-signal once the operator knows the
+	// vocabulary — fold by default so it doesn't push Threads / Cases
+	// content off the bottom of the sidebar. Click the header to reveal.
+	let slashOpen = $state(false);
+
+	// Per-case section expansion (collapsed by default — keeps the pane
+	// short when many cases are attached).
+	let caseSectionsOpen = $state<Record<number, boolean>>({});
+	const toggleCaseSection = (caseId: number) => {
+		caseSectionsOpen = {
+			...caseSectionsOpen,
+			[caseId]: !(caseSectionsOpen[caseId] ?? false)
+		};
+	};
+
+	// Per-(case, group) expansion. Stored under a composite key so we
+	// don't have to reset state when the operator switches cases.
+	let groupSectionsOpen = $state<Record<string, boolean>>({});
+	const groupKey = (caseId: number, groupKey: string) => `${caseId}:${groupKey}`;
+	const toggleGroupSection = (caseId: number, gk: string) => {
+		const k = groupKey(caseId, gk);
+		groupSectionsOpen = { ...groupSectionsOpen, [k]: !groupSectionsOpen[k] };
+	};
+
+	// Aggregate state for a group's parent checkbox: 'all' (every slug on),
+	// 'none' (every slug off) or 'some' (mixed — renders as indeterminate).
+	const groupState = (
+		caseId: number,
+		group: (typeof ACTIVITY_GROUPS)[number]
+	): 'all' | 'none' | 'some' => {
+		const excluded = excludedCaseActivities[caseId] ?? new Set<string>();
+		const onCount = group.slugs.filter((s) => !excluded.has(s.slug)).length;
+		if (onCount === 0) return 'none';
+		if (onCount === group.slugs.length) return 'all';
+		return 'some';
+	};
+
+	const toggleGroup = (caseId: number, group: (typeof ACTIVITY_GROUPS)[number]) => {
+		const current = excludedCaseActivities[caseId] ?? new Set<string>();
+		const next = new Set(current);
+		const state = groupState(caseId, group);
+		// Mixed and all-on collapse to all-off; all-off expands to all-on.
+		// Mirrors the "click an indeterminate checkbox to clear" behaviour
+		// from native tri-state controls.
+		const wantOn = state === 'none';
+		for (const s of group.slugs) {
+			if (wantOn) next.delete(s.slug);
+			else next.add(s.slug);
+		}
+		excludedCaseActivities = { ...excludedCaseActivities, [caseId]: next };
+	};
+
+	// Attached cases drive the attachments picker (events / IOCs / assets
+	// / tasks come from these).
+	let attachedCases = $state<WarRoomCaseAttachment[]>([]);
+	const loadAttachedCases = async () => {
+		const res = await WarRoomsService.listCases(warRoomId);
+		if (res.ok && Array.isArray(res.data)) {
+			attachedCases = res.data;
+		}
+	};
+
+	const scrollToBottom = async () => {
+		await tick();
+		if (listEl) listEl.scrollTop = listEl.scrollHeight;
+	};
+
+	// Top-of-stream quick-filter. Free text is sent to the server as a
+	// `search` param on every list call so filtering doesn't rely on
+	// how much has been paged into memory — a match from six weeks ago
+	// shows up as long as it's in the DB.
+	let streamSearch = $state('');
+	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	// Snapshot the actively-applied search string so poll / loadOlder
+	// keep using the same needle even if the user is mid-typing when
+	// a poll tick fires.
+	let appliedSearch = $state('');
+
+	// Snapshot of the topic filter to hand the server on each list call.
+	// `undefined` means "no filter" (backend returns everything, which
+	// is what we want when topics aren't supported / not yet loaded).
+	const currentTopicIdsFilter = $derived.by((): number[] | undefined => {
+		if (topics.length === 0) return undefined;
+		if (selectedTopicIds.size === 0) return undefined;
+		return Array.from(selectedTopicIds);
+	});
+
+	const load = async () => {
+		loading = true;
+		const search = appliedSearch || undefined;
+		const res = await WarRoomChatService.list(warRoomId, {
+			limit: 80,
+			search,
+			topicIds: currentTopicIdsFilter
+		});
+		if (res.ok && Array.isArray(res.data)) {
+			messages = [...res.data].reverse();
+			if (res.data.length < 80) exhausted = true;
+			else exhausted = false;
+		}
+		loading = false;
+		scrollToBottom();
+	};
+
+	const loadOlder = async () => {
+		if (loadingMore || exhausted || messages.length === 0) return;
+		loadingMore = true;
+		const before = messages[0].message_id;
+		const search = appliedSearch || undefined;
+		const res = await WarRoomChatService.list(warRoomId, {
+			before,
+			limit: 80,
+			search,
+			topicIds: currentTopicIdsFilter
+		});
+		loadingMore = false;
+		if (res.ok && Array.isArray(res.data)) {
+			if (res.data.length === 0) {
+				exhausted = true;
+				return;
+			}
+			const prevHeight = listEl?.scrollHeight ?? 0;
+			const prevTop = listEl?.scrollTop ?? 0;
+			messages = [...[...res.data].reverse(), ...messages];
+			await tick();
+			if (listEl) {
+				const delta = listEl.scrollHeight - prevHeight;
+				listEl.scrollTop = prevTop + delta;
+			}
+			if (res.data.length < 80) exhausted = true;
+		}
+	};
+
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	const messageKey = (m: ChatMessage) =>
+		// Live-merged stream mixes real chat ids (positive) and virtual
+		// UserActivity ids (negative) — `message_id` alone isn't ordered
+		// across both. We dedupe on (message_id, created_at) instead so
+		// the poll never appends a row we already have.
+		`${m.message_id}:${m.created_at ?? ''}`;
+
+	const pollNewer = async () => {
+		if (messages.length === 0) return load();
+		const seen = new Set(messages.map(messageKey));
+		const search = appliedSearch || undefined;
+		// Poll UNFILTERED (no topic filter) so we can (a) show only the
+		// selected topics in the stream and (b) bump unread counters on
+		// the ones the operator isn't currently viewing.
+		const res = await WarRoomChatService.list(warRoomId, { limit: 50, search });
+		if (!res.ok || !Array.isArray(res.data)) return;
+		const incoming = res.data as ChatMessage[];
+		// Bump unread counters for any brand-new message on a topic
+		// that isn't in the current selection. Runs BEFORE we filter
+		// down to `matchesTopicFilter` so muted topics still notify.
+		if (topics.length > 0 && selectedTopicIds.size > 0) {
+			const mainId = mainTopic?.topic_id ?? null;
+			for (const m of incoming) {
+				if (seen.has(messageKey(m))) continue;
+				// NULL topic_id on a chat row means Main; skip
+				// user-activity rows (message_id < 0) — those come
+				// from case activity, not a topic.
+				if (m.message_id < 0) continue;
+				const topicId = m.topic_id ?? mainId;
+				if (topicId != null && !selectedTopicIds.has(topicId)) {
+					bumpTopicUnread(topicId);
+				}
+			}
+		}
+		const matchesTopicFilter = (m: ChatMessage) => {
+			if (topics.length === 0 || selectedTopicIds.size === 0) return true;
+			if (m.message_id < 0) return true; // user-activity rows have no topic
+			const mainId = mainTopic?.topic_id ?? null;
+			const topicId = m.topic_id ?? mainId;
+			return topicId != null && selectedTopicIds.has(topicId);
+		};
+		const fresh = incoming.filter((m) => !seen.has(messageKey(m))).filter(matchesTopicFilter);
+
+		// Merge server state for live-changing fields on rows we
+		// already have. Reactions, polls and edited bodies all mutate
+		// after their row's `created_at`, so filtering them out as
+		// "seen" leaves the SPA showing stale tallies and pre-edit
+		// text. These need to reflect other operators' actions.
+		const byId = new Map<number, ChatMessage>();
+		for (const m of incoming) byId.set(m.message_id, m);
+		let changed = false;
+		const merged = messages.map((m) => {
+			const server = byId.get(m.message_id);
+			if (!server) return m;
+			// Never clobber a row the operator is actively editing — the
+			// editor seeds its draft on mount, so swapping the body under
+			// it would silently rebase their changes.
+			if (editingMessageId === m.message_id) return m;
+			// Cheap identity check first — skip the object churn when
+			// nothing we care about moved.
+			const reactionsSame =
+				JSON.stringify(m.reactions ?? []) === JSON.stringify(server.reactions ?? []);
+			const pollSame = JSON.stringify(m.poll ?? null) === JSON.stringify(server.poll ?? null);
+			const pinSame = m.is_pinned === server.is_pinned;
+			const bodySame = m.body === server.body && m.edited_at === server.edited_at;
+			if (reactionsSame && pollSame && pinSame && bodySame) return m;
+			changed = true;
+			return {
+				...m,
+				reactions: server.reactions,
+				poll: server.poll,
+				is_pinned: server.is_pinned,
+				body: server.body,
+				edited_at: server.edited_at,
+				deleted_at: server.deleted_at
+			};
+		});
+
+		if (fresh.length > 0) {
+			const wasAtBottom =
+				listEl != null && listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 80;
+			// Newest first from the API; reverse so the resulting array
+			// stays chronologically ordered (oldest at top).
+			messages = [...merged, ...[...fresh].reverse()];
+			if (wasAtBottom) scrollToBottom();
+		} else if (changed) {
+			messages = merged;
+		}
+	};
+
+	// Debounced apply — 250ms after the operator stops typing, we
+	// promote the input into `appliedSearch` and reload the stream.
+	// Same feel as the topbar global search's debounce.
+	const scheduleStreamSearch = () => {
+		if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+		searchDebounceTimer = setTimeout(() => {
+			const next = streamSearch.trim();
+			if (next === appliedSearch) return;
+			appliedSearch = next;
+			exhausted = false;
+			messages = [];
+			void load();
+		}, 250);
+	};
+
+	const clearStreamSearch = () => {
+		if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+		streamSearch = '';
+		if (appliedSearch !== '') {
+			appliedSearch = '';
+			exhausted = false;
+			messages = [];
+			void load();
+		}
+	};
+
+	onMount(() => {
+		// Hydrate filter prefs before the first paint so the sidebar
+		// renders with the operator's saved selection rather than the
+		// "everything on" defaults. `void`d intentionally: the load
+		// helpers below don't depend on prefs, they'll rerender when
+		// the filters settle.
+		void loadFilterPrefs();
+		void loadTopics();
+		void load();
+		void loadAttachedCases();
+		void loadThreads();
+		void loadTraceLog();
+		pollTimer = setInterval(() => {
+			void pollNewer();
+			void loadThreads();
+			void loadTraceLog();
+			void loadTopics();
+		}, 4000);
+	});
+
+	onDestroy(() => {
+		if (pollTimer) clearInterval(pollTimer);
+	});
+
+	// Used by the per-bubble delete affordance to decide whether to render
+	// the Trash button. Server-side enforcement is the source of truth
+	// (the DELETE endpoint rejects anything but the author), but hiding
+	// the button for non-authors keeps the UI honest.
+	// Some auth flows populate `user_id` (v2 login), others populate
+	// `id` (session hydrate) — mirror the fallback used everywhere
+	// else in the app so we don't miss the caller's id.
+	const currentUserId = $derived(
+		($current_user?.user_id ?? $current_user?.id ?? null) as number | null
+	);
+
+	// Shared confirmation dialog state — one modal handles every
+	// "are you sure?" on this page (delete a message, delete a
+	// decision/pin from the trace log). Each call site stashes the
+	// copy + the action to run; the dialog closes itself and fires
+	// the closure via `onConfirm`.
+	let confirmOpen = $state(false);
+	let confirmTitle = $state('');
+	let confirmMessage = $state('');
+	let confirmActionText = $state('Delete');
+	let pendingAction: (() => Promise<void>) | null = null;
+
+	const askConfirm = (opts: {
+		title: string;
+		message: string;
+		actionText?: string;
+		run: () => Promise<void>;
+	}) => {
+		confirmTitle = opts.title;
+		confirmMessage = opts.message;
+		confirmActionText = opts.actionText ?? 'Delete';
+		pendingAction = opts.run;
+		confirmOpen = true;
+	};
+
+	const runConfirmed = () => {
+		const action = pendingAction;
+		pendingAction = null;
+		if (action) void action();
+	};
+
+	const doRemoveMessage = async (messageId: number) => {
+		const res = await WarRoomChatService.remove(warRoomId, messageId);
+		if (res.ok) {
+			// Mirror the server's soft-delete: stamp deleted_at locally so
+			// the existing `.filter((m) => m.deleted_at)` in visibleMessages
+			// drops it without waiting for the next poll.
+			messages = messages.map((x) =>
+				x.message_id === messageId ? { ...x, deleted_at: new Date().toISOString(), body: null } : x
+			);
+			// If the deleted row was a trace-worthy kind, drop it from the
+			// sidebar index too instead of waiting for the next poll —
+			// otherwise the operator would keep seeing an entry they just
+			// removed. The next poll would reconcile anyway; this is just
+			// for immediacy.
+			traceLog = traceLog.filter((t) => t.message_id !== messageId);
+		} else {
+			toast({
+				title: irisT("Could not delete message", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+		}
+	};
+
+	const removeMessage = (m: ChatMessage) => {
+		askConfirm({
+			title: irisT("Delete this message?", $irisLocale),
+			message: "It will be hidden from the stream. This can't be undone.",
+			run: () => doRemoveMessage(m.message_id)
+		});
+	};
+
+	// --- Inline message editing -------------------------------------
+	//
+	// Only the author may edit, and only their own plain messages: the
+	// backend's PATCH handler rejects anything else (non-author, system
+	// kinds, soft-deleted rows), so this predicate exists to keep the UI
+	// honest rather than to enforce the rule. `kind === 'message'` also
+	// filters out the virtual case-activity rows, which have no
+	// editable body at all.
+	let editingMessageId = $state<number | null>(null);
+	let editSaving = $state(false);
+
+	const canEditMessage = (m: ChatMessage) =>
+		currentUserId != null && m.author_id === currentUserId && m.kind === 'message' && !m.deleted_at;
+
+	const beginEdit = (m: ChatMessage) => {
+		editingMessageId = m.message_id;
+	};
+
+	const cancelEdit = () => {
+		editingMessageId = null;
+		editSaving = false;
+	};
+
+	const saveEdit = async (messageId: number, nextBody: string) => {
+		editSaving = true;
+		const res = await WarRoomChatService.edit(warRoomId, messageId, nextBody);
+		editSaving = false;
+		if (!res.ok) {
+			toast({
+				title: irisT("Could not edit message", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		// Mirror the server's stamp locally so the "(edited)" tag and the
+		// new body show immediately instead of waiting on the next poll.
+		const stamp = new Date().toISOString();
+		messages = messages.map((x) =>
+			x.message_id === messageId ? { ...x, body: nextBody, edited_at: stamp } : x
+		);
+		// A pinned message can also be indexed in the Decisions & Pins
+		// sidebar — keep that copy in step.
+		traceLog = traceLog.map((t) =>
+			t.message_id === messageId ? { ...t, body: nextBody, edited_at: stamp } : t
+		);
+		cancelEdit();
+	};
+
+	// Sidebar delete for decisions / pins / notes. Same soft-delete on
+	// the server; the trace log's own row disappears from the
+	// filteredTraceLog once the local `traceLog` is patched.
+	const removeTraceEntry = (t: ChatMessage) => {
+		const label =
+			t.kind === 'decision'
+				? 'decision'
+				: t.kind === 'pin'
+					? 'pin'
+					: t.is_pinned
+						? 'pinned message'
+						: 'note';
+		askConfirm({
+			title: `Delete this ${label}?`,
+			message:
+				`It will be removed from the stream and the Decisions & Pins index. ` +
+				`This can't be undone.`,
+			run: () => doRemoveMessage(t.message_id)
+		});
+	};
+
+	// Toggle the caller's reaction on `emoji` for `messageId`. The
+	// backend handler is idempotent — same emoji from the same user
+	// adds it if absent, removes it otherwise. We call the server
+	// first (single source of truth), then patch the local reactions
+	// array from the response so the pill always matches server state.
+	//
+	// Optimistic-then-reconcile was tried first, but the mutation
+	// pattern `messages[idx] = {...}` doesn't propagate through the
+	// `visibleMessages → groups` derived chain in all cases (the
+	// filter callback doesn't touch `.reactions`, so Svelte's
+	// fine-grained tracking can miss the reaction-only change). A
+	// full array reassignment guarantees the reactive chain re-runs.
+	const toggleReaction = async (messageId: number, emoji: string) => {
+		if (currentUserId == null) {
+			toast({
+				title: irisT("Not signed in", $irisLocale),
+				description: irisT("Could not identify the current user.", $irisLocale),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const idx = messages.findIndex((m) => m.message_id === messageId);
+		if (idx < 0) return;
+		const msg = messages[idx];
+		const res = await WarRoomChatService.toggleReaction(warRoomId, messageId, emoji);
+		if (!res.ok) {
+			toast({
+				title: irisT("Could not save reaction", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const added = (res.data as { added: boolean } | null)?.added ?? true;
+		const currentReactions = msg.reactions ?? [];
+		const existing = currentReactions.find((r) => r.emoji === emoji);
+		let nextReactions: typeof currentReactions;
+		if (existing) {
+			nextReactions = currentReactions
+				.map((r) => {
+					if (r.emoji !== emoji) return r;
+					if (added) {
+						if (r.user_ids.includes(currentUserId)) return r;
+						return {
+							...r,
+							count: r.count + 1,
+							user_ids: [...r.user_ids, currentUserId]
+						};
+					}
+					const users = r.user_ids.filter((u) => u !== currentUserId);
+					return { ...r, count: users.length, user_ids: users };
+				})
+				.filter((r) => r.count > 0);
+		} else if (added) {
+			nextReactions = [...currentReactions, { emoji, count: 1, user_ids: [currentUserId] }];
+		} else {
+			nextReactions = currentReactions;
+		}
+		// Full array reassignment — Svelte 5 tracks the top-level
+		// binding, and reassigning to a fresh array guarantees every
+		// derived that reads from `messages` reruns.
+		messages = messages.map((m, i) => (i === idx ? { ...m, reactions: nextReactions } : m));
+	};
+
+	// Which message's action-strip emoji picker is currently open, or
+	// null if no picker is showing. Single-open enforced so the operator
+	// can't leave two popovers hanging over the stream. `reactPickerAnchor`
+	// is the button element the popover positions itself against.
+	let reactPickerFor = $state<number | null>(null);
+	let reactPickerAnchor = $state<HTMLButtonElement | null>(null);
+
+	const openReactPicker = (messageId: number, anchor: HTMLButtonElement) => {
+		if (reactPickerFor === messageId) {
+			// Second click on the same button — treat as close.
+			reactPickerFor = null;
+			reactPickerAnchor = null;
+			return;
+		}
+		reactPickerFor = messageId;
+		reactPickerAnchor = anchor;
+	};
+
+	const closeReactPicker = () => {
+		reactPickerFor = null;
+		reactPickerAnchor = null;
+	};
+
+	// Poll composer state. `pollComposerOpen` toggles the modal;
+	// `submitPoll` bridges the composer's payload to the REST layer
+	// and returns a boolean so the modal can decide whether to
+	// dismiss on success.
+	let pollComposerOpen = $state(false);
+
+	const submitPoll = async (body: {
+		question: string;
+		options: string[];
+		is_multi_select: boolean;
+		is_anonymous: boolean;
+		closes_at: string | null;
+	}): Promise<boolean> => {
+		const res = await WarRoomChatService.createPoll(warRoomId, body);
+		if (res.ok) {
+			// A companion `kind='poll'` chat message was created on the
+			// server; grabbing the newest page picks it up and inlines
+			// its poll state so the stream can render the card right away.
+			await pollNewer();
+			scrollToBottom();
+			return true;
+		}
+		toast({
+			title: irisT("Could not create poll", $irisLocale),
+			description:
+				typeof res.data === 'string'
+					? res.data
+					: ((res.data as { message?: string } | null)?.message ??
+						res.error?.message ??
+						'Unknown error'),
+			variant: 'destructive'
+		});
+		return false;
+	};
+
+	// Cast the caller's votes for a poll living at `messageId`. We
+	// optimistically patch the inlined poll state so the card
+	// re-renders instantly, then refetch the authoritative state on
+	// success to reconcile tallies (other users may have voted
+	// concurrently).
+	const voteOnPoll = async (messageId: number, optionIds: number[]) => {
+		const idx = messages.findIndex((m) => m.message_id === messageId);
+		if (idx < 0) return;
+		const msg = messages[idx];
+		if (!msg.poll) return;
+		const res = await WarRoomChatService.voteOnPoll(warRoomId, msg.poll.poll_id, optionIds);
+		if (res.ok && res.data) {
+			const nextPoll = res.data as ChatPoll;
+			messages = messages.map((x, i) => (i === idx ? { ...x, poll: nextPoll } : x));
+		} else {
+			toast({
+				title: irisT("Could not save vote", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+		}
+	};
+
+	const closePoll = async (messageId: number) => {
+		const idx = messages.findIndex((m) => m.message_id === messageId);
+		if (idx < 0) return;
+		const msg = messages[idx];
+		if (!msg.poll) return;
+		const res = await WarRoomChatService.closePoll(warRoomId, msg.poll.poll_id);
+		if (res.ok && res.data) {
+			const nextPoll = res.data as ChatPoll;
+			messages = messages.map((x, i) => (i === idx ? { ...x, poll: nextPoll } : x));
+		} else {
+			toast({
+				title: irisT("Could not close poll", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+		}
+	};
+
+	// Toggle the sticky pin on a message. Backend enforces war-room
+	// write. We call the server first, then reassign the messages
+	// array so Svelte's reactive chain (visibleMessages → groups →
+	// #each) re-runs — same pattern as `toggleReaction` above.
+	const togglePin = async (m: ChatMessage) => {
+		const idx = messages.findIndex((x) => x.message_id === m.message_id);
+		if (idx < 0) return;
+		const next = !m.is_pinned;
+		const res = await WarRoomChatService.setMessagePin(warRoomId, m.message_id, next);
+		if (!res.ok) {
+			toast({
+				title: next ? 'Could not pin message' : 'Could not unpin message',
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		messages = messages.map((x, i) => (i === idx ? { ...x, is_pinned: next } : x));
+		void loadTraceLog();
+	};
+
+	const send = async () => {
+		const text = body.trim();
+		const hasAttachments = pendingAttachments.length > 0;
+		// Allow attachment-only posts. Body must still be non-empty OR
+		// there must be at least one queued file.
+		if (!text && !hasAttachments) return;
+		// Refuse to post when the composer target has been archived out
+		// from under the operator. Should be rare — the button/textarea
+		// are already disabled in that case — but guard anyway.
+		if (composerLocked) {
+			toast({
+				title: irisT("This topic is archived", $irisLocale),
+				description: irisT("Pick a live topic before posting.", $irisLocale),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const postingTopicId = effectiveComposerTopic?.topic_id ?? null;
+		sending = true;
+
+		// Upload queued files in sequence — sequential rather than
+		// parallel so a per-file failure clearly identifies the
+		// culprit and we can abort without leaving half the batch
+		// half-uploaded.
+		const uploadedIds: number[] = [];
+		if (hasAttachments) {
+			const { WarRoomDatastoreService } = await import('$lib/services/war-room-datastore.service');
+			for (const item of pendingAttachments) {
+				const up = await WarRoomDatastoreService.upload(warRoomId, item.file);
+				if (
+					up.ok &&
+					up.data &&
+					typeof up.data !== 'string' &&
+					typeof (up.data as { file_id?: number }).file_id === 'number'
+				) {
+					uploadedIds.push((up.data as { file_id: number }).file_id);
+				} else {
+					sending = false;
+					toast({
+						title: irisT("Attachment upload failed", $irisLocale),
+						description: `Could not upload "${item.file.name}".`,
+						variant: 'destructive'
+					});
+					return;
+				}
+			}
+		}
+
+		const res = await WarRoomChatService.post(warRoomId, text, postingTopicId, uploadedIds);
+		sending = false;
+		if (res.ok) {
+			body = '';
+			pendingAttachments = [];
+			// `/topic <name>` returns the newly-created topic — merge it
+			// into `topics` and switch the view straight away so the
+			// operator lands on the new lane.
+			const created =
+				res.data && typeof res.data !== 'string'
+					? (res.data as { topic?: ChatTopic }).topic
+					: undefined;
+			if (created) {
+				const idx = topics.findIndex((t) => t.topic_id === created.topic_id);
+				topics =
+					idx >= 0
+						? topics.map((t) => (t.topic_id === created.topic_id ? created : t))
+						: [...topics, created];
+				selectOnlyTopic(created);
+			}
+			await pollNewer();
+			void loadThreads();
+			void loadTraceLog();
+			scrollToBottom();
+			composerEl?.focus();
+		} else {
+			toast({
+				title: irisT("Could not send message", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+		}
+	};
+
+	// The mention component owns Up/Down/Enter/Esc when its popup is
+	// open — we hand the event over first and only fall through to the
+	// default Enter-sends behaviour when the mention picker didn't claim
+	// the key.
+	let mentions = $state<{
+		handleKeydown: (e: KeyboardEvent) => boolean;
+		handleInput: () => void;
+	} | null>(null);
+
+	const onKey = (e: KeyboardEvent) => {
+		if (mentions?.handleKeydown(e)) return;
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			void send();
+		}
+	};
+
+	const onInput = (e: Event) => {
+		body = (e.target as HTMLTextAreaElement).value;
+		mentions?.handleInput();
+	};
+
+	// Attachment preview state. The chip click fires `onAttachmentClick`
+	// with `{type, label, href}` and we extract the caseId from the href
+	// (`/case/<id>/<sub>`) so the preview modal can fetch directly.
+	let previewOpen = $state(false);
+	let previewTarget = $state<AttachmentTarget | null>(null);
+
+	const openPreview = (t: {
+		type: 'event' | 'ioc' | 'asset' | 'task';
+		label: string;
+		href: string;
+	}) => {
+		const m = t.href.match(/^\/case\/(\d+)\//);
+		if (!m) {
+			window.location.assign(t.href);
+			return;
+		}
+		previewTarget = {
+			kind: t.type,
+			caseId: Number(m[1]),
+			label: t.label
+		};
+		previewOpen = true;
+	};
+
+	const SLASH_COMMANDS = [
+		{ cmd: '/note', desc: 'Create a war-room note' },
+		{ cmd: '/pin', desc: 'Highlight a message' },
+		{ cmd: '/decision', desc: 'Log a command decision' },
+		{ cmd: '/attach <case_id>', desc: 'Attach a case' },
+		{ cmd: '/detach <case_id>', desc: 'Detach a case' },
+		{ cmd: '/task [@user] <title>', desc: 'Create a task' },
+		{ cmd: '/assign @user <title>', desc: 'Create + assign a task' },
+		{ cmd: '/sitrep <title>', desc: 'Start a SitRep draft' },
+		{ cmd: '/summary', desc: 'Auto-fill SitRep from snapshot' },
+		{ cmd: '/state <…>', desc: 'Flip war-room state' },
+		{ cmd: '/priority <…>', desc: 'Stamp a priority banner' },
+		{ cmd: '/thread <title>', desc: 'Open a named thread' },
+		{ cmd: '/topic <name>', desc: 'Create + switch to a topic' }
+	];
+
+	// --- Threads ---------------------------------------------------------
+	//
+	// The threads sidebar pulls `/chat/threads` — roots that have either
+	// at least one reply or a named title. Clicking a thread opens the
+	// side-pane on the right of the stream.
+	//
+	// Refreshes piggy-back on the existing chat poll: every 4s we also
+	// re-fetch the threads list so reply counts and last-activity stay
+	// fresh while the operator is looking at the page.
+
+	let threads = $state<ChatThreadRoot[]>([]);
+	let openThread = $state<ChatThreadRoot | null>(null);
+
+	// Fields that actually change over time on a thread root; used to
+	// decide whether the currently-open thread's props need to be
+	// reassigned. Without this check, every poll (~4s) reassigns
+	// `openThread` to a fresh object even when nothing changed — which
+	// re-triggers the pane's `$effect` and blanks the visible reply
+	// list into a "Loading replies…" spinner. That's what the operator
+	// sees as a constant "refresh flicker".
+	const threadChanged = (a: ChatThreadRoot, b: ChatThreadRoot) =>
+		a.reply_count !== b.reply_count ||
+		a.last_activity_at !== b.last_activity_at ||
+		a.thread_title !== b.thread_title ||
+		a.is_followed !== b.is_followed ||
+		a.deleted_at !== b.deleted_at;
+
+	const loadThreads = async () => {
+		const res = await WarRoomChatService.listThreads(warRoomId);
+		if (res.ok && Array.isArray(res.data)) {
+			threads = res.data as ChatThreadRoot[];
+			// Keep the currently open thread's badge state in sync — but
+			// only reassign if the row *actually* changed. Otherwise the
+			// pane's $effect fires on every no-op poll and blanks the
+			// reply list.
+			if (openThread) {
+				const updated = threads.find((t) => t.message_id === openThread!.message_id);
+				if (updated && threadChanged(openThread, updated)) {
+					openThread = updated;
+				}
+			}
+		}
+	};
+
+	const openThreadFor = async (messageId: number) => {
+		// First check the threads list — if the message is already a root
+		// there, we can open immediately.
+		const existing = threads.find((t) => t.message_id === messageId);
+		if (existing) {
+			openThread = existing;
+			return;
+		}
+		// Otherwise we need to materialise a synthetic root from the
+		// message data we have, then re-fetch the threads list so the new
+		// thread shows up in the sidebar after the first reply lands.
+		const m = messages.find((x) => x.message_id === messageId);
+		if (!m) return;
+		openThread = {
+			message_id: m.message_id,
+			thread_title: m.thread_title,
+			preview: (m.body ?? '').slice(0, 200) || null,
+			kind: m.kind,
+			author_id: m.author_id,
+			author_login: m.author_login,
+			author_name: m.author_name,
+			reply_count: 0,
+			last_activity_at: m.created_at,
+			created_at: m.created_at,
+			deleted_at: m.deleted_at,
+			is_followed: false
+		};
+	};
+
+	const closeThread = () => {
+		openThread = null;
+	};
+
+	// --- Topics loader / actions ---------------------------------------
+	//
+	// Loaded once on mount and refreshed on the same 4s poll as threads
+	// / trace-log. Backends predating the topics migration return an
+	// empty list — in that case the sidebar section stays hidden and
+	// the composer/filter fall through to "no topic selection".
+	const loadTopics = async () => {
+		const res = await WarRoomChatService.listTopics(warRoomId);
+		if (!res.ok || !Array.isArray(res.data)) return;
+		const next = res.data as ChatTopic[];
+		topics = next;
+		// Seed selection to Main on the very first fetch — subsequent
+		// polls leave the operator's picks alone.
+		if (selectedTopicIds.size === 0) {
+			const main = next.find((t) => t.is_main);
+			if (main) {
+				selectedTopicIds = new Set([main.topic_id]);
+				composerTopicId = main.topic_id;
+			}
+		}
+		// Any topic that vanished server-side (rare — no hard delete)
+		// gets dropped from the selection so the filter isn't a no-op.
+		const knownIds = new Set(next.map((t) => t.topic_id));
+		const filtered = new Set<number>();
+		let selectionChanged = false;
+		for (const id of selectedTopicIds) {
+			if (knownIds.has(id)) filtered.add(id);
+			else selectionChanged = true;
+		}
+		if (selectionChanged) selectedTopicIds = filtered;
+	};
+
+	const toggleTopicSelection = (topic: ChatTopic) => {
+		const next = new Set(selectedTopicIds);
+		if (next.has(topic.topic_id)) {
+			// Never let the operator deselect their last topic — the
+			// stream would go blank. Force Main back on instead.
+			if (next.size === 1) {
+				if (mainTopic && topic.topic_id !== mainTopic.topic_id) {
+					next.clear();
+					next.add(mainTopic.topic_id);
+				} else {
+					return;
+				}
+			} else {
+				next.delete(topic.topic_id);
+			}
+		} else {
+			next.add(topic.topic_id);
+			// Clear the unread counter — the operator is now looking at
+			// this topic, so the badge should disappear immediately.
+			if (topicUnread[topic.topic_id]) {
+				const { [topic.topic_id]: _, ...rest } = topicUnread;
+				topicUnread = rest;
+			}
+			// Newly-selected live topic becomes the composer target so
+			// "click topic → type → send" lands on it without extra UI.
+			if (!topic.archived_at) composerTopicId = topic.topic_id;
+		}
+		selectedTopicIds = next;
+		exhausted = false;
+		messages = [];
+		void load();
+	};
+
+	const selectOnlyTopic = (topic: ChatTopic) => {
+		selectedTopicIds = new Set([topic.topic_id]);
+		if (!topic.archived_at) composerTopicId = topic.topic_id;
+		if (topicUnread[topic.topic_id]) {
+			const { [topic.topic_id]: _, ...rest } = topicUnread;
+			topicUnread = rest;
+		}
+		exhausted = false;
+		messages = [];
+		void load();
+	};
+
+	const submitNewTopic = async () => {
+		const name = newTopicName.trim();
+		if (!name || creatingTopic) return;
+		creatingTopic = true;
+		const res = await WarRoomChatService.createTopic(warRoomId, name);
+		creatingTopic = false;
+		if (!res.ok || !res.data || typeof res.data === 'string') {
+			toast({
+				title: irisT("Could not create topic", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const created = res.data as ChatTopic;
+		// Replace-or-append: create is idempotent server-side, so we
+		// tolerate the row already being in `topics` from a race with
+		// the poll.
+		const idx = topics.findIndex((t) => t.topic_id === created.topic_id);
+		topics =
+			idx >= 0
+				? topics.map((t) => (t.topic_id === created.topic_id ? created : t))
+				: [...topics, created];
+		newTopicName = '';
+		newTopicOpen = false;
+		selectOnlyTopic(created);
+	};
+
+	const doArchiveTopic = async (topic: ChatTopic) => {
+		if (topic.is_main) return;
+		const res = await WarRoomChatService.archiveTopic(warRoomId, topic.topic_id);
+		if (!res.ok || !res.data || typeof res.data === 'string') {
+			toast({
+				title: irisT("Could not archive topic", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const updated = res.data as ChatTopic;
+		topics = topics.map((t) => (t.topic_id === updated.topic_id ? updated : t));
+		// If it was the composer target, fall back to Main.
+		if (composerTopicId === topic.topic_id) {
+			composerTopicId = mainTopic?.topic_id ?? null;
+		}
+	};
+
+	const doUnarchiveTopic = async (topic: ChatTopic) => {
+		const res = await WarRoomChatService.unarchiveTopic(warRoomId, topic.topic_id);
+		if (!res.ok || !res.data || typeof res.data === 'string') {
+			toast({
+				title: irisT("Could not unarchive topic", $irisLocale),
+				description:
+					typeof res.data === 'string'
+						? res.data
+						: ((res.data as { message?: string } | null)?.message ??
+							res.error?.message ??
+							'Unknown error'),
+				variant: 'destructive'
+			});
+			return;
+		}
+		const updated = res.data as ChatTopic;
+		topics = topics.map((t) => (t.topic_id === updated.topic_id ? updated : t));
+	};
+
+	// Poll-tick unread bump. Called from `pollNewer` whenever a fresh
+	// message lands on a topic that isn't currently selected.
+	const bumpTopicUnread = (topicId: number) => {
+		if (selectedTopicIds.has(topicId)) return;
+		topicUnread = {
+			...topicUnread,
+			[topicId]: (topicUnread[topicId] ?? 0) + 1
+		};
+	};
+
+	// --- Decisions & Pins sidebar index --------------------------------
+	//
+	// A time-ordered "who decided what and when" surface. Pulls
+	// `/chat/trace-log` which returns every decision / pin / note in the
+	// war room — including replies inside threads, which the main
+	// stream listing hides. Refreshes on the same 4s cadence as the
+	// stream and threads.
+	let traceLog = $state<ChatMessage[]>([]);
+	let traceFilter = $state('');
+
+	const loadTraceLog = async () => {
+		const res = await WarRoomChatService.listTraceLog(warRoomId);
+		if (res.ok && Array.isArray(res.data)) {
+			traceLog = res.data as ChatMessage[];
+		}
+	};
+
+	// Filter matches body text, kind label, or author. Case-insensitive.
+	// Empty needle short-circuits to avoid re-allocating the array on
+	// every render while nothing's typed.
+	const filteredTraceLog = $derived.by(() => {
+		const needle = traceFilter.trim().toLowerCase();
+		if (!needle) return traceLog;
+		return traceLog.filter((t) => {
+			const body = (t.body ?? '').toLowerCase();
+			const kind = (t.kind ?? '').toLowerCase();
+			const author = (t.author_name ?? t.author_login ?? '').toLowerCase();
+			return body.includes(needle) || kind.includes(needle) || author.includes(needle);
+		});
+	});
+
+	// Jump to a trace entry: if it's a reply, open the thread pane so
+	// the entry is visible in-context; otherwise scroll the main
+	// stream to that row and highlight it briefly.
+	let highlightMessageId = $state<number | null>(null);
+	const jumpToTrace = async (m: ChatMessage) => {
+		if (m.parent_message_id != null) {
+			await openThreadFor(m.parent_message_id);
+			return;
+		}
+		// If the entry lives on a topic we're not currently viewing,
+		// switch the selection to that topic first so the target row is
+		// actually in the stream. Without this, the DOM lookup below
+		// would fail and the operator would get a spurious "Message not
+		// loaded" toast even though the message is right there in the
+		// backend.
+		if (topics.length > 0 && m.message_id > 0) {
+			const targetTopicId = m.topic_id ?? mainTopic?.topic_id ?? null;
+			if (targetTopicId != null && !selectedTopicIds.has(targetTopicId)) {
+				const targetTopic = topicById.get(targetTopicId);
+				if (targetTopic) {
+					selectedTopicIds = new Set([targetTopicId]);
+					if (!targetTopic.archived_at) {
+						composerTopicId = targetTopicId;
+					}
+					if (topicUnread[targetTopicId]) {
+						const { [targetTopicId]: _, ...rest } = topicUnread;
+						topicUnread = rest;
+					}
+					exhausted = false;
+					messages = [];
+					// Reload synchronously so the target row is in the DOM
+					// before we try to scroll it into view.
+					await load();
+					await tick();
+				}
+			}
+		}
+		const target = listEl?.querySelector(
+			`[data-message-id="${m.message_id}"]`
+		) as HTMLElement | null;
+		if (target) {
+			target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			highlightMessageId = m.message_id;
+			// Clear the highlight after a moment so it doesn't stick if the
+			// user scrolls elsewhere.
+			setTimeout(() => {
+				if (highlightMessageId === m.message_id) highlightMessageId = null;
+			}, 1600);
+		} else {
+			// The row isn't currently paged in — nudge the operator to
+			// scroll back. Cheap and honest; no jarring silent no-op.
+			toast({
+				title: irisT("Message not loaded", $irisLocale),
+				description: irisT("Scroll back with \"Load earlier messages\" to find it.", $irisLocale),
+				variant: 'warning'
+			});
+		}
+	};
+
+	// Trace-log row metadata. Pinned regular messages (`kind='message'`,
+	// `is_pinned=true`) are surfaced in the same sidebar as decisions
+	// and system pins — the backend widens the query, we just need to
+	// paint them with the pin icon since their kind is still 'message'.
+	const traceRowMeta = (t: ChatMessage) => {
+		if (t.kind === 'decision')
+			return { Icon: Gavel, color: 'text-indigo-600 dark:text-indigo-400', label: irisT("Decision", $irisLocale) };
+		if (t.kind === 'pin')
+			return { Icon: Pin, color: 'text-violet-600 dark:text-violet-400', label: irisT("Pin", $irisLocale) };
+		if (t.is_pinned) return { Icon: Pin, color: 'text-primary', label: irisT("Pinned", $irisLocale) };
+		return { Icon: StickyNote, color: 'text-amber-600 dark:text-amber-400', label: irisT("Note", $irisLocale) };
+	};
+
+	const stripMarkdown = (s: string) =>
+		s
+			// Drop `[label](href)` down to `label` so the preview reads
+			// clean; keeps the human-authored text but hides the link
+			// noise a `/decision` mentioning an attachment would carry.
+			.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+			.replace(/\s+/g, ' ')
+			.trim();
+
+	// Cheap lookup so the per-message Reply chip can show "N replies"
+	// without scanning the threads list each render.
+	const replyCountByRoot = $derived(new Map(threads.map((t) => [t.message_id, t.reply_count])));
+
+	// --- Attachments picker --------------------------------------------------
+	// One picker covers four resource types pulled from the attached
+	// cases. We pre-load per case on first open to avoid a flash of
+	// loading state when the user switches the inner tab.
+
+	type ResourceKind = 'event' | 'ioc' | 'asset' | 'task';
+
+	let attachOpen = $state(false);
+	let attachKind = $state<ResourceKind>('event');
+	let attachCaseId = $state<number | null>(null);
+	let attachSearch = $state('');
+	let attachLoading = $state(false);
+
+	type Picker = { id: number; label: string; sub?: string; caseId: number };
+	let pickerRows = $state<Picker[]>([]);
+
+	$effect(() => {
+		if (attachOpen && attachCaseId == null && attachedCases.length > 0) {
+			attachCaseId = attachedCases[0].case_id;
+		}
+	});
+
+	$effect(() => {
+		if (!attachOpen || attachCaseId == null) return;
+		// Re-run when kind or selected case change. The fetch is cheap
+		// because it pages the v2 endpoint at 25 rows max for the picker.
+		void loadPickerRows();
+	});
+
+	const loadPickerRows = async () => {
+		if (attachCaseId == null) return;
+		attachLoading = true;
+		pickerRows = [];
+		const caseId = attachCaseId;
+		try {
+			if (attachKind === 'event') {
+				const res = await CaseTimelineService.listEvents(caseId, {}, {}, { per_page: 25 });
+				if (res.ok && res.data && typeof res.data !== 'string') {
+					const payload = res.data as { timeline?: Array<Record<string, unknown>> };
+					pickerRows = (payload.timeline ?? []).map((e) => ({
+						id: Number((e as { event_id: number }).event_id),
+						label:
+							String((e as { event_title?: string }).event_title ?? '') ||
+							`Event #${(e as { event_id: number }).event_id}`,
+						sub:
+							typeof (e as { event_date?: string }).event_date === 'string'
+								? formatDateTime((e as { event_date: string }).event_date)
+								: undefined,
+						caseId
+					}));
+				}
+			} else if (attachKind === 'ioc') {
+				const res = await CaseIocsService.list(caseId, { per_page: 25 });
+				if (res.ok && res.data && typeof res.data !== 'string') {
+					const payload = res.data as unknown as { data?: Array<Record<string, unknown>> };
+					pickerRows = (payload.data ?? []).map((i) => ({
+						id: Number((i as { ioc_id: number }).ioc_id),
+						label:
+							String((i as { ioc_value?: string }).ioc_value ?? '') ||
+							`IOC #${(i as { ioc_id: number }).ioc_id}`,
+						sub: String((i as { ioc_type?: string }).ioc_type ?? ''),
+						caseId
+					}));
+				}
+			} else if (attachKind === 'asset') {
+				const res = await CaseAssetsService.list(caseId, { per_page: 25 });
+				if (res.ok && res.data && typeof res.data !== 'string') {
+					const payload = res.data as unknown as { data?: Array<Record<string, unknown>> };
+					pickerRows = (payload.data ?? []).map((a) => ({
+						id: Number((a as { asset_id: number }).asset_id),
+						label:
+							String((a as { asset_name?: string }).asset_name ?? '') ||
+							`Asset #${(a as { asset_id: number }).asset_id}`,
+						sub: String((a as { asset_type_name?: string }).asset_type_name ?? ''),
+						caseId
+					}));
+				}
+			} else if (attachKind === 'task') {
+				const res = await CaseTasksService.list(caseId, { per_page: 25 });
+				if (res.ok && res.data && typeof res.data !== 'string') {
+					const payload = res.data as unknown as { data?: Array<Record<string, unknown>> };
+					pickerRows = (payload.data ?? []).map((t) => ({
+						id: Number((t as { id: number }).id ?? (t as { task_id?: number }).task_id ?? 0),
+						label:
+							String((t as { task_title?: string }).task_title ?? '') ||
+							`Task #${(t as { id: number }).id}`,
+						caseId
+					}));
+				}
+			}
+		} finally {
+			attachLoading = false;
+		}
+	};
+
+	const filteredPickerRows = $derived.by(() => {
+		const needle = attachSearch.trim().toLowerCase();
+		if (!needle) return pickerRows;
+		return pickerRows.filter(
+			(r) => r.label.toLowerCase().includes(needle) || (r.sub ?? '').toLowerCase().includes(needle)
+		);
+	});
+
+	const insertAttachment = (row: Picker) => {
+		// Append a markdown reference into the composer. The chat
+		// itself doesn't try to live-render these (the rest of the
+		// stream is plain text), but the link is clickable and the
+		// human-readable label makes the intent obvious.
+		const link =
+			attachKind === 'event'
+				? `[Event "${row.label}"](/case/${row.caseId}/timeline)`
+				: attachKind === 'ioc'
+					? `[IOC "${row.label}"](/case/${row.caseId}/iocs)`
+					: attachKind === 'asset'
+						? `[Asset "${row.label}"](/case/${row.caseId}/assets)`
+						: `[Task "${row.label}"](/case/${row.caseId}/tasks)`;
+		body = body ? `${body} ${link}` : link;
+		attachOpen = false;
+		attachSearch = '';
+		composerEl?.focus();
+	};
+
+	// --- Rendering helpers ---------------------------------------------------
+
+	const fmtTime = (iso: string | null) => {
+		if (!iso) return '';
+		try {
+			return formatDateTime(iso, {
+				month: 'short',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit'
+			});
+		} catch {
+			return '';
+		}
+	};
+
+	const systemIcon = (k: ChatMessageKind) => {
+		switch (k) {
+			case 'task_assigned':
+			case 'task_completed':
+				return ListChecks;
+			case 'case_attached':
+			case 'case_detached':
+			case 'case_activity':
+				return WaypointsIcon;
+			case 'sitrep_published':
+				return FileText;
+			case 'note':
+				return StickyNote;
+			case 'pin':
+				return Pin;
+			case 'decision':
+				return Gavel;
+			case 'priority':
+				return AlertOctagon;
+			case 'system':
+				return AlertCircle;
+			default:
+				return null;
+		}
+	};
+
+	const systemColor = (k: ChatMessageKind) => {
+		switch (k) {
+			case 'task_assigned':
+			case 'task_completed':
+				return 'text-emerald-600 dark:text-emerald-400';
+			case 'case_attached':
+			case 'case_detached':
+			case 'case_activity':
+				return 'text-sky-600 dark:text-sky-400';
+			case 'sitrep_published':
+				return 'text-amber-600 dark:text-amber-400';
+			case 'note':
+				return 'text-amber-600 dark:text-amber-400';
+			case 'pin':
+				return 'text-violet-600 dark:text-violet-400';
+			case 'decision':
+				return 'text-indigo-600 dark:text-indigo-400';
+			case 'priority':
+				return 'text-red-600 dark:text-red-400';
+			default:
+				return 'text-muted-foreground';
+		}
+	};
+
+	// Determine whether to render an avatar / header for this message
+	// vs. an inline continuation of the previous bubble. Groups
+	// consecutive messages from the same author within a 5min window
+	// for a less noisy timeline.
+	const groups = $derived.by(() => {
+		type Group = { key: string; date: string; rows: ChatMessage[] };
+		const out: Group[] = [];
+		let _lastAuthor: number | null = null;
+		let _lastTs = 0;
+		let lastDate = '';
+		for (const m of visibleMessages) {
+			const ts = parseServerDate(m.created_at)?.getTime() ?? 0;
+			const date = m.created_at ? formatDate(m.created_at) : 'Unknown';
+			if (date !== lastDate) {
+				out.push({ key: `date-${date}-${m.message_id}`, date, rows: [] });
+				lastDate = date;
+				_lastAuthor = null;
+			}
+			const tail = out[out.length - 1];
+			tail.rows.push(m);
+			_lastAuthor = m.author_id;
+			_lastTs = ts;
+		}
+		return out;
+	});
+
+	const isContinuation = (m: ChatMessage, prev: ChatMessage | undefined): boolean => {
+		if (!prev) return false;
+		if (prev.kind !== 'message' || m.kind !== 'message') return false;
+		if (prev.author_id !== m.author_id) return false;
+		if (!prev.created_at || !m.created_at) return false;
+		const dt = new Date(m.created_at).getTime() - new Date(prev.created_at).getTime();
+		return dt < 5 * 60 * 1000;
+	};
+
+	const totalGlobalFilters = GLOBAL_FILTERS.length;
+	const activeGlobalFilters = $derived(globalFilters.size);
+	const anyExclusion = $derived(
+		excludedCases.size > 0 ||
+			Object.values(excludedCaseActivities).some((s) => s.size > 0) ||
+			activeGlobalFilters < totalGlobalFilters
+	);
+</script>
+
+<!--
+	Stream layout.
+
+	Left pane (lg+): the firehose filter. Two stacked sections — global
+	kind toggles on top, then a per-case sub-tree where each attached
+	case can be muted entirely or trimmed down to specific activity
+	types (note created, IOC updated, asset deleted, …).
+
+	Right pane: the rendered stream with composer at the bottom.
+
+	A new case attached to the war room appears in the left pane
+	automatically — the filter list is keyed off the live
+	`attachedCases` state, not a snapshot — so its activity starts
+	showing up the moment it's attached.
+-->
+<!--
+	Outer split: the filters sidebar on the left is now user-resizable —
+	defaults to ~22 % of the chat surface, drag the handle to widen for a
+	long case list or narrow when threads are the focus. Pane sizes are
+	persisted in localStorage by `paneforge` keyed on `autoSaveId` so the
+	choice survives reloads.
+-->
+<Resizable.PaneGroup
+	direction="horizontal"
+	autoSaveId="war-room-chat-sidebar"
+	class="h-full min-h-0 w-full overflow-hidden"
+>
+	<Resizable.Pane
+		defaultSize={22}
+		minSize={14}
+		maxSize={45}
+		class="flex min-h-0 flex-col border-r bg-card/40"
+	>
+		<!-- Header row with quick select-all / select-none. shrink-0 keeps
+		     it pinned while the inner list scrolls. -->
+		<div class="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
+			<p
+				class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+			>
+				<Filter class="h-3 w-3" />
+				{irisT("Filters", $irisLocale)}
+			</p>
+			{#if anyExclusion}
+				<button
+					type="button"
+					class="text-2xs text-primary transition-colors hover:underline"
+					onclick={selectAll}
+				>
+					{irisT("Reset", $irisLocale)}
+				</button>
+			{:else}
+				<button
+					type="button"
+					class="text-2xs text-muted-foreground transition-colors hover:text-foreground"
+					onclick={selectNone}
+				>
+					{irisT("Clear all", $irisLocale)}
+				</button>
+			{/if}
+		</div>
+
+		<!-- The scroll viewport. `min-h-0` on this AND on the parent
+		     `<aside>` is what lets `overflow-y-auto` actually clip — without
+		     both, the flex container stretches to its content height and
+		     the scrollbar never appears. `stream-thin-scroll` matches the
+		     hover-to-reveal style used in notes / tasks so the sidebar
+		     bar isn't a fat default UA bar. -->
+		<div class="stream-thin-scroll min-h-0 flex-1 overflow-y-auto">
+			<!-- Topics section — top-level partitions of the stream. Sits
+			     above Threads because it's the coarsest lens the operator
+			     uses on the stream. Hidden entirely on backends where the
+			     topics migration hasn't run (empty list). -->
+			{#if topics.length > 0}
+				<section class="border-b px-2 py-2">
+					<div class="flex items-center justify-between px-2 pb-1 pt-1">
+						<p
+							class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+						>
+							<Hash class="h-3 w-3" />
+							{irisT("Topics", $irisLocale)}
+						</p>
+						<button
+							type="button"
+							class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							onclick={() => {
+								newTopicOpen = !newTopicOpen;
+								if (newTopicOpen) {
+									// Focus the input on next tick.
+									void tick().then(() => {
+										const el = document.getElementById(
+											'war-room-new-topic-input'
+										) as HTMLInputElement | null;
+										el?.focus();
+									});
+								}
+							}}
+							aria-label={irisT("New topic", $irisLocale)}
+							title={irisT("New topic", $irisLocale)}
+						>
+							<Plus class="h-3.5 w-3.5" />
+						</button>
+					</div>
+
+					{#if newTopicOpen}
+						<div class="flex items-center gap-1 px-1 pb-1.5">
+							<Input
+								id="war-room-new-topic-input"
+								value={newTopicName}
+								oninput={(e) => (newTopicName = (e.target as HTMLInputElement).value)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										void submitNewTopic();
+									} else if (e.key === 'Escape') {
+										e.preventDefault();
+										newTopicOpen = false;
+										newTopicName = '';
+									}
+								}}
+								placeholder={irisT("Topic name…", $irisLocale)}
+								maxlength={80}
+								class="h-7 text-2xs"
+								aria-label={irisT("New topic name", $irisLocale)}
+							/>
+							<Button
+								size="sm"
+								class="h-7 px-2 text-2xs"
+								disabled={creatingTopic || !newTopicName.trim()}
+								onclick={submitNewTopic}
+							>
+								{irisT("Add", $irisLocale)}
+							</Button>
+						</div>
+					{/if}
+
+					<ul class="stream-thin-scroll flex max-h-72 flex-col overflow-y-auto">
+						{#each liveTopics as t (t.topic_id)}
+							{@const selected = selectedTopicIds.has(t.topic_id)}
+							{@const isComposer = effectiveComposerTopic?.topic_id === t.topic_id}
+							{@const unread = topicUnread[t.topic_id] ?? 0}
+							<li
+								class="group/topic flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/60"
+							>
+								<Checkbox
+									checked={selected}
+									onCheckedChange={() => toggleTopicSelection(t)}
+									aria-label={`Toggle ${t.name}`}
+									class="ml-1"
+								/>
+								<button
+									type="button"
+									class="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 text-left"
+									onclick={() => selectOnlyTopic(t)}
+									title={t.is_main ? irisT("Main topic (cannot be archived)", $irisLocale) : irisT("Show only this topic", $irisLocale)}
+								>
+									<Hash
+										class={`h-3 w-3 shrink-0 ${selected ? 'text-foreground' : 'text-muted-foreground'}`}
+									/>
+									<span class={['min-w-0 flex-1 truncate text-xs', selected ? 'font-medium' : '']}>
+										{t.name}
+									</span>
+									{#if isComposer && liveTopics.length > 1}
+										<span
+											class="shrink-0 rounded bg-primary/15 px-1 text-[10px] font-medium text-primary"
+											title={irisT("Composer target", $irisLocale)}
+										>
+											{irisT("post", $irisLocale)}
+										</span>
+									{/if}
+									{#if unread > 0}
+										<span
+											class="ml-auto shrink-0 rounded-full bg-primary px-1.5 text-[10px] font-semibold text-primary-foreground"
+										>
+											{unread > 99 ? '99+' : unread}
+										</span>
+									{/if}
+								</button>
+								{#if !t.is_main}
+									<button
+										type="button"
+										class="invisible shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:visible group-hover/topic:visible"
+										onclick={() => doArchiveTopic(t)}
+										aria-label={`Archive ${t.name}`}
+										title={irisT("Archive topic", $irisLocale)}
+									>
+										<Archive class="h-3 w-3" />
+									</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+
+					{#if archivedTopics.length > 0}
+						<div class="mt-2 border-t px-1 pt-1.5">
+							<button
+								type="button"
+								class="flex w-full items-center gap-1 rounded px-1 py-0.5 text-2xs uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+								onclick={() => (showArchivedTopics = !showArchivedTopics)}
+							>
+								{#if showArchivedTopics}
+									<ChevronDown class="h-3 w-3" />
+								{:else}
+									<ChevronRight class="h-3 w-3" />
+								{/if}
+								<span>{irisT("Archived (", $irisLocale)}{archivedTopics.length})</span>
+							</button>
+							{#if showArchivedTopics}
+								<ul class="stream-thin-scroll mt-1 flex max-h-48 flex-col overflow-y-auto">
+									{#each archivedTopics as t (t.topic_id)}
+										{@const selected = selectedTopicIds.has(t.topic_id)}
+										<li
+											class="group/atopic flex items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/60"
+										>
+											<Checkbox
+												checked={selected}
+												onCheckedChange={() => toggleTopicSelection(t)}
+												aria-label={`Toggle archived ${t.name}`}
+												class="ml-1"
+											/>
+											<button
+												type="button"
+												class="flex min-w-0 flex-1 items-center gap-1 rounded px-1 py-1 text-left"
+												onclick={() => selectOnlyTopic(t)}
+												title={irisT("Show only this archived topic (read-only)", $irisLocale)}
+											>
+												<Hash class="h-3 w-3 shrink-0 text-muted-foreground" />
+												<span class="min-w-0 flex-1 truncate text-xs italic text-muted-foreground">
+													{t.name}
+												</span>
+											</button>
+											<button
+												type="button"
+												class="invisible shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:visible group-hover/atopic:visible"
+												onclick={() => doUnarchiveTopic(t)}
+												aria-label={`Unarchive ${t.name}`}
+												title={irisT("Restore topic", $irisLocale)}
+											>
+												<ArchiveRestore class="h-3 w-3" />
+											</button>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					{/if}
+				</section>
+			{/if}
+
+			<!-- Threads at the top of the sidebar so the operator's active
+			     conversations are the first thing they see when the pane
+			     opens. Decisions & Pins follow below, then the Stream
+			     lanes filters, per-case tree, and slash-command reference. -->
+			<section class="border-b px-2 py-2">
+				<p
+					class="flex items-center gap-1.5 px-2 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+				>
+					<MessageSquare class="h-3 w-3" />
+					{irisT("Threads (", $irisLocale)}{threads.length})
+				</p>
+				{#if threads.length === 0}
+					<p class="px-2 py-2 text-2xs text-muted-foreground">
+						{irisT("Reply to any message or use", $irisLocale)} <code class="rounded bg-muted px-1 py-0.5 font-mono"
+							>/thread</code
+						> {irisT("to start one.", $irisLocale)}
+					</p>
+				{:else}
+					<ul class="stream-thin-scroll flex max-h-72 flex-col overflow-y-auto">
+						{#each threads as t (t.message_id)}
+							{@const active = openThread?.message_id === t.message_id}
+							<li>
+								<button
+									type="button"
+									class={[
+										'flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors',
+										active ? 'bg-muted' : 'hover:bg-muted/60'
+									]}
+									onclick={() => openThreadFor(t.message_id)}
+								>
+									<div class="flex items-center gap-1">
+										{#if t.is_followed}
+											<Bell class="h-3 w-3 shrink-0 text-primary" />
+										{/if}
+										<span class="min-w-0 flex-1 truncate text-xs font-medium">
+											{t.thread_title ?? (t.preview ?? '(thread)').slice(0, 60)}
+										</span>
+									</div>
+									<div class="flex items-center gap-2 text-2xs text-muted-foreground">
+										<span>
+											{t.reply_count}
+											{t.reply_count === 1 ? 'reply' : 'replies'}
+										</span>
+										{#if t.author_name || t.author_login}
+											<span class="truncate">· {t.author_name ?? t.author_login}</span>
+										{/if}
+									</div>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+
+			<!--
+			  Decisions & Pins — the trace log of everything the room
+			  officially decided or pinned, top-level or inside a
+			  thread. Newest first so the last thing decided is at the
+			  top. Click a row to jump: replies open their thread pane,
+			  top-level entries scroll the main stream and briefly ring
+			  the row.
+			-->
+			<section class="border-t px-2 py-2">
+				<p
+					class="flex items-center gap-1.5 px-2 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+				>
+					<Gavel class="h-3 w-3" />
+					{irisT("Decisions & Pins (", $irisLocale)}{traceLog.length})
+				</p>
+				{#if traceLog.length === 0}
+					<p class="px-2 py-2 text-2xs text-muted-foreground">
+						{irisT("Use", $irisLocale)} <code class="rounded bg-muted px-1 py-0.5 font-mono">/decision</code>
+						{irisT("or", $irisLocale)} <code class="rounded bg-muted px-1 py-0.5 font-mono">/pin</code> {irisT("to record something the\n\t\t\t\t\t\troom should remember.", $irisLocale)}
+					</p>
+				{:else}
+					<!--
+					  Search box narrows the trace list by body / kind /
+					  author. Kept inline (no debounce) — the list is small
+					  enough that a client-side filter on each keystroke is
+					  cheap, and the operator sees results immediately.
+					-->
+					<div class="relative px-1 pb-1">
+						<Search
+							class="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
+						/>
+						<Input
+							value={traceFilter}
+							oninput={(e) => (traceFilter = (e.target as HTMLInputElement).value)}
+							placeholder={irisT("Search decisions & pins", $irisLocale)}
+							class="h-7 pl-7 text-2xs"
+							aria-label={irisT("Search decisions & pins", $irisLocale)}
+						/>
+					</div>
+
+					{#if filteredTraceLog.length === 0}
+						<p class="px-2 py-2 text-2xs text-muted-foreground">
+							{irisT("No matches for “", $irisLocale)}{traceFilter}”.
+						</p>
+					{:else}
+						<!--
+						  Scroll cap: taller than the Threads list because
+						  decisions/pins are the audit trail an operator
+						  actively reads back through, not a summary
+						  glance. `stream-thin-scroll` matches the rest of
+						  the sidebar's scrollbar style.
+						-->
+						<ul class="stream-thin-scroll flex max-h-96 flex-col overflow-y-auto">
+							{#each filteredTraceLog as t (t.message_id)}
+								{@const meta = traceRowMeta(t)}
+								{@const bodyText = stripMarkdown(t.body ?? '')}
+								{@const canDelete = currentUserId != null && t.author_id === currentUserId}
+								<li
+									class="group/trace flex items-start gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-muted/60"
+								>
+									<button
+										type="button"
+										class="flex min-w-0 flex-1 items-start gap-2 rounded-md px-1 py-1 text-left"
+										onclick={() => jumpToTrace(t)}
+										title={irisT("Jump to this entry", $irisLocale)}
+									>
+										<meta.Icon class={`mt-0.5 h-3 w-3 shrink-0 ${meta.color}`} />
+										<div class="min-w-0 flex-1">
+											<p class="line-clamp-2 text-xs">
+												{bodyText || '—'}
+											</p>
+											<div class="mt-0.5 flex items-center gap-1.5 text-2xs text-muted-foreground">
+												<span class="uppercase tracking-wider">{meta.label}</span>
+												<span class="opacity-40">·</span>
+												<span class="truncate">
+													{t.author_name ?? t.author_login ?? 'Unknown'}
+												</span>
+												{#if t.created_at}
+													<span class="opacity-40">·</span>
+													<span class="shrink-0">{fmtTime(t.created_at)}</span>
+												{/if}
+												{#if t.parent_message_id != null}
+													<span class="opacity-40">·</span>
+													<span class="shrink-0 italic">{irisT("in thread", $irisLocale)}</span>
+												{/if}
+											</div>
+										</div>
+									</button>
+									{#if canDelete}
+										<button
+											type="button"
+											class="invisible mt-1 shrink-0 rounded p-1 text-destructive transition-colors hover:bg-destructive/10 focus:visible group-hover/trace:visible"
+											onclick={() => removeTraceEntry(t)}
+											aria-label={`Delete this ${meta.label.toLowerCase()}`}
+											title={irisT("Delete", $irisLocale)}
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				{/if}
+			</section>
+
+			<!-- Stream lanes toggles: sit below the trace views (Threads,
+			     Decisions & Pins) because in normal operation an IC
+			     spends more time reading those than tweaking which
+			     activity kinds are visible. -->
+			<section class="border-t px-2 py-2">
+				<p
+					class="px-2 pb-1 pt-1 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+				>
+					{irisT("Stream lanes", $irisLocale)}
+				</p>
+				<ul class="flex flex-col">
+					{#each GLOBAL_FILTERS as f (f.key)}
+						{@const on = globalFilters.has(f.key)}
+						<li>
+							<label
+								class={[
+									'flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors',
+									on
+										? 'text-foreground hover:bg-muted/60'
+										: 'text-muted-foreground hover:bg-muted/40'
+								]}
+							>
+								<span>{f.label}</span>
+								<Checkbox
+									checked={on}
+									onCheckedChange={() => toggleGlobal(f.key)}
+									aria-label={`Toggle ${f.label}`}
+								/>
+							</label>
+						</li>
+					{/each}
+				</ul>
+			</section>
+
+			<!-- Per-case sub-tree with grouped activity types. The list
+			     itself is capped at a comfortable max-height and scrolls
+			     internally — otherwise a war room with many attached
+			     cases would push the slash-command reference off the
+			     bottom of the sidebar. -->
+			<section class="border-t px-2 py-2">
+				<div class="flex items-center justify-between px-2 pb-1 pt-1">
+					<p
+						class="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"
+					>
+						<Waypoints class="h-3 w-3" />
+						{irisT("Cases (", $irisLocale)}{attachedCases.length})
+					</p>
+				</div>
+
+				{#if attachedCases.length === 0}
+					<p class="px-2 py-2 text-2xs text-muted-foreground">
+						{irisT("No cases attached. Anything attached later will appear here automatically.", $irisLocale)}
+					</p>
+				{:else}
+					<ul class="stream-thin-scroll flex max-h-72 flex-col overflow-y-auto">
+						{#each attachedCases as att (att.case_id)}
+							{@const caseOn = isCaseOn(att.case_id)}
+							{@const caseExpanded = caseSectionsOpen[att.case_id] ?? false}
+							<li>
+								<div
+									class={[
+										'flex items-center gap-1 rounded-md px-2 py-1.5 transition-colors',
+										caseOn ? 'hover:bg-muted/60' : 'opacity-60 hover:bg-muted/40'
+									]}
+								>
+									<button
+										type="button"
+										class="flex flex-1 items-center gap-1.5 text-left"
+										onclick={() => toggleCaseSection(att.case_id)}
+										aria-expanded={caseExpanded}
+									>
+										{#if caseExpanded}
+											<ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+										{:else}
+											<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
+										{/if}
+										<span class="min-w-0 flex-1 truncate text-xs" title={att.case_name}>
+											{att.case_name}
+										</span>
+									</button>
+									<Checkbox
+										checked={caseOn}
+										onCheckedChange={() => toggleCase(att.case_id)}
+										aria-label={`Toggle case #${att.case_id} in stream`}
+									/>
+								</div>
+
+								{#if caseExpanded}
+									<ul class="ml-4 flex flex-col border-l border-border/40 pl-1">
+										{#each ACTIVITY_GROUPS as g (g.key)}
+											{@const gOpen = groupSectionsOpen[groupKey(att.case_id, g.key)] ?? false}
+											{@const gState = groupState(att.case_id, g)}
+											<li>
+												<div
+													class={[
+														'flex items-center gap-1 rounded-md px-2 py-1 transition-colors',
+														caseOn ? 'hover:bg-muted/50' : 'opacity-60 hover:bg-muted/30'
+													]}
+												>
+													<button
+														type="button"
+														class="flex flex-1 items-center gap-1.5 text-left"
+														onclick={() => toggleGroupSection(att.case_id, g.key)}
+														aria-expanded={gOpen}
+													>
+														{#if gOpen}
+															<ChevronDown class="h-3 w-3 shrink-0 text-muted-foreground" />
+														{:else}
+															<ChevronRight class="h-3 w-3 shrink-0 text-muted-foreground" />
+														{/if}
+														<span class="text-2xs">{g.label}</span>
+													</button>
+													<Checkbox
+														checked={gState === 'all'}
+														indeterminate={gState === 'some'}
+														onCheckedChange={() => toggleGroup(att.case_id, g)}
+														disabled={!caseOn}
+														aria-label={`Toggle ${g.label} for case #${att.case_id}`}
+													/>
+												</div>
+
+												{#if gOpen}
+													<ul class="ml-4 flex flex-col border-l border-border/30 pl-1">
+														{#each g.slugs as s (s.slug)}
+															{@const typeOn = isCaseActivityOn(att.case_id, s.slug)}
+															<li>
+																<label
+																	class={[
+																		'flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-0.5 text-2xs transition-colors',
+																		caseOn && typeOn
+																			? 'text-foreground hover:bg-muted/50'
+																			: 'text-muted-foreground hover:bg-muted/30',
+																		!caseOn && 'cursor-not-allowed'
+																	]}
+																>
+																	<span class="truncate">{s.label}</span>
+																	<Checkbox
+																		checked={caseOn && typeOn}
+																		onCheckedChange={() => toggleCaseActivity(att.case_id, s.slug)}
+																		disabled={!caseOn}
+																		aria-label={s.label}
+																	/>
+																</label>
+															</li>
+														{/each}
+													</ul>
+												{/if}
+											</li>
+										{/each}
+									</ul>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+
+			<!-- Slash commands reference. Folded by default — once an
+			     operator knows the vocabulary this just takes space; the
+			     header expands it on click. -->
+			<section class="border-t px-4 py-3">
+				<button
+					type="button"
+					class="flex w-full items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+					onclick={() => (slashOpen = !slashOpen)}
+					aria-expanded={slashOpen}
+				>
+					{#if slashOpen}
+						<ChevronDown class="h-3 w-3 shrink-0" />
+					{:else}
+						<ChevronRight class="h-3 w-3 shrink-0" />
+					{/if}
+					<Slash class="h-3 w-3" />
+					{irisT("Slash commands", $irisLocale)}
+				</button>
+				{#if slashOpen}
+					<ul class="mt-2 space-y-1.5">
+						{#each SLASH_COMMANDS as c}
+							<li class="text-2xs">
+								<code class="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+									{c.cmd}
+								</code>
+								<p class="mt-0.5 pl-1 text-muted-foreground">{c.desc}</p>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		</div>
+	</Resizable.Pane>
+
+	<Resizable.Handle class="bg-transparent hover:bg-border" />
+
+	<!-- Right side: stream column + optional thread side-pane. -->
+	<Resizable.Pane class="flex h-full min-h-0 min-w-0 flex-row">
+		<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+			<!-- Compact summary visible only when sidebar is hidden. -->
+			<div class="flex items-center gap-2 overflow-x-auto border-b px-4 py-2 lg:hidden">
+				<Filter class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+				<span class="shrink-0 text-2xs text-muted-foreground">
+					{activeGlobalFilters}/{totalGlobalFilters} {irisT("lanes", $irisLocale)}
+					{#if excludedCases.size > 0}
+						· {excludedCases.size} {irisT("case", $irisLocale)}{excludedCases.size === 1 ? '' : 's'} {irisT("muted", $irisLocale)}{/if}
+				</span>
+				{#if anyExclusion}
+					<button
+						type="button"
+						class="ml-auto shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-2xs text-primary"
+						onclick={selectAll}
+					>
+						{irisT("Reset filters", $irisLocale)}
+					</button>
+				{/if}
+			</div>
+
+			<!--
+		  Top-of-stream quick filter. Hits the server (case-insensitive
+		  ILIKE against the message body + case-activity description),
+		  so a hit from six weeks ago surfaces without the operator
+		  having to page all the way back. Enter clears the debounce so
+		  the query runs immediately; Escape clears the field.
+		-->
+			<div class="flex shrink-0 items-center gap-2 border-b bg-background/60 px-4 py-2">
+				<div class="relative flex-1">
+					<Search
+						class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						value={streamSearch}
+						oninput={(e) => {
+							streamSearch = (e.target as HTMLInputElement).value;
+							scheduleStreamSearch();
+						}}
+						onkeydown={(e) => {
+							if (e.key === 'Enter') {
+								e.preventDefault();
+								if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+								const next = streamSearch.trim();
+								if (next !== appliedSearch) {
+									appliedSearch = next;
+									exhausted = false;
+									messages = [];
+									void load();
+								}
+							} else if (e.key === 'Escape') {
+								e.preventDefault();
+								clearStreamSearch();
+							}
+						}}
+						placeholder={irisT("Filter the stream — messages, decisions, case activity…", $irisLocale)}
+						class="h-8 pl-8 pr-8 text-xs"
+						aria-label={irisT("Filter the stream", $irisLocale)}
+					/>
+					{#if streamSearch}
+						<button
+							type="button"
+							class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							onclick={clearStreamSearch}
+							aria-label={irisT("Clear filter", $irisLocale)}
+							title={irisT("Clear (Esc)", $irisLocale)}
+						>
+							<X class="h-3 w-3" />
+						</button>
+					{/if}
+				</div>
+				{#if appliedSearch && !loading}
+					<span class="shrink-0 text-2xs text-muted-foreground">
+						{visibleMessages.length} {irisT("match", $irisLocale)}{visibleMessages.length === 1 ? '' : 'es'}
+					</span>
+				{/if}
+			</div>
+
+			<!-- Stream. min-w-0 above keeps long messages from forcing the
+		     column wider than the grid track allows. -->
+			<div bind:this={listEl} class="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+				{#if loading}
+					<div class="flex flex-col gap-3">
+						{#each Array(4) as _}
+							<div class="flex items-start gap-3">
+								<Skeleton class="h-8 w-8 rounded-full" />
+								<div class="flex-1 space-y-1.5">
+									<Skeleton class="h-3 w-32" />
+									<Skeleton class="h-3 w-3/4" />
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					{#if !exhausted}
+						<div class="flex justify-center pb-3">
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 text-2xs"
+								onclick={loadOlder}
+								disabled={loadingMore}
+							>
+								{#if loadingMore}
+									<Loader2 class="mr-1 h-3 w-3 animate-spin" />
+								{/if}
+								{irisT("Load earlier messages", $irisLocale)}
+							</Button>
+						</div>
+					{/if}
+
+					{#if visibleMessages.length === 0}
+						<div
+							class="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground"
+						>
+							<Send class="h-6 w-6 opacity-30" />
+							<p class="text-sm">
+								{#if appliedSearch && messages.length === 0}{irisT("No stream entries match “", $irisLocale)}{appliedSearch}”.
+								{:else if messages.length === 0}{irisT("No activity yet. Drop the first message or attach a case.", $irisLocale)}{:else}{irisT("No entries match the current filters.", $irisLocale)}{/if}
+							</p>
+							{#if appliedSearch && messages.length === 0}
+								<Button size="sm" variant="ghost" class="h-7 text-2xs" onclick={clearStreamSearch}>
+									{irisT("Clear search", $irisLocale)}
+								</Button>
+							{:else if anyExclusion}
+								<Button size="sm" variant="ghost" class="h-7 text-2xs" onclick={selectAll}>
+									{irisT("Reset filters", $irisLocale)}
+								</Button>
+							{/if}
+						</div>
+					{:else}
+						<div class="space-y-5">
+							{#each groups as g (g.key)}
+								<!-- Date separator -->
+								<div class="flex items-center gap-3" aria-hidden="true">
+									<div class="h-px flex-1 bg-border"></div>
+									<span class="text-2xs font-medium uppercase tracking-wider text-muted-foreground">
+										{g.date}
+									</span>
+									<div class="h-px flex-1 bg-border"></div>
+								</div>
+
+								<ul class="flex flex-col gap-1">
+									{#each g.rows as m, i (m.message_id)}
+										{@const prev = g.rows[i - 1]}
+										{@const cont = isContinuation(m, prev)}
+										{@const Icon = systemIcon(m.kind)}
+
+										{#if m.kind === 'poll' && m.poll}
+											<!--
+										  Poll message. Full-width card with the author's
+										  avatar + name header, then the interactive poll
+										  card. Uses the same start-of-group layout as
+										  regular messages so voter attribution reads
+										  naturally in the stream.
+										-->
+											{@const pollCanClose =
+												currentUserId != null &&
+												m.poll.author_id === currentUserId &&
+												!m.poll.is_closed}
+											<li
+												data-message-id={m.message_id}
+												class={[
+													'group/msg relative -mx-2 flex gap-3 rounded-md px-2 pt-2 transition-colors hover:bg-muted/40',
+													highlightMessageId === m.message_id && 'rounded-md ring-2 ring-primary/60'
+												]}
+											>
+												<UserAvatar
+													userId={m.author_id ?? undefined}
+													name={m.author_name ?? m.author_login ?? 'Unknown'}
+													size="size-8"
+												/>
+												<div class="min-w-0 flex-1">
+													<div class="flex items-baseline gap-2">
+														<span class="text-sm font-semibold text-foreground">
+															{m.author_name ?? m.author_login ?? 'Unknown'}
+														</span>
+														<span class="text-2xs text-muted-foreground">
+															{fmtTime(m.created_at)}
+														</span>
+														<span class="text-2xs italic text-muted-foreground">
+															{irisT("posted a poll", $irisLocale)}
+														</span>
+														{#if showTopicChips}
+															{@const chip = topicChipName(m)}
+															{#if chip}
+																<span
+																	class="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-2xs text-muted-foreground"
+																	title={`Topic: ${chip}`}
+																>
+																	<Hash class="h-2.5 w-2.5" />
+																	{chip}
+																</span>
+															{/if}
+														{/if}
+														{#if m.is_pinned}
+															<span
+																class="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-0.5 text-2xs text-primary"
+																title={irisT("Pinned", $irisLocale)}
+															>
+																<Pin class="h-2.5 w-2.5" />
+																{irisT("Pinned", $irisLocale)}
+															</span>
+														{/if}
+													</div>
+													<div class="mt-1">
+														<PollCard
+															poll={m.poll}
+															{currentUserId}
+															canClose={pollCanClose}
+															onVote={(optionIds) => voteOnPoll(m.message_id, optionIds)}
+															onClose={() => closePoll(m.message_id)}
+														/>
+													</div>
+													<div
+														class="absolute -top-3 right-1 z-10 hidden h-7 items-center gap-0.5 rounded-md border bg-card px-1 shadow-sm focus-within:flex group-hover/msg:flex"
+													>
+														<button
+															type="button"
+															class="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-muted {m.is_pinned
+																? 'text-primary'
+																: irisT("text-muted-foreground/70 hover:text-foreground", $irisLocale)}"
+															onclick={() => void togglePin(m)}
+															aria-label={m.is_pinned ? irisT("Unpin message", $irisLocale) : irisT("Pin message", $irisLocale)}
+															title={m.is_pinned ? irisT("Unpin", $irisLocale) : irisT("Pin", $irisLocale)}
+														>
+															{#if m.is_pinned}
+																<PinOff class="h-3.5 w-3.5" />
+															{:else}
+																<Pin class="h-3.5 w-3.5" />
+															{/if}
+														</button>
+														{#if currentUserId != null && m.author_id === currentUserId}
+															<button
+																type="button"
+																class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+																onclick={() => removeMessage(m)}
+																aria-label={irisT("Delete poll", $irisLocale)}
+																title={irisT("Delete", $irisLocale)}
+															>
+																<Trash2 class="h-3.5 w-3.5" />
+															</button>
+														{/if}
+													</div>
+												</div>
+											</li>
+										{:else if m.kind !== 'message'}
+											{@const actor = m.author_name ?? m.author_login}
+											<li
+												data-message-id={m.message_id}
+												class={[
+													'flex items-center gap-2 rounded-md border border-dashed border-border/60 bg-card/40 px-3 py-1.5 text-xs transition-colors',
+													highlightMessageId === m.message_id && 'ring-2 ring-primary/60'
+												]}
+											>
+												{#if Icon}
+													<Icon class={`h-3.5 w-3.5 shrink-0 ${systemColor(m.kind)}`} />
+												{/if}
+												<span class="min-w-0 flex-1 break-words text-muted-foreground">
+													{#if actor}
+														<!-- Actor first so the operator can see at a glance
+													     who triggered the system event before reading
+													     the body. The avatar isn't here on purpose: the
+													     dashed row is intentionally compact and a tiny
+													     name pill reads better at this height. -->
+														<span class="mr-1 font-medium text-foreground">
+															{actor}
+														</span>
+													{/if}
+													<!--
+												  `inline` so the generated one-liner keeps
+												  flowing after the actor pill instead of
+												  dropping onto its own row.
+												-->
+													<ChatMessageBody
+														body={m.body ?? ''}
+														attachments={m.attachments}
+														{warRoomId}
+														onAttachmentClick={openPreview}
+														inline
+													/>
+												</span>
+												<!--
+											  Reference card: a clickable chip pointing at the
+											  ref_type / ref_id the backend stamped on this row.
+											  Falls back to a non-link badge for self-referential
+											  rows (war_room, war_room_chat).
+											-->
+												<StreamRefCard
+													{warRoomId}
+													refType={m.ref_type}
+													refId={m.ref_id}
+													refCaseId={m.ref_case_id}
+													{attachedCases}
+												/>
+												{#if showTopicChips}
+													{@const chip = topicChipName(m)}
+													{#if chip}
+														<span
+															class="inline-flex shrink-0 items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-2xs text-muted-foreground"
+															title={`Topic: ${chip}`}
+														>
+															<Hash class="h-2.5 w-2.5" />
+															{chip}
+														</span>
+													{/if}
+												{/if}
+												<span class="shrink-0 text-2xs text-muted-foreground">
+													{fmtTime(m.created_at)}
+												</span>
+											</li>
+										{:else if cont}
+											{@const replyCount = replyCountByRoot.get(m.message_id) ?? 0}
+											<li
+												data-message-id={m.message_id}
+												class={[
+													'group/msg relative -mx-2 flex gap-3 rounded-md pl-11 pr-2 transition-colors hover:bg-muted/40',
+													highlightMessageId === m.message_id && 'rounded-md ring-2 ring-primary/60'
+												]}
+											>
+												<div class="min-w-0 flex-1">
+													{#if editingMessageId === m.message_id}
+														<ChatMessageEditor
+															initial={m.body ?? ''}
+															saving={editSaving}
+															onSave={(next) => void saveEdit(m.message_id, next)}
+															onCancel={cancelEdit}
+														/>
+														<!--
+													  Uploads stay on screen while the text is being
+													  rewritten — the edit only ever touches the body,
+													  so hiding them would misreport the message.
+													-->
+														<ChatMessageAttachments attachments={m.attachments} {warRoomId} />
+													{:else}
+														<!--
+												  A div, not a p: the body is markdown now and
+												  renders block children (paragraphs, lists, code
+												  fences) that a <p> can't legally contain.
+												-->
+														<div class="break-words text-sm">
+															<ChatMessageBody
+																body={m.body ?? ''}
+																attachments={m.attachments}
+																{warRoomId}
+																onAttachmentClick={openPreview}
+															/>
+															{#if m.edited_at}
+																<!--
+														  Continuation rows have no timestamp header, so the
+														  edited marker rides at the end of the body — same
+														  placement rationale as the pin badge below.
+														-->
+																<span
+																	class="ml-1 align-middle text-2xs italic text-muted-foreground"
+																>
+																	{irisT("(edited)", $irisLocale)}
+																</span>
+															{/if}
+															{#if m.is_pinned}
+																<!--
+														  Pin badge next to body content. On continuation
+														  rows there's no timestamp header to anchor to, so
+														  we inline the badge at the end of the body.
+														-->
+																<span
+																	class="ml-1 inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-0.5 align-middle text-2xs text-primary"
+																	title={irisT("Pinned", $irisLocale)}
+																>
+																	<Pin class="h-2.5 w-2.5" />
+																	{irisT("Pinned", $irisLocale)}
+																</span>
+															{/if}
+														</div>
+													{/if}
+													{#if (m.reactions ?? []).length > 0}
+														<MessageReactions
+															reactions={m.reactions}
+															{currentUserId}
+															onToggle={(emoji) => void toggleReaction(m.message_id, emoji)}
+														/>
+													{/if}
+													<!--
+												  Thread chip lives on its own row — always visible so
+												  operators can see reply counts at rest. The action
+												  strip below is hover-only.
+												-->
+													{#if replyCount > 0 || m.thread_title}
+														<button
+															type="button"
+															class="mt-1 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-2xs text-primary hover:bg-primary/15"
+															onclick={() => openThreadFor(m.message_id)}
+														>
+															<MessageSquare class="h-3 w-3" />
+															{#if m.thread_title}
+																{m.thread_title}
+															{:else}
+																{replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+															{/if}
+														</button>
+													{/if}
+													<!--
+												  Message action strip — Reply / React / Pin / Delete.
+												  Icon-only for compactness. Revealed on hover of the
+												  parent `group/msg` container so the stream stays
+												  visually calm at rest. Kept in the DOM (opacity
+												  instead of `hidden`) so layout doesn't jump and the
+												  popover anchors keep working.
+												-->
+													<div
+														class="absolute -top-3 right-1 z-10 hidden h-7 items-center gap-0.5 rounded-md border bg-card px-1 shadow-sm focus-within:flex group-hover/msg:flex"
+													>
+														<button
+															type="button"
+															class="inline-flex h-6 items-center rounded px-1.5 text-2xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+															onclick={() => openThreadFor(m.message_id)}
+														>
+															{irisT("Reply in thread", $irisLocale)}
+														</button>
+														{#if (m.reactions ?? []).length === 0}
+															<div class="relative">
+																<button
+																	type="button"
+																	class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+																	onclick={(e) => openReactPicker(m.message_id, e.currentTarget)}
+																	aria-label={irisT("Add reaction", $irisLocale)}
+																	title={irisT("Add reaction", $irisLocale)}
+																>
+																	<SmilePlus class="h-3.5 w-3.5" />
+																</button>
+																{#if reactPickerFor === m.message_id}
+																	<EmojiPickerPopover
+																		open={true}
+																		onOpenChange={(v) => {
+																			if (!v) closeReactPicker();
+																		}}
+																		onPick={(emoji) => {
+																			void toggleReaction(m.message_id, emoji);
+																			closeReactPicker();
+																		}}
+																		anchor={reactPickerAnchor}
+																	/>
+																{/if}
+															</div>
+														{/if}
+														<button
+															type="button"
+															class="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-muted {m.is_pinned
+																? 'text-primary'
+																: irisT("text-muted-foreground/70 hover:text-foreground", $irisLocale)}"
+															onclick={() => void togglePin(m)}
+															aria-label={m.is_pinned ? irisT("Unpin message", $irisLocale) : irisT("Pin message", $irisLocale)}
+															title={m.is_pinned ? irisT("Unpin", $irisLocale) : irisT("Pin", $irisLocale)}
+														>
+															{#if m.is_pinned}
+																<PinOff class="h-3.5 w-3.5" />
+															{:else}
+																<Pin class="h-3.5 w-3.5" />
+															{/if}
+														</button>
+														{#if canEditMessage(m) && editingMessageId !== m.message_id}
+															<button
+																type="button"
+																class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => beginEdit(m)}
+																aria-label={irisT("Edit message", $irisLocale)}
+																title={irisT("Edit", $irisLocale)}
+															>
+																<Pencil class="h-3.5 w-3.5" />
+															</button>
+														{/if}
+														{#if currentUserId != null && m.author_id === currentUserId}
+															<button
+																type="button"
+																class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+																onclick={() => removeMessage(m)}
+																aria-label={irisT("Delete message", $irisLocale)}
+																title={irisT("Delete", $irisLocale)}
+															>
+																<Trash2 class="h-3.5 w-3.5" />
+															</button>
+														{/if}
+													</div>
+												</div>
+											</li>
+										{:else}
+											{@const replyCount = replyCountByRoot.get(m.message_id) ?? 0}
+											<li
+												data-message-id={m.message_id}
+												class={[
+													'group/msg relative -mx-2 flex gap-3 rounded-md px-2 pt-2 transition-colors hover:bg-muted/40',
+													highlightMessageId === m.message_id && 'rounded-md ring-2 ring-primary/60'
+												]}
+											>
+												<UserAvatar
+													userId={m.author_id ?? undefined}
+													name={m.author_name ?? m.author_login ?? 'Unknown'}
+													size="size-8"
+												/>
+												<div class="min-w-0 flex-1">
+													<div class="flex items-baseline gap-2">
+														<span class="text-sm font-semibold text-foreground">
+															{m.author_name ?? m.author_login ?? 'Unknown'}
+														</span>
+														<span class="text-2xs text-muted-foreground">
+															{fmtTime(m.created_at)}
+														</span>
+														{#if m.edited_at}
+															<span class="text-2xs italic text-muted-foreground"> {irisT("(edited)", $irisLocale)} </span>
+														{/if}
+														{#if showTopicChips}
+															{@const chip = topicChipName(m)}
+															{#if chip}
+																<span
+																	class="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-2xs text-muted-foreground"
+																	title={`Topic: ${chip}`}
+																>
+																	<Hash class="h-2.5 w-2.5" />
+																	{chip}
+																</span>
+															{/if}
+														{/if}
+														{#if m.is_pinned}
+															<span
+																class="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-0.5 text-2xs text-primary"
+																title={irisT("Pinned", $irisLocale)}
+															>
+																<Pin class="h-2.5 w-2.5" />
+																{irisT("Pinned", $irisLocale)}
+															</span>
+														{/if}
+													</div>
+													{#if editingMessageId === m.message_id}
+														<ChatMessageEditor
+															initial={m.body ?? ''}
+															saving={editSaving}
+															onSave={(next) => void saveEdit(m.message_id, next)}
+															onCancel={cancelEdit}
+														/>
+														<ChatMessageAttachments attachments={m.attachments} {warRoomId} />
+													{:else}
+														<!-- See the continuation row above: markdown
+													     bodies are block content, so this can't be
+													     a <p>. -->
+														<div class="mt-0.5 break-words text-sm">
+															<ChatMessageBody
+																body={m.body ?? ''}
+																attachments={m.attachments}
+																{warRoomId}
+																onAttachmentClick={openPreview}
+															/>
+														</div>
+													{/if}
+													{#if (m.reactions ?? []).length > 0}
+														<MessageReactions
+															reactions={m.reactions}
+															{currentUserId}
+															onToggle={(emoji) => void toggleReaction(m.message_id, emoji)}
+														/>
+													{/if}
+													{#if replyCount > 0 || m.thread_title}
+														<button
+															type="button"
+															class="mt-1 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-2xs text-primary hover:bg-primary/15"
+															onclick={() => openThreadFor(m.message_id)}
+														>
+															<MessageSquare class="h-3 w-3" />
+															{#if m.thread_title}
+																{m.thread_title}
+															{:else}
+																{replyCount} {replyCount === 1 ? 'reply' : 'replies'}
+															{/if}
+														</button>
+													{/if}
+													<div
+														class="absolute -top-3 right-1 z-10 hidden h-7 items-center gap-0.5 rounded-md border bg-card px-1 shadow-sm focus-within:flex group-hover/msg:flex"
+													>
+														<button
+															type="button"
+															class="inline-flex h-6 items-center rounded px-1.5 text-2xs text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+															onclick={() => openThreadFor(m.message_id)}
+														>
+															{irisT("Reply in thread", $irisLocale)}
+														</button>
+														{#if (m.reactions ?? []).length === 0}
+															<div class="relative">
+																<button
+																	type="button"
+																	class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+																	onclick={(e) => openReactPicker(m.message_id, e.currentTarget)}
+																	aria-label={irisT("Add reaction", $irisLocale)}
+																	title={irisT("Add reaction", $irisLocale)}
+																>
+																	<SmilePlus class="h-3.5 w-3.5" />
+																</button>
+																{#if reactPickerFor === m.message_id}
+																	<EmojiPickerPopover
+																		open={true}
+																		onOpenChange={(v) => {
+																			if (!v) closeReactPicker();
+																		}}
+																		onPick={(emoji) => {
+																			void toggleReaction(m.message_id, emoji);
+																			closeReactPicker();
+																		}}
+																		anchor={reactPickerAnchor}
+																	/>
+																{/if}
+															</div>
+														{/if}
+														<button
+															type="button"
+															class="inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-muted {m.is_pinned
+																? 'text-primary'
+																: irisT("text-muted-foreground/70 hover:text-foreground", $irisLocale)}"
+															onclick={() => void togglePin(m)}
+															aria-label={m.is_pinned ? irisT("Unpin message", $irisLocale) : irisT("Pin message", $irisLocale)}
+															title={m.is_pinned ? irisT("Unpin", $irisLocale) : irisT("Pin", $irisLocale)}
+														>
+															{#if m.is_pinned}
+																<PinOff class="h-3.5 w-3.5" />
+															{:else}
+																<Pin class="h-3.5 w-3.5" />
+															{/if}
+														</button>
+														{#if canEditMessage(m) && editingMessageId !== m.message_id}
+															<button
+																type="button"
+																class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+																onclick={() => beginEdit(m)}
+																aria-label={irisT("Edit message", $irisLocale)}
+																title={irisT("Edit", $irisLocale)}
+															>
+																<Pencil class="h-3.5 w-3.5" />
+															</button>
+														{/if}
+														{#if currentUserId != null && m.author_id === currentUserId}
+															<button
+																type="button"
+																class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+																onclick={() => removeMessage(m)}
+																aria-label={irisT("Delete message", $irisLocale)}
+																title={irisT("Delete", $irisLocale)}
+															>
+																<Trash2 class="h-3.5 w-3.5" />
+															</button>
+														{/if}
+													</div>
+												</div>
+											</li>
+										{/if}
+									{/each}
+								</ul>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+			</div>
+
+			<!-- Composer -->
+			<form
+				class={[
+					'relative border-t bg-background/80 px-4 py-3 transition-colors',
+					isDropTarget && 'bg-primary/5'
+				]}
+				ondragover={onComposerDragOver}
+				ondragleave={onComposerDragLeave}
+				ondrop={onComposerDrop}
+				onsubmit={(e) => {
+					e.preventDefault();
+					void send();
+				}}
+			>
+				{#if isDropTarget}
+					<div
+						class="pointer-events-none absolute inset-2 flex items-center justify-center rounded-md border-2 border-dashed border-primary/60 bg-primary/5 text-xs font-medium text-primary"
+					>
+						{irisT("Drop files to attach", $irisLocale)}
+					</div>
+				{/if}
+
+				{#if pendingAttachments.length > 0}
+					<div class="mb-2 flex flex-wrap gap-1.5 px-1">
+						{#each pendingAttachments as p (p.id)}
+							<div class="flex items-center gap-1.5 rounded border bg-muted/50 px-2 py-1 text-2xs">
+								<Paperclip class="h-3 w-3 text-muted-foreground" />
+								<span class="max-w-[16rem] truncate">{p.file.name}</span>
+								<span class="text-muted-foreground">
+									{humanBytes(p.file.size)}
+								</span>
+								<button
+									type="button"
+									class="text-muted-foreground hover:text-destructive"
+									onclick={() => removePendingAttachment(p.id)}
+									aria-label={irisT("Remove attachment", $irisLocale)}
+								>
+									<X class="h-3 w-3" />
+								</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<!-- Topic chip — shows the operator which topic the composer will
+			     post into. Clickable to open a topic-picker popover; hidden
+			     entirely on backends without topics support. -->
+				{#if topics.length > 0}
+					<div class="mb-1.5 flex items-center gap-2 px-1 text-2xs">
+						<span class="text-muted-foreground">{irisT("Posting to", $irisLocale)}</span>
+						<Popover.Root>
+							<Popover.Trigger
+								class={[
+									'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors',
+									composerLocked
+										? 'border-destructive/40 text-destructive'
+										: 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
+								]}
+								disabled={liveTopics.length <= 1}
+								title={composerLocked
+									? irisT("The selected topic is archived — pick a live one.", $irisLocale)
+									: liveTopics.length <= 1
+										? undefined
+										: irisT("Change target topic", $irisLocale)}
+							>
+								<Hash class="h-3 w-3" />
+								<span class="font-medium">
+									{effectiveComposerTopic?.name ?? 'No topic'}
+								</span>
+								{#if liveTopics.length > 1}
+									<ChevronDown class="h-3 w-3 opacity-70" />
+								{/if}
+							</Popover.Trigger>
+							{#if liveTopics.length > 1}
+								<Popover.Content side="top" align="start" class="w-56 p-1">
+									<ul class="flex flex-col">
+										{#each liveTopics as t (t.topic_id)}
+											{@const active = effectiveComposerTopic?.topic_id === t.topic_id}
+											<li>
+												<button
+													type="button"
+													class={[
+														'flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors',
+														active ? 'bg-muted font-medium' : 'hover:bg-muted/60'
+													]}
+													onclick={() => {
+														// Switch the stream view to just this topic —
+														// picking a "Posting to" target implies the
+														// operator wants to focus that lane, not merge
+														// it into whatever multi-select they had.
+														selectOnlyTopic(t);
+													}}
+												>
+													<Hash class="h-3 w-3 text-muted-foreground" />
+													<span class="min-w-0 flex-1 truncate">{t.name}</span>
+													{#if t.is_main}
+														<span class="shrink-0 text-2xs text-muted-foreground"> {irisT("main", $irisLocale)} </span>
+													{/if}
+												</button>
+											</li>
+										{/each}
+									</ul>
+								</Popover.Content>
+							{/if}
+						</Popover.Root>
+					</div>
+				{/if}
+
+				<div
+					class="flex items-end gap-2 rounded-xl border bg-card px-3 py-2 focus-within:ring-1 focus-within:ring-ring"
+				>
+					<button
+						type="button"
+						class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+						onclick={() => (pollComposerOpen = true)}
+						aria-label={irisT("Create a poll", $irisLocale)}
+						title={irisT("Create a poll", $irisLocale)}
+					>
+						<BarChart3 size={15} />
+					</button>
+					<Popover.Root bind:open={attachOpen}>
+						<Popover.Trigger
+							class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+							aria-label={irisT("Attach a case element", $irisLocale)}
+						>
+							<Paperclip size={15} />
+						</Popover.Trigger>
+						<Popover.Content side="top" align="start" class="w-96 p-0">
+							{#if attachedCases.length === 0}
+								<div class="p-4 text-center text-xs text-muted-foreground">
+									{irisT("No cases attached to this war room yet — attach one in the Cases tab.", $irisLocale)}
+								</div>
+							{:else}
+								<!-- Kind chips -->
+								<div class="flex items-center gap-1 border-b p-2">
+									{#each [{ k: 'event', l: 'Events' }, { k: 'ioc', l: 'IOCs' }, { k: 'asset', l: 'Assets' }, { k: 'task', l: 'Tasks' }] as t}
+										{@const on = attachKind === (t.k as ResourceKind)}
+										<button
+											type="button"
+											class={[
+												'flex-1 rounded-md px-2 py-1 text-2xs transition-colors',
+												on
+													? 'bg-primary text-primary-foreground'
+													: 'text-muted-foreground hover:bg-muted'
+											]}
+											onclick={() => (attachKind = t.k as ResourceKind)}
+										>
+											{t.l}
+										</button>
+									{/each}
+								</div>
+
+								<!-- Case selector -->
+								<div class="border-b p-2">
+									<label
+										class="block text-2xs uppercase tracking-wider text-muted-foreground"
+										for="attach-case"
+									>
+										{irisT("Case", $irisLocale)}
+									</label>
+									<select
+										id="attach-case"
+										bind:value={attachCaseId}
+										class="mt-1 h-7 w-full rounded border bg-background px-2 text-xs"
+									>
+										{#each attachedCases as c (c.case_id)}
+											<option value={c.case_id}>#{c.case_id} — {c.case_name}</option>
+										{/each}
+									</select>
+								</div>
+
+								<!-- Search -->
+								<div class="border-b p-2">
+									<div class="relative">
+										<Search
+											class="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground"
+										/>
+										<Input
+											value={attachSearch}
+											oninput={(e) => (attachSearch = (e.target as HTMLInputElement).value)}
+											placeholder={irisT("Search…", $irisLocale)}
+											class="h-7 pl-7 text-xs"
+										/>
+									</div>
+								</div>
+
+								<!-- Results -->
+								<div class="max-h-72 overflow-y-auto">
+									{#if attachLoading}
+										<div class="p-3 text-center text-xs text-muted-foreground">{irisT("Loading…", $irisLocale)}</div>
+									{:else if filteredPickerRows.length === 0}
+										<div class="p-3 text-center text-xs text-muted-foreground">{irisT("Nothing here.", $irisLocale)}</div>
+									{:else}
+										<ul>
+											{#each filteredPickerRows as r (r.id)}
+												<li>
+													<button
+														type="button"
+														class="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/60"
+														onclick={() => insertAttachment(r)}
+													>
+														<span class="min-w-0 flex-1">
+															<span class="block truncate font-medium">{r.label}</span>
+															{#if r.sub}
+																<span class="block truncate text-2xs text-muted-foreground">
+																	{r.sub}
+																</span>
+															{/if}
+														</span>
+													</button>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</div>
+							{/if}
+						</Popover.Content>
+					</Popover.Root>
+
+					<textarea
+						bind:this={composerEl}
+						value={body}
+						oninput={onInput}
+						onkeydown={onKey}
+						placeholder={irisT("Type a message, /command, @user or #resource…", $irisLocale)}
+						rows="1"
+						class="flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+					></textarea>
+
+					<ChatComposerMentions
+						bind:this={mentions}
+						textarea={composerEl}
+						{body}
+						{attachedCases}
+						{warRoomId}
+						onChangeBody={(v) => (body = v)}
+					/>
+
+					<Button
+						type="submit"
+						size="sm"
+						class="h-8 gap-1.5"
+						disabled={sending ||
+							(!body.trim() && pendingAttachments.length === 0) ||
+							composerLocked}
+					>
+						{#if sending}
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+						{:else}
+							<Send class="h-3.5 w-3.5" />
+						{/if}
+						{irisT("Send", $irisLocale)}
+					</Button>
+				</div>
+
+				<p class="mt-1.5 px-1 text-2xs text-muted-foreground">
+					<kbd class="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">{irisT("Enter", $irisLocale)}</kbd>
+					{irisT("to send ·", $irisLocale)}
+					<kbd class="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">{irisT("Shift+Enter", $irisLocale)}</kbd>
+					{irisT("for newline ·", $irisLocale)}
+					<kbd class="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">/</kbd>
+					{irisT("for commands", $irisLocale)}
+				</p>
+			</form>
+		</div>
+
+		{#if openThread}
+			<WarRoomThreadPane
+				{warRoomId}
+				root={openThread}
+				{attachedCases}
+				onAttachmentClick={openPreview}
+				onClose={closeThread}
+				onChanged={loadThreads}
+			/>
+		{/if}
+	</Resizable.Pane>
+</Resizable.PaneGroup>
+
+<AttachmentPreviewDialog
+	bind:open={previewOpen}
+	target={previewTarget}
+	onOpenChange={(v) => (previewOpen = v)}
+/>
+
+<ConfirmationDialog
+	bind:open={confirmOpen}
+	title={confirmTitle}
+	message={confirmMessage}
+	confirmText={confirmActionText}
+	confirmButtonVariant="destructive"
+	onConfirm={runConfirmed}
+/>
+
+<PollComposer
+	open={pollComposerOpen}
+	onOpenChange={(v) => (pollComposerOpen = v)}
+	onSubmit={submitPoll}
+/>
+
+<style>
+	/*
+	  Thin, hover-to-reveal scrollbar used inside the stream filters
+	  sidebar — same pattern as `.notes-tree-scroll` in the case notes
+	  layout so the look is consistent across the app. The default UA
+	  scrollbar inside the narrow filter pane looked chunky and dated.
+	*/
+	.stream-thin-scroll {
+		scrollbar-width: thin;
+		scrollbar-color: transparent transparent;
+		transition: scrollbar-color 0.2s ease;
+	}
+
+	.stream-thin-scroll:hover {
+		scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+	}
+
+	.stream-thin-scroll::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.stream-thin-scroll::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.stream-thin-scroll::-webkit-scrollbar-thumb {
+		background-color: transparent;
+		border-radius: 999px;
+		transition: background-color 0.2s ease;
+	}
+
+	.stream-thin-scroll:hover::-webkit-scrollbar-thumb {
+		background-color: hsl(var(--muted-foreground) / 0.35);
+	}
+
+	.stream-thin-scroll::-webkit-scrollbar-thumb:hover {
+		background-color: hsl(var(--muted-foreground) / 0.55);
+	}
+</style>

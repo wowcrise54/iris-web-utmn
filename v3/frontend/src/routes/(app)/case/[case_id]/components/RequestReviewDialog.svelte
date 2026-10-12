@@ -1,0 +1,91 @@
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import * as Dialog from '$lib/components/ui/dialog';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import SearchSelect, {
+		type SelectOption
+	} from '$lib/components/common/selects/SearchSelect.svelte';
+	import type { UserInfo } from '$lib/services/auth.service';
+	import { getContext } from 'svelte';
+	import { CaseService, type CaseAccessUserRow } from '$lib/services/case.service';
+	import { CASES_CTX, type CasesContext } from '$lib/contexts/cases.context.svelte';
+
+	export type MergeMode = 'new' | 'existing';
+
+	type Props = {
+		open: boolean;
+		onConfirm: (admin: UserInfo) => void;
+	};
+
+	let { open = $bindable(), onConfirm }: Props = $props();
+
+	const cases = getContext<CasesContext>(CASES_CTX);
+
+	let users = $state<CaseAccessUserRow[]>([]);
+	let userId = $state('');
+	let selectedUser = $derived.by<CaseAccessUserRow>(
+		() => users.find((user) => user.user_id === Number(userId)) as CaseAccessUserRow
+	);
+
+	const reviewerOptions = $derived.by<SelectOption[]>(() =>
+		users.map((u) => ({ value: String(u.user_id), label: u.user_name }))
+	);
+
+	// `/cases/{id}/access/users` rather than `/manage/users`: the latter is
+	// server_administrator-only, so an analyst with full access to the case
+	// would get a 403 and an empty reviewer list. Narrowed to full_access (4)
+	// by `listUsers` — a reviewer needs to be able to open the case.
+	$effect(() => {
+		const caseId = cases.currentCaseId();
+		if (!caseId) return;
+		void CaseService.listUsers(caseId).then((rows) => {
+			users = rows;
+		});
+	});
+
+	$effect(() => {
+		if (!open) return;
+
+		if (users.length) {
+			userId = String(users[0].user_id);
+		} else {
+			userId = '';
+		}
+	});
+</script>
+
+<Dialog.Root bind:open>
+	<Dialog.Content class="flex flex-col p-0">
+		<Dialog.Header class="border-b px-6 py-4">
+			<Dialog.Title class="text-base font-medium">{irisT("Choose reviewer", $irisLocale)}</Dialog.Title>
+		</Dialog.Header>
+
+		<div class="flex-1 overflow-auto px-6 py-5">
+			<SearchSelect
+				value={userId}
+				options={reviewerOptions}
+				placeholder={irisT("Reviewer", $irisLocale)}
+				searchPlaceholder="Search reviewer..."
+				onChange={(value) => (userId = value as string)}
+			/>
+		</div>
+
+		<div class="flex items-center justify-end gap-2 border-t px-6 py-4">
+			<Button variant="outline" onclick={() => (open = false)}>{irisT("Cancel", $irisLocale)}</Button>
+
+			<Button
+				onclick={() => {
+					if (selectedUser) {
+						onConfirm(selectedUser);
+						open = false;
+					}
+				}}
+				disabled={selectedUser === null}
+			>
+				{irisT("Request", $irisLocale)}
+			</Button>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

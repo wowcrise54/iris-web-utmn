@@ -1,0 +1,157 @@
+#  IRIS Source Code
+#  Copyright (C) 2024 - DFIR-IRIS
+#  contact@dfir-iris.org
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU Lesser General Public
+#  License as published by the Free Software Foundation; either
+#  version 3 of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#  Lesser General Public License for more details.
+#
+#  You should have received a copy of the GNU Lesser General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+import base64
+import datetime
+import decimal
+import json
+import uuid
+
+from app.web import g
+from app.web import render_template
+from app.web import request
+from sqlalchemy.orm import DeclarativeMeta
+
+from app import TEMPLATE_PATH
+from app import app
+
+
+# Set basic 404
+@app.errorhandler(404)
+def page_not_found(e):
+    # note that we set the 404 status explicitly
+    if request.content_type and 'application/json' in request.content_type:
+        return response_error("Resource not found", status=404)
+
+    return render_template('pages/error-404.html', template_folder=TEMPLATE_PATH), 404
+
+
+# 413 handler. `MAX_CONTENT_LENGTH` (set on a demo instance, see
+# app/configuration.py) makes Werkzeug abort the request before any
+# view runs, so the upload routes never get to return their own
+# friendly message. Without this the SPA receives an HTML error page
+# for what is a perfectly ordinary "file too big" outcome.
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    # Uploads arrive as multipart, so the content-type sniff the 404/500
+    # handlers use doesn't identify an API caller here — match on the
+    # `/api/v2` mount instead, plus the JSON sniff for the legacy REST
+    # routes that live at the root.
+    message = 'Upload is too large for this instance'
+    if request.path.startswith('/api/') or (
+            request.content_type and 'application/json' in request.content_type):
+        return response_error(message, status=413)
+
+    return render_template(
+        'pages/error-404.html',
+        template_folder=TEMPLATE_PATH,
+    ), 413
+
+
+# 500 handler — the FlaskIntegration in
+# app/iris_engine/observability/reporter.py captures the exception
+# BEFORE this runs (via `flask.got_request_exception`), so no manual
+# capture_exception call is needed here. This exists only to return a
+# useful envelope: JSON clients get `{request_id, ...}` so a support
+# ticket can link an activity-log row to a crash event.
+@app.errorhandler(500)
+def internal_server_error(e):
+    request_id = g.get('request_id')
+    if request.content_type and 'application/json' in request.content_type:
+        return response_error(
+            'Internal server error',
+            data={'request_id': request_id} if request_id else None,
+            status=500,
+        )
+    return render_template(
+        'pages/error-404.html',
+        template_folder=TEMPLATE_PATH,
+    ), 500
+
+
+_UNSET = object()
+
+
+def response(status, data=_UNSET):
+    # Always serialize when the caller passed *anything* — including
+    # `None`, which must reach the client as the JSON literal `null`,
+    # not an empty body. The old `data is not None` guard silently
+    # produced empty response bodies labelled as JSON, breaking every
+    # caller that returned `response_api_success(data=None)` (source
+    # alert cluster lookup is the trigger, but the pattern is used in
+    # several places). `_UNSET` preserves the "no body at all" path
+    # for the tiny minority of callers that genuinely want that.
+    if data is _UNSET:
+        body = None
+    else:
+        body = json.dumps(data, cls=AlchemyEncoder)
+    return app.response_class(response=body, status=status, mimetype='application/json')
+
+
+def response_error(msg, data=None, status=400):
+    content = {
+        'status': 'error',
+        'message': msg,
+        'data': data if data is not None else []
+    }
+    return response(status, data=content)
+
+
+def response_success(msg='', data=None):
+    content = {
+        "status": "success",
+        "message": msg,
+        "data": data if data is not None else []
+    }
+    return response(200, data=content)
+
+
+class AlchemyEncoder(json.JSONEncoder):
+
+    def default(self, obj):
+        if isinstance(obj.__class__, DeclarativeMeta):
+            # an SQLAlchemy class
+            fields = {}
+            for field in [x for x in dir(obj) if not x.startswith('_') and x != 'metadata'
+                                                 and x != 'query' and x != 'query_class']:
+                data = obj.__getattribute__(field)
+                try:
+                    json.dumps(data)  # this will fail on non-encodable values, like other classes
+                    fields[field] = data
+                except TypeError:
+                    fields[field] = None
+            # a json-encodable dict
+            return fields
+
+        if isinstance(obj, decimal.Decimal):
+            return str(obj)
+
+        if isinstance(obj, datetime.datetime) or isinstance(obj, datetime.date):
+            return obj.isoformat()
+
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+
+        if obj.__class__ == bytes:
+            # base64 rather than `str(obj)`: a bytes value that reaches
+            # here is opaque binary (the ORM branch above nulls the ones
+            # it meets), and a Python repr is neither round-trippable
+            # nor useful to a JSON client. Never unpickle it — the
+            # blob is whatever was in the column.
+            return base64.b64encode(obj).decode('ascii')
+
+        return json.JSONEncoder.default(self, obj)

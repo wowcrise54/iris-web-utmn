@@ -19,7 +19,14 @@
 
 FROM nginx:1.27
 
-RUN apt-get update && apt-get install -y curl
+# Pull in current Debian security updates (libxml2 CVE-2024-56171 /
+# CVE-2025-49794 / CVE-2025-49796 and similar). `apt-get upgrade` is safe
+# inside the image because apt retrieves from Debian's configured archive
+# mirrors and the updates are binary-compatible within the suite.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Used to pass protected files to the container through volumes
 ARG NGINX_CONF_GID
@@ -28,6 +35,7 @@ ARG NGINX_CONF_FILE
 RUN groupadd -g ${NGINX_CONF_GID} az-app-nginx-conf && usermod -a -G az-app-nginx-conf www-data
 
 COPY entrypoint.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh
 RUN chmod 700 /entrypoint.sh
 RUN chown www-data:www-data /entrypoint.sh
 

@@ -14,7 +14,7 @@ def _table_has_column(table, column):
     try:
         result = connection.execute(text(f"SELECT * FROM \"{table}\" LIMIT 1"))
         columns = result.keys()
-    except Exception:
+    except Exception as e:
         return False
     finally:
         connection.close()

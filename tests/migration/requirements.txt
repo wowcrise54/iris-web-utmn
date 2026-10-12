@@ -1,0 +1,5 @@
+pytest==8.3.4
+httpx==0.28.1
+aiohttp==3.11.11
+requests==2.31.0
+cryptography>=39.0.1

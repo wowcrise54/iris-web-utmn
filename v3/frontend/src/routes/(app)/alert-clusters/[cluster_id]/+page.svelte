@@ -1,0 +1,1286 @@
+<!--
+  AlertCluster detail. Mirrors the case-detail visual language: white
+  workspace, tabs as an underline strip on top of a bordered content
+  region, no card-in-card nesting. Sections use plain borders on the
+  workspace background — the analyst sees one continuous canvas, not
+  a stack of little cards.
+
+  Tabs are content-only (no duplicate "Overview") — the header strip
+  already summarises status/severity/owner, so the tabs cover the
+  distinct evidence groups: Alerts, Assets, IOCs, Timeline, Activity.
+-->
+<script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
+
+	import { onMount } from 'svelte';
+	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
+	import {
+		ArrowLeftIcon,
+		ArrowUpRightIcon,
+		BookmarkIcon,
+		BuildingIcon,
+		CheckCircle2Icon,
+		CheckSquareIcon,
+		CircleAlertIcon,
+		CircleDotIcon,
+		ClockIcon,
+		FileTextIcon,
+		FingerprintIcon,
+		FlameIcon,
+		GitForkIcon,
+		HardDriveIcon,
+		HistoryIcon,
+		LayersIcon,
+		LoaderIcon,
+		MessageSquareIcon,
+		RefreshCwIcon,
+		SaveIcon,
+		SendHorizonalIcon,
+		ShieldAlertIcon,
+		TrashIcon
+	} from 'lucide-svelte';
+	import Button from '$lib/components/ui/button/button.svelte';
+	import { Loading } from '$lib/components/ui/loading';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Command from '$lib/components/ui/command';
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuItem,
+		DropdownMenuLabel,
+		DropdownMenuSeparator,
+		DropdownMenuTrigger
+	} from '$lib/components/ui/dropdown-menu';
+	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
+	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
+	import { toast } from '$lib/components/ui/toast';
+	import UserAvatar from '$lib/components/common/UserAvatar.svelte';
+	import { MarkDownEditor } from '$lib/components/common/MarkDown';
+	import AlertClusterInvestigationFlowPanel from './AlertClusterInvestigationFlowPanel.svelte';
+	import AlertClusterEscalateDialog, {
+		type AlertClusterEscalatePayload
+	} from './AlertClusterEscalateDialog.svelte';
+	import AlertClusterCorrelationGraph from './AlertClusterCorrelationGraph.svelte';
+	import { AlertClustersService } from '$lib/services/alert-clusters.service';
+	import { AlertService } from '$lib/services/alerts.service';
+	import { CommentsService, type Comment } from '$lib/services/comments.service';
+	import {
+		AlertClusterStatusService,
+		type AlertClusterStatus
+	} from '$lib/services/alert-cluster-status.service';
+	import { SeveritiesService, type Severity } from '$lib/services/severities.service';
+	import { UsersService, type MentionableUser } from '$lib/services/users.service';
+	import type { AlertCluster } from '$lib/types/resources/alert-cluster';
+	import type { Alert } from '$lib/types/resources/alert';
+	import type { Asset } from '$lib/types/resources/asset';
+	import type { Ioc } from '$lib/types/resources/ioc';
+	import {
+		formatDate,
+		formatTime,
+		mediumDateTimeFormatter,
+		parseServerDate
+	} from '$lib/utils/time-formatter';
+
+	const alertClusterId = Number(page.params.cluster_id);
+	const backUrl = page.url.searchParams.get('back') ?? '/alert-clusters';
+
+	let cluster = $state<AlertCluster | null>(null);
+	let alerts = $state<Alert[]>([]);
+	let comments = $state<Comment[]>([]);
+	let statuses = $state<AlertClusterStatus[]>([]);
+	let severities = $state<Severity[]>([]);
+	let users = $state<MentionableUser[]>([]);
+	let loading = $state(true);
+	let flowPanelOpen = $state(false);
+	let commentDraft = $state('');
+	let posting = $state(false);
+	let activeTab = $state<
+		'summary' | 'alerts' | 'assets' | 'iocs' | 'graph' | 'timeline' | 'activity'
+	>('summary');
+
+	// Summary editor state — mirrors the CaseSummary card pattern.
+	// `cluster_description` is loaded via load() and persisted through
+	// updateField. Real-time collab isn't wired for alert clusters yet (no
+	// `alert cluster-summary:<id>` doc kind on the backend), so this is a
+	// plain save-on-click editor with dirty/saving/synced chrome.
+	let alertClusterSummary = $state('');
+	let baseAlertClusterSummary = $state('');
+	let summarySaving = $state(false);
+	let summaryError = $state<string | null>(null);
+	let _summarySavedAt = $state(0);
+	let summaryLoadedAt = $state(new Date());
+	let summaryNow = $state(new Date());
+	const summaryDirty = $derived(alertClusterSummary !== baseAlertClusterSummary);
+
+	const isEscalated = $derived(!!cluster?.cluster_case_id);
+
+	// Aggregated across every member alert.
+	const iocs = $derived<Ioc[]>(dedupeIocs(alerts));
+	const assets = $derived<Asset[]>(dedupeAssets(alerts));
+
+	function dedupeIocs(list: Alert[]): Ioc[] {
+		const seen = new Map<string, Ioc>();
+		for (const alert of list) {
+			for (const ioc of alert.iocs ?? []) {
+				const key = `${ioc.ioc_value}|${ioc.ioc_type_id ?? ''}`;
+				if (!seen.has(key)) seen.set(key, ioc);
+			}
+		}
+		return Array.from(seen.values());
+	}
+
+	function dedupeAssets(list: Alert[]): Asset[] {
+		const seen = new Map<number, Asset>();
+		for (const alert of list) {
+			for (const asset of alert.assets ?? []) {
+				if (!seen.has(asset.asset_id)) seen.set(asset.asset_id, asset);
+			}
+		}
+		return Array.from(seen.values());
+	}
+
+	const severityLabel = (id?: number | null) => {
+		if (!id) return 'Unspecified';
+		return severities.find((s) => s.severity_id === id)?.severity_name ?? 'Unspecified';
+	};
+
+	const severityChip = (name: string) => {
+		switch (name.toLowerCase()) {
+			case 'critical':
+				return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
+			case 'high':
+				return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300';
+			case 'medium':
+				return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
+			case 'low':
+			case 'informational':
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	};
+
+	const statusChip = (name: string) => {
+		switch (name.toLowerCase()) {
+			case 'open':
+				return 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-300';
+			case 'investigating':
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+			case 'dismissed':
+				return 'bg-muted text-muted-foreground';
+			case 'escalated':
+				return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+			default:
+				return 'bg-muted text-muted-foreground';
+		}
+	};
+
+	const load = async () => {
+		loading = true;
+		try {
+			const res = await AlertClustersService.get(alertClusterId);
+			cluster = res.data && typeof res.data === 'object' ? (res.data as AlertCluster) : null;
+			if (cluster) {
+				// Seed the summary editor from the freshly loaded cluster.
+				// Preserve unsaved local edits: if the user is mid-edit and a
+				// background reload happens, only overwrite when the description
+				// has actually changed on the server (i.e. base moved).
+				const remote = cluster.cluster_description ?? '';
+				if (remote !== baseAlertClusterSummary) {
+					baseAlertClusterSummary = remote;
+					if (!summaryDirty) alertClusterSummary = remote;
+				}
+				summaryLoadedAt = new Date();
+			}
+			if (cluster && cluster.alert_ids?.length) {
+				const fetched = await Promise.all(
+					cluster.alert_ids.map(async (id) => {
+						const r = await AlertService.get(id);
+						return r.data && typeof r.data === 'object' ? (r.data as Alert) : null;
+					})
+				);
+				alerts = fetched.filter((a): a is Alert => !!a);
+			} else {
+				alerts = [];
+			}
+			await loadComments();
+		} finally {
+			loading = false;
+		}
+	};
+
+	const saveSummary = async () => {
+		if (!cluster || summarySaving) return;
+		summarySaving = true;
+		summaryError = null;
+		try {
+			const res = await AlertClustersService.update(cluster.cluster_id, {
+				cluster_description: alertClusterSummary
+			});
+			if (!res.ok) {
+				const message =
+					(res.data as { message?: string } | null)?.message ??
+					res.error?.message ??
+					`Save failed (HTTP ${res.status})`;
+				summaryError = message;
+				return;
+			}
+			baseAlertClusterSummary = alertClusterSummary;
+			_summarySavedAt = Date.now();
+			summaryLoadedAt = new Date();
+			// Reflect the new value in the in-memory alert cluster so the
+			// next background reload doesn't clobber it.
+			if (cluster) cluster.cluster_description = alertClusterSummary;
+		} catch (err) {
+			summaryError = (err as Error).message;
+		} finally {
+			summarySaving = false;
+		}
+	};
+
+	const refreshSummary = async () => {
+		if (!cluster) return;
+		const res = await AlertClustersService.get(cluster.cluster_id);
+		if (res.ok && res.data && typeof res.data === 'object') {
+			const remote = (res.data as AlertCluster).cluster_description ?? '';
+			baseAlertClusterSummary = remote;
+			alertClusterSummary = remote;
+			summaryLoadedAt = new Date();
+			summaryError = null;
+		}
+	};
+
+	const summaryRelativeTime = (from: Date, to: Date): string => {
+		const diff = Math.max(0, Math.round((to.getTime() - from.getTime()) / 1000));
+		if (diff < 5) return 'just now';
+		if (diff < 60) return `${diff}s ago`;
+		if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+		if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+		return formatDate(from);
+	};
+
+	const summarySyncedRelative = $derived(summaryRelativeTime(summaryLoadedAt, summaryNow));
+	const summarySyncedAbsolute = $derived(formatTime(summaryLoadedAt));
+
+	const loadComments = async () => {
+		const res = await CommentsService.list('alert_clusters', alertClusterId, { per_page: 200 });
+		const payload = res.data && typeof res.data === 'object' ? res.data : null;
+		if (payload && Array.isArray((payload as { data?: Comment[] }).data)) {
+			comments = ((payload as { data: Comment[] }).data ?? []).slice().sort((a, b) => {
+				return new Date(a.comment_date).getTime() - new Date(b.comment_date).getTime();
+			});
+		} else {
+			comments = [];
+		}
+	};
+
+	const removeAlert = async (alertId: number) => {
+		if (!cluster) return;
+		await AlertClustersService.removeAlert(cluster.cluster_id, alertId);
+		await load();
+	};
+
+	let escalating = $state(false);
+	let escalateDialogOpen = $state(false);
+	let showConfirmUnlinkCase = $state(false);
+	let unlinking = $state(false);
+
+	const unlinkFromCase = async () => {
+		if (!cluster || unlinking) return;
+		unlinking = true;
+		try {
+			const res = await AlertClustersService.unlinkCase(cluster.cluster_id);
+			if (!res.ok) {
+				const msg =
+					(res.data as { message?: string } | null)?.message ??
+					res.error?.message ??
+					`Unlink failed (HTTP ${res.status})`;
+				toast({ title: irisT("Unlink failed", $irisLocale), description: msg, variant: 'destructive' });
+				return;
+			}
+			toast({ title: irisT("AlertCluster unlinked from case", $irisLocale) });
+			await load();
+		} catch (err) {
+			toast({
+				title: irisT("Unlink failed", $irisLocale),
+				description: (err as Error).message,
+				variant: 'destructive'
+			});
+		} finally {
+			unlinking = false;
+		}
+	};
+
+	const submitEscalateOrMerge = async (payload: AlertClusterEscalatePayload) => {
+		if (!cluster || escalating) return;
+		escalating = true;
+		try {
+			const res =
+				payload.mode === 'new'
+					? await AlertClustersService.escalate(cluster.cluster_id, {
+							case_title: payload.case_title,
+							note: payload.note || undefined,
+							import_as_event: payload.import_as_event,
+							case_tags: payload.case_tags || undefined
+						})
+					: await AlertClustersService.merge(cluster.cluster_id, {
+							target_case_id: payload.target_case_id,
+							note: payload.note || undefined,
+							import_as_event: payload.import_as_event,
+							case_tags: payload.case_tags || undefined
+						});
+			const body = res.data && typeof res.data === 'object' ? res.data : null;
+			if (res.ok && body && 'case_id' in body && body.case_id) {
+				escalateDialogOpen = false;
+				goto(`/case/${body.case_id}`);
+				return;
+			}
+			const message =
+				(body as { message?: string } | null)?.message ??
+				res.error?.message ??
+				`${payload.mode === 'new' ? 'Escalation' : 'Merge'} failed (HTTP ${res.status})`;
+			toast({
+				title: payload.mode === 'new' ? 'Escalation failed' : 'Merge failed',
+				description: message,
+				variant: 'destructive'
+			});
+		} catch (err) {
+			toast({
+				title: payload.mode === 'new' ? 'Escalation failed' : 'Merge failed',
+				description: (err as Error).message,
+				variant: 'destructive'
+			});
+		} finally {
+			escalating = false;
+		}
+	};
+
+	const updateField = async (patch: Record<string, unknown>) => {
+		if (!cluster) return;
+		try {
+			await AlertClustersService.update(cluster.cluster_id, patch);
+			await load();
+		} catch {
+			toast({ title: irisT("Update failed", $irisLocale), variant: 'destructive' });
+		}
+	};
+
+	const postComment = async () => {
+		const text = commentDraft.trim();
+		if (!text || posting) return;
+		posting = true;
+		try {
+			await CommentsService.create('alert_clusters', alertClusterId, { comment_text: text });
+			commentDraft = '';
+			await loadComments();
+			await AlertClustersService.get(alertClusterId).then((r) => {
+				if (r.data && typeof r.data === 'object') cluster = r.data as AlertCluster;
+			});
+		} catch {
+			toast({ title: irisT("Comment failed", $irisLocale), variant: 'destructive' });
+		} finally {
+			posting = false;
+		}
+	};
+
+	type TimelineEntry = {
+		ts: number;
+		kind: 'alert' | 'history' | 'comment';
+		title: string;
+		detail?: string;
+		actor?: string;
+	};
+	const timeline = $derived<TimelineEntry[]>(buildTimeline());
+
+	function buildTimeline(): TimelineEntry[] {
+		const out: TimelineEntry[] = [];
+		for (const alert of alerts) {
+			out.push({
+				ts: parseServerDate(alert.alert_creation_time)?.getTime() ?? Number.NaN,
+				kind: 'alert',
+				title: `Alert #${alert.alert_id} — ${alert.alert_title}`,
+				detail: `${alert.severity?.severity_name ?? '?'} · ${alert.alert_source}`
+			});
+		}
+		const history = cluster?.modification_history ?? null;
+		if (history) {
+			for (const [key, entry] of Object.entries(history)) {
+				const ts = Number(key);
+				if (!Number.isFinite(ts)) continue;
+				out.push({
+					ts: ts * 1000,
+					kind: 'history',
+					title: entry.action,
+					actor: entry.user
+				});
+			}
+		}
+		for (const c of comments) {
+			out.push({
+				ts: parseServerDate(c.comment_date)?.getTime() ?? Number.NaN,
+				kind: 'comment',
+				title: c.comment_text,
+				actor: c.user?.user_name
+			});
+		}
+		return out.sort((a, b) => a.ts - b.ts);
+	}
+
+	onMount(() => {
+		void AlertClusterStatusService.list().then((r) => {
+			if (r.data && typeof r.data === 'object') {
+				statuses = (r.data as { data?: AlertClusterStatus[] }).data ?? [];
+			}
+		});
+		void SeveritiesService.list().then((r) => {
+			if (r.data && typeof r.data === 'object') {
+				severities = (r.data as { data?: Severity[] }).data ?? [];
+			}
+		});
+		// `/users/mentionable` is auth-gated but not admin-gated, and already
+		// filters to active users — `/manage/users` is server_administrator-only,
+		// so analysts with `alert_clusters_write` would get a 403 and an empty
+		// owner list. Same endpoint the alert reassign dialog uses.
+		void UsersService.listMentionable().then((r) => {
+			if (r.data && typeof r.data === 'object') {
+				users = (r.data as { data?: MentionableUser[] }).data ?? [];
+			}
+		});
+		// Tick a "now" state every 30s so the "Synced X ago" chip in the
+		// summary header stays reasonably fresh. 30s is coarse enough not
+		// to churn the DOM; the value is only shown as a hint anyway.
+		const tick = setInterval(() => (summaryNow = new Date()), 30_000);
+		void load();
+		return () => clearInterval(tick);
+	});
+</script>
+
+<svelte:head>
+	<title>Alert Cluster #{alertClusterId}</title>
+</svelte:head>
+
+<!--
+  VISUAL TEST (full-bleed): matches the case-detail chrome — no outer
+  padding, no rounded/bordered/shadowed panel. The workspace is one
+  `bg-card` surface running to the viewport edges. Header/tabs stay pinned
+  inside it; the tab-content region owns its own scroll.
+-->
+<div class="flex h-full w-full">
+	<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
+		{#if loading}
+			<div class="p-6">
+				<Loading />
+			</div>
+		{:else if !cluster}
+			<p class="p-6">{irisT("Not found.", $irisLocale)}</p>
+		{:else}
+			<!-- ============================================================
+				 Header strip — flat white area, no card. Title row, then a
+				 thin metadata row, then a fields row (status/severity/owner).
+
+				 VISUAL TEST (lighter chrome): no `border-b`. The tab row
+				 directly below keeps its own rule, and that one is
+				 load-bearing (it is the baseline the active-tab underline
+				 sits on), so a second line just above it was pure noise.
+				 ============================================================ -->
+			<header class="shrink-0 bg-card px-6 pb-4 pt-3">
+				<div class="mb-2 flex items-center">
+					<button
+						onclick={() => goto(backUrl)}
+						class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+						aria-label={irisT("Back to alert clusters", $irisLocale)}
+					>
+						<ArrowLeftIcon class="h-3.5 w-3.5" />
+						{irisT("Alert Clusters", $irisLocale)}
+					</button>
+				</div>
+				<div class="flex flex-wrap items-start justify-between gap-3">
+					<div class="flex min-w-0 items-start gap-3">
+						<div class="mt-0.5 rounded-md bg-red-50 p-2 text-red-500 dark:bg-red-900/20">
+							<ShieldAlertIcon class="h-5 w-5" />
+						</div>
+						<div class="min-w-0">
+							<h1 class="truncate text-xl font-semibold tracking-tight">
+								<span class="text-muted-foreground">#{cluster.cluster_id}</span>
+								— {cluster.cluster_title}
+							</h1>
+							<p
+								class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground"
+							>
+								<span class="inline-flex items-center gap-1">
+									<ClockIcon class="h-3 w-3" />
+									{irisT("Opened", $irisLocale)} {mediumDateTimeFormatter(cluster.cluster_creation_time)}
+								</span>
+								{#if cluster.customer?.customer_name}
+									<span class="inline-flex items-center gap-1">
+										<BuildingIcon class="h-3 w-3" />
+										{cluster.customer.customer_name}
+									</span>
+								{/if}
+								{#if cluster.source_rule}
+									<a
+										class="inline-flex items-center gap-1 hover:text-foreground hover:underline"
+										href="/settings/cluster-rules"
+										title={irisT("Created by rule", $irisLocale)}
+									>
+										<BookmarkIcon class="h-3 w-3" />
+										{irisT("Rule:", $irisLocale)} {cluster.source_rule.rule_name}
+									</a>
+								{/if}
+							</p>
+						</div>
+					</div>
+
+					<div class="flex flex-wrap items-center gap-2">
+						{#if cluster.investigation_flow}
+							<Button variant="outline" size="sm" onclick={() => (flowPanelOpen = !flowPanelOpen)}>
+								<CheckSquareIcon class="mr-2 h-4 w-4" />
+								{irisT("Flow:", $irisLocale)} {cluster.investigation_flow.flow_name}
+							</Button>
+						{/if}
+						{#if !isEscalated}
+							<Button
+								onclick={() => (escalateDialogOpen = true)}
+								disabled={alerts.length === 0 || escalating}
+							>
+								<ArrowUpRightIcon class="mr-2 h-4 w-4" />
+								{escalating ? irisT("Working…", $irisLocale) : irisT("Escalate or merge…", $irisLocale)}
+							</Button>
+						{:else}
+							<DropdownMenu>
+								<DropdownMenuTrigger>
+									<Button variant="outline" disabled={unlinking}>
+										{unlinking ? irisT("Unlinking…", $irisLocale) : `Linked case #${cluster.cluster_case_id}`}
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" class="min-w-[220px]">
+									<DropdownMenuLabel>{irisT("Linked case", $irisLocale)}</DropdownMenuLabel>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem onclick={() => goto(`/case/${cluster?.cluster_case_id}`)}>
+										{irisT("Open case #", $irisLocale)}{cluster.cluster_case_id}
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										class="text-destructive focus:text-destructive"
+										onclick={() => (showConfirmUnlinkCase = true)}
+									>
+										{irisT("Unlink from case", $irisLocale)}
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Inline editors row: status, severity, owner. Kept flat
+					 (no boxes) — labels above values, aligned in a 3-column
+					 grid so the eye lands on the current value first. -->
+				<div class="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
+					<div class="flex flex-col gap-1.5">
+						<span class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+							{irisT("Status", $irisLocale)}
+						</span>
+						<div class="flex items-center gap-2">
+							{#if isEscalated}
+								<span
+									class="rounded-full px-2.5 py-0.5 text-xs font-medium {statusChip(
+										cluster.status?.status_name ?? ''
+									)}"
+								>
+									{cluster.status?.status_name ?? '—'}
+								</span>
+							{:else}
+								<Popover.Root>
+									<Popover.Trigger>
+										<span
+											class="cursor-pointer rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors hover:brightness-95 {statusChip(
+												cluster.status?.status_name ?? ''
+											)}"
+											title={irisT("Change status", $irisLocale)}
+										>
+											{cluster.status?.status_name ?? '—'}
+										</span>
+									</Popover.Trigger>
+									<Popover.Content align="start" class="w-56 p-0">
+										<Command.Root>
+											<Command.Input placeholder={irisT("Search status...", $irisLocale)} class="h-9" />
+											<Command.Empty>{irisT("No status found.", $irisLocale)}</Command.Empty>
+											<Command.List class="max-h-[240px] overflow-y-auto">
+												<Command.Group>
+													{#each statuses as s (s.status_id)}
+														{@const isCurrent = cluster.cluster_status_id === s.status_id}
+														<Command.Item
+															value={s.status_name}
+															onSelect={() =>
+																!isCurrent && updateField({ cluster_status_id: s.status_id })}
+														>
+															<span class="flex w-full items-center justify-between gap-2">
+																<span class="truncate">{s.status_name}</span>
+																{#if isCurrent}
+																	<CheckCircle2Icon size={12} class="shrink-0 text-emerald-500" />
+																{/if}
+															</span>
+														</Command.Item>
+													{/each}
+												</Command.Group>
+											</Command.List>
+										</Command.Root>
+									</Popover.Content>
+								</Popover.Root>
+							{/if}
+						</div>
+					</div>
+
+					<div class="flex flex-col gap-1.5">
+						<span class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+							{irisT("Severity", $irisLocale)}
+						</span>
+						<div class="flex items-center gap-2">
+							{#if isEscalated}
+								<span
+									class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium {severityChip(
+										severityLabel(cluster.cluster_severity_id)
+									)}"
+								>
+									<FlameIcon class="h-3 w-3" />
+									{severityLabel(cluster.cluster_severity_id)}
+								</span>
+							{:else}
+								<Popover.Root>
+									<Popover.Trigger>
+										<span
+											class="inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors hover:brightness-95 {severityChip(
+												severityLabel(cluster.cluster_severity_id)
+											)}"
+											title={irisT("Change severity", $irisLocale)}
+										>
+											<FlameIcon class="h-3 w-3" />
+											{severityLabel(cluster.cluster_severity_id)}
+										</span>
+									</Popover.Trigger>
+									<Popover.Content align="start" class="w-56 p-0">
+										{@const currentSevId = cluster.cluster_severity_id ?? null}
+										<Command.Root>
+											<Command.Input placeholder={irisT("Search severity...", $irisLocale)} class="h-9" />
+											<Command.Empty>{irisT("No severity found.", $irisLocale)}</Command.Empty>
+											<Command.List class="max-h-[240px] overflow-y-auto">
+												<Command.Group>
+													{#each severities as s (s.severity_id)}
+														{@const isCurrent = currentSevId === s.severity_id}
+														<Command.Item
+															value={s.severity_name}
+															onSelect={() =>
+																!isCurrent && updateField({ cluster_severity_id: s.severity_id })}
+														>
+															<span class="flex w-full items-center justify-between gap-2">
+																<span class="truncate">{s.severity_name}</span>
+																{#if isCurrent}
+																	<CheckCircle2Icon size={12} class="shrink-0 text-emerald-500" />
+																{/if}
+															</span>
+														</Command.Item>
+													{/each}
+												</Command.Group>
+											</Command.List>
+										</Command.Root>
+									</Popover.Content>
+								</Popover.Root>
+							{/if}
+						</div>
+					</div>
+
+					<div class="flex flex-col gap-1.5">
+						<span class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">
+							{irisT("Owner", $irisLocale)}
+						</span>
+						<div class="flex items-center gap-2">
+							{#if isEscalated}
+								{#if cluster.owner}
+									<UserAvatar
+										userId={cluster.owner.id}
+										name={cluster.owner.user_name}
+										size="size-6"
+									/>
+									<span class="text-sm">{cluster.owner.user_name}</span>
+								{:else}
+									<span class="text-sm italic text-muted-foreground">{irisT("Unassigned", $irisLocale)}</span>
+								{/if}
+							{:else}
+								<Popover.Root>
+									<Popover.Trigger>
+										<span
+											class="inline-flex cursor-pointer items-center gap-2 rounded-full px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+											title={cluster.owner ? irisT("Reassign owner", $irisLocale) : irisT("Assign owner", $irisLocale)}
+										>
+											{#if cluster.owner}
+												<UserAvatar
+													userId={cluster.owner.id}
+													name={cluster.owner.user_name}
+													size="size-6"
+												/>
+												<span>{cluster.owner.user_name}</span>
+											{:else}
+												<span class="italic text-muted-foreground">{irisT("Unassigned", $irisLocale)}</span>
+											{/if}
+										</span>
+									</Popover.Trigger>
+									<Popover.Content align="start" class="w-64 p-0">
+										{@const currentOwnerId = cluster.cluster_owner_id ?? null}
+										<Command.Root>
+											<Command.Input placeholder={irisT("Search user...", $irisLocale)} class="h-9" />
+											<Command.Empty>{irisT("No user found.", $irisLocale)}</Command.Empty>
+											<Command.List class="max-h-[280px] overflow-y-auto">
+												<Command.Group>
+													<Command.Item
+														value="Unassigned"
+														onSelect={() =>
+															currentOwnerId != null && updateField({ cluster_owner_id: null })}
+													>
+														<span class="flex w-full items-center justify-between gap-2">
+															<span class="truncate italic text-muted-foreground">{irisT("Unassigned", $irisLocale)}</span>
+															{#if currentOwnerId == null}
+																<CheckCircle2Icon size={12} class="shrink-0 text-emerald-500" />
+															{/if}
+														</span>
+													</Command.Item>
+													{#each users as u (u.user_id)}
+														{@const isCurrent = currentOwnerId === u.user_id}
+														<Command.Item
+															value={`${u.user_name} ${u.user_login}`}
+															onSelect={() =>
+																!isCurrent && updateField({ cluster_owner_id: u.user_id })}
+														>
+															<span class="flex w-full items-center justify-between gap-2">
+																<span class="min-w-0 truncate">
+																	{u.user_name}
+																	<span class="text-muted-foreground">({u.user_login})</span>
+																</span>
+																{#if isCurrent}
+																	<CheckCircle2Icon size={12} class="shrink-0 text-emerald-500" />
+																{/if}
+															</span>
+														</Command.Item>
+													{/each}
+												</Command.Group>
+											</Command.List>
+										</Command.Root>
+									</Popover.Content>
+								</Popover.Root>
+							{/if}
+						</div>
+					</div>
+				</div>
+			</header>
+
+			<!-- ============================================================
+				 Tabs — case-style: underline strip, no rounded chrome, sits
+				 flush against the header separator.
+				 ============================================================ -->
+			<Tabs
+				value={activeTab}
+				onValueChange={(v) => (activeTab = v as typeof activeTab)}
+				class="flex min-h-0 flex-1 flex-col"
+			>
+				<div class="shrink-0 border-b bg-card px-6">
+					<TabsList class="h-auto rounded-none border-0 bg-transparent p-0">
+						<TabsTrigger
+							value="summary"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<FileTextIcon class="h-4 w-4" />
+							{irisT("Summary", $irisLocale)}
+							{#if summaryDirty}
+								<span
+									class="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-2xs font-medium text-amber-700 dark:text-amber-400"
+									title={irisT("Unsaved changes", $irisLocale)}
+								>
+									•
+								</span>
+							{/if}
+						</TabsTrigger>
+						<TabsTrigger
+							value="alerts"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<LayersIcon class="h-4 w-4" />
+							{irisT("Alerts", $irisLocale)}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
+							>
+								{alerts.length}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="assets"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<HardDriveIcon class="h-4 w-4" />
+							{irisT("Assets", $irisLocale)}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
+							>
+								{assets.length}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="iocs"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<FingerprintIcon class="h-4 w-4" />
+							{irisT("IOCs", $irisLocale)}
+							<span
+								class="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
+							>
+								{iocs.length}
+							</span>
+						</TabsTrigger>
+						<TabsTrigger
+							value="graph"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<GitForkIcon class="h-4 w-4" />
+							{irisT("Correlation", $irisLocale)}
+						</TabsTrigger>
+						<TabsTrigger
+							value="timeline"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<HistoryIcon class="h-4 w-4" />
+							{irisT("Timeline", $irisLocale)}
+						</TabsTrigger>
+						<TabsTrigger
+							value="activity"
+							class="flex items-center gap-2 rounded-none px-4 py-3 text-sm transition-colors hover:bg-muted/40 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent"
+						>
+							<MessageSquareIcon class="h-4 w-4" />
+							{irisT("Activity", $irisLocale)}
+							{#if comments.length}
+								<span
+									class="rounded-full bg-muted px-1.5 py-0.5 text-2xs font-medium text-muted-foreground"
+								>
+									{comments.length}
+								</span>
+							{/if}
+						</TabsTrigger>
+					</TabsList>
+				</div>
+
+				<!--
+					Padding / scroll live on the outer wrapper for text-heavy
+					tabs. The graph tab renders edge-to-edge and manages its
+					own overflow, so we drop padding + scroll when it's
+					active — otherwise the graph would sit inside a padded
+					scroll box and never reach the panel's full height.
+				-->
+				<div
+					class="min-h-0 flex-1 {activeTab === 'graph'
+						? 'overflow-hidden'
+						: irisT("overflow-y-auto px-6 py-5", $irisLocale)}"
+				>
+					<!-- ============ Summary ============
+						 Markdown editor bound to `cluster_description` with
+						 dirty/saving/synced chrome, refresh + save. Real-time
+						 collab isn't wired for alert clusters yet: saves go through
+						 the normal PUT and refresh pulls the latest. -->
+					<TabsContent value="summary">
+						<div class="flex flex-wrap items-center justify-between gap-3 pb-3">
+							<div class="flex flex-wrap items-center gap-2">
+								{#if summaryError}
+									<span
+										class="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive"
+									>
+										<CircleAlertIcon size={12} />
+										{irisT("Error", $irisLocale)}
+									</span>
+								{:else if summarySaving}
+									<span
+										class="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+									>
+										<LoaderIcon size={12} class="animate-spin" />
+										{irisT("Saving…", $irisLocale)}
+									</span>
+								{:else if summaryDirty}
+									<span
+										class="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+									>
+										<CircleDotIcon size={12} />
+										{irisT("Unsaved changes", $irisLocale)}
+									</span>
+								{:else}
+									<span
+										class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+									>
+										<CheckCircle2Icon size={12} />
+										{irisT("All changes saved", $irisLocale)}
+									</span>
+								{/if}
+								<span
+									class="hidden text-xs text-muted-foreground sm:inline"
+									title={`Last synced at ${summarySyncedAbsolute}`}
+								>
+									{irisT("Synced", $irisLocale)} {summarySyncedRelative}
+								</span>
+							</div>
+
+							<div class="flex items-center gap-1">
+								<Button
+									variant="ghost"
+									size="xs"
+									disabled={loading}
+									onclick={refreshSummary}
+									title={irisT("Refresh", $irisLocale)}
+								>
+									<RefreshCwIcon size={12} class={loading ? 'animate-spin' : ''} />
+									<span class="ml-1 hidden sm:inline">{irisT("Refresh", $irisLocale)}</span>
+								</Button>
+
+								{#if !isEscalated}
+									<Button
+										variant="default"
+										size="xs"
+										disabled={summarySaving || !summaryDirty}
+										onclick={saveSummary}
+										title={irisT("Save", $irisLocale)}
+									>
+										<SaveIcon size={12} />
+										<span class="ml-1 hidden sm:inline">{irisT("Save", $irisLocale)}</span>
+									</Button>
+								{/if}
+							</div>
+						</div>
+
+						{#if summaryError}
+							<div
+								class="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+							>
+								{summaryError}
+							</div>
+						{/if}
+
+						<div class="rounded-md border bg-muted/20 p-4">
+							<MarkDownEditor
+								value={alertClusterSummary}
+								onChange={(v) => (alertClusterSummary = v)}
+								onSave={() => saveSummary()}
+								readOnly={isEscalated}
+							/>
+						</div>
+					</TabsContent>
+
+					<!-- ============ Alerts ============ -->
+					<TabsContent value="alerts">
+						{#if alerts.length === 0}
+							<p class="text-sm text-muted-foreground">{irisT("No alerts attached.", $irisLocale)}</p>
+						{:else}
+							<div class="overflow-hidden rounded-md border">
+								<table class="w-full text-sm">
+									<thead
+										class="bg-muted/30 text-left text-2xs uppercase tracking-wide text-muted-foreground"
+									>
+										<tr>
+											<th class="px-3 py-2 font-medium">{irisT("Alert", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Severity", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Source", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Status", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Event time", $irisLocale)}</th>
+											<th class="px-3 py-2"></th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each alerts as alert (alert.alert_id)}
+											<tr class="border-t hover:bg-muted/20">
+												<td class="px-3 py-2">
+													<a class="font-medium hover:underline" href={`/alerts/${alert.alert_id}`}>
+														#{alert.alert_id} — {alert.alert_title}
+													</a>
+													{#if alert.alert_tags}
+														<div class="mt-1 flex flex-wrap gap-1">
+															{#each alert.alert_tags
+																.split(',')
+																.map((t) => t.trim())
+																.filter(Boolean) as tag (tag)}
+																<span
+																	class="rounded-full bg-muted px-2 py-0.5 text-2xs text-muted-foreground"
+																	>{tag}</span
+																>
+															{/each}
+														</div>
+													{/if}
+												</td>
+												<td class="px-3 py-2">
+													<span
+														class="rounded-full px-2 py-0.5 text-2xs font-medium {severityChip(
+															alert.severity?.severity_name ?? ''
+														)}"
+													>
+														{alert.severity?.severity_name ?? '—'}
+													</span>
+												</td>
+												<td class="px-3 py-2 text-xs">{alert.alert_source}</td>
+												<td class="px-3 py-2 text-xs">
+													{alert.status?.status_name ?? '—'}
+												</td>
+												<td class="px-3 py-2 text-xs text-muted-foreground">
+													{alert.alert_source_event_time
+														? mediumDateTimeFormatter(alert.alert_source_event_time)
+														: '—'}
+												</td>
+												<td class="px-3 py-2 text-right">
+													{#if !isEscalated}
+														<Button
+															variant="ghost"
+															size="icon"
+															aria-label={irisT("Remove from alert cluster", $irisLocale)}
+															onclick={() => removeAlert(alert.alert_id)}
+														>
+															<TrashIcon class="h-4 w-4" />
+														</Button>
+													{/if}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</TabsContent>
+
+					<!-- ============ Assets ============ -->
+					<TabsContent value="assets">
+						{#if assets.length === 0}
+							<p class="text-sm text-muted-foreground">{irisT("No assets attached to the member alerts.", $irisLocale)}</p>
+						{:else}
+							<div class="overflow-hidden rounded-md border">
+								<table class="w-full text-sm">
+									<thead
+										class="bg-muted/30 text-left text-2xs uppercase tracking-wide text-muted-foreground"
+									>
+										<tr>
+											<th class="px-3 py-2 font-medium">{irisT("Asset", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Type", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("IP / Domain", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Compromise", $irisLocale)}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each assets as a (a.asset_id)}
+											<tr class="border-t hover:bg-muted/20">
+												<td class="px-3 py-2">
+													<div class="flex items-center gap-2">
+														<HardDriveIcon class="h-3.5 w-3.5 text-muted-foreground" />
+														<span class="font-medium">{a.asset_name}</span>
+													</div>
+													{#if a.asset_description}
+														<p class="mt-0.5 truncate text-xs text-muted-foreground">
+															{a.asset_description}
+														</p>
+													{/if}
+												</td>
+												<td class="px-3 py-2 text-xs">
+													{a.asset_type?.asset_name ?? '—'}
+												</td>
+												<td class="px-3 py-2 font-mono text-xs">
+													{a.asset_ip || a.asset_domain || '—'}
+												</td>
+												<td class="px-3 py-2 text-xs">
+													{a.analysis_status?.name ?? '—'}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</TabsContent>
+
+					<!-- ============ IOCs ============ -->
+					<TabsContent value="iocs">
+						{#if iocs.length === 0}
+							<p class="text-sm text-muted-foreground">{irisT("No IOCs on the member alerts.", $irisLocale)}</p>
+						{:else}
+							<div class="overflow-hidden rounded-md border">
+								<table class="w-full text-sm">
+									<thead
+										class="bg-muted/30 text-left text-2xs uppercase tracking-wide text-muted-foreground"
+									>
+										<tr>
+											<th class="px-3 py-2 font-medium">{irisT("Value", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Type", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("TLP", $irisLocale)}</th>
+											<th class="px-3 py-2 font-medium">{irisT("Tags", $irisLocale)}</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each iocs as i (i.ioc_id)}
+											<tr class="border-t hover:bg-muted/20">
+												<td class="px-3 py-2">
+													<div class="flex items-center gap-2">
+														<FingerprintIcon class="h-3.5 w-3.5 text-muted-foreground" />
+														<span class="font-mono text-xs">{i.ioc_value}</span>
+													</div>
+													{#if i.ioc_description}
+														<p class="mt-0.5 truncate text-xs text-muted-foreground">
+															{i.ioc_description}
+														</p>
+													{/if}
+												</td>
+												<td class="px-3 py-2 text-xs">{i.ioc_type?.type_name ?? '—'}</td>
+												<td class="px-3 py-2 text-xs">{i.tlp?.tlp_name ?? '—'}</td>
+												<td class="px-3 py-2 text-xs text-muted-foreground">
+													{Array.isArray(i.ioc_tags) ? i.ioc_tags.join(', ') : (i.ioc_tags ?? '')}
+												</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</TabsContent>
+
+					<!-- ============ Correlation graph ============
+						 Node/edge network built server-side from every member
+						 alert's IOCs and assets. Loaded lazily on first tab
+						 activation so a large alert cluster doesn't pay the fetch
+						 cost until the analyst asks for it. Uses `mt-0` so it
+						 sits flush against the tabs strip; the graph owns the
+						 whole panel below that.
+
+						 IMPORTANT: `data-[state=active]:flex` is required —
+						 plain `flex` overrides the `[hidden]` attribute
+						 bits-ui sets on inactive panels (utility class
+						 specificity beats the user-agent stylesheet), which
+						 leaves the graph visible on top of Timeline/Activity.
+						 The state-scoped variant only applies flex when
+						 active. -->
+					<TabsContent value="graph" class="mt-0 h-full flex-col data-[state=active]:flex">
+						<AlertClusterCorrelationGraph
+							alertClusterId={cluster.cluster_id}
+							active={activeTab === 'graph'}
+						/>
+					</TabsContent>
+
+					<!-- ============ Timeline ============ -->
+					<TabsContent value="timeline">
+						{#if timeline.length === 0}
+							<p class="text-sm text-muted-foreground">{irisT("No events recorded yet.", $irisLocale)}</p>
+						{:else}
+							<ol class="relative ml-1 border-l border-border/60 pl-5">
+								{#each timeline as entry (entry.ts + ':' + entry.kind + ':' + entry.title)}
+									<li class="mb-5">
+										<span
+											class="absolute -left-[7px] flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background {entry.kind ===
+											'alert'
+												? 'bg-red-500'
+												: entry.kind === 'history'
+													? 'bg-blue-500'
+													: 'bg-green-500'}"
+										></span>
+										<div class="flex flex-wrap items-baseline gap-2">
+											<span class="text-xs text-muted-foreground">
+												{mediumDateTimeFormatter(entry.ts)}
+											</span>
+											<span
+												class="rounded-full px-2 py-0.5 text-2xs uppercase tracking-wide {entry.kind ===
+												'alert'
+													? irisT("bg-red-500/10 text-red-600 dark:text-red-400", $irisLocale)
+													: entry.kind === 'history'
+														? irisT("bg-blue-500/10 text-blue-600 dark:text-blue-400", $irisLocale)
+														: irisT("bg-green-500/10 text-green-600 dark:text-green-400", $irisLocale)}"
+											>
+												{entry.kind}
+											</span>
+											{#if entry.actor}
+												<span class="text-xs text-muted-foreground">
+													{irisT("by", $irisLocale)} {entry.actor}
+												</span>
+											{/if}
+										</div>
+										<p class="mt-1 text-sm">{entry.title}</p>
+										{#if entry.detail}
+											<p class="text-xs text-muted-foreground">{entry.detail}</p>
+										{/if}
+									</li>
+								{/each}
+							</ol>
+						{/if}
+					</TabsContent>
+
+					<!-- ============ Activity ============ -->
+					<TabsContent value="activity">
+						<div class="mx-auto flex max-w-3xl flex-col gap-4">
+							<div class="rounded-md border p-3">
+								<Textarea
+									placeholder={irisT("Add a note or update on this alert cluster…", $irisLocale)}
+									rows={3}
+									bind:value={commentDraft}
+								/>
+								<div class="mt-2 flex justify-end">
+									<Button onclick={postComment} disabled={posting || !commentDraft.trim()}>
+										<SendHorizonalIcon class="mr-2 h-4 w-4" />
+										{posting ? irisT("Posting…", $irisLocale) : irisT("Post", $irisLocale)}
+									</Button>
+								</div>
+							</div>
+							{#if comments.length === 0}
+								<p class="text-sm text-muted-foreground">{irisT("No analyst comments yet.", $irisLocale)}</p>
+							{:else}
+								<ul class="space-y-3">
+									{#each comments as c (c.comment_id)}
+										<li class="rounded-md border p-3">
+											<div class="flex items-center gap-2">
+												<UserAvatar
+													userId={c.user?.user_id ?? null}
+													name={c.user?.user_name ?? ''}
+													size="size-6"
+												/>
+												<span class="text-xs font-medium">{c.user?.user_name ?? 'Analyst'}</span>
+												<span class="text-2xs text-muted-foreground">
+													{mediumDateTimeFormatter(c.comment_date)}
+												</span>
+											</div>
+											<p class="mt-2 whitespace-pre-wrap text-sm">{c.comment_text}</p>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</div>
+					</TabsContent>
+				</div>
+			</Tabs>
+		{/if}
+	</div>
+
+	<!--
+	  Right-side investigation-flow pane — placement matches the
+	  alert-scoped pane so alerts and alert clusters share the same spatial
+	  convention.
+	-->
+	{#if flowPanelOpen && cluster}
+		<aside
+			class="h-full w-full max-w-md shrink-0 overflow-hidden border-l border-border/60 bg-card"
+			aria-label={irisT("Investigation flow", $irisLocale)}
+		>
+			<AlertClusterInvestigationFlowPanel {cluster} onClose={() => (flowPanelOpen = false)} />
+		</aside>
+	{/if}
+</div>
+
+{#if cluster}
+	<AlertClusterEscalateDialog
+		bind:open={escalateDialogOpen}
+		alertClusterTitle={cluster.cluster_title}
+		alertClusterDescription={cluster.cluster_description ?? ''}
+		alertClusterCustomerId={cluster.cluster_customer_id ?? null}
+		onClose={() => (escalateDialogOpen = false)}
+		onConfirm={submitEscalateOrMerge}
+	/>
+
+	<ConfirmationDialog
+		bind:open={showConfirmUnlinkCase}
+		title={irisT("Unlink alert cluster from case?", $irisLocale)}
+		message={`Alert Cluster #${cluster.cluster_id} will go back to Investigating and its ${alerts.length} alert${alerts.length === 1 ? '' : 's'} will be detached from case #${cluster.cluster_case_id} (status reset to Assigned). The case itself remains.`}
+		onConfirm={unlinkFromCase}
+	/>
+{/if}

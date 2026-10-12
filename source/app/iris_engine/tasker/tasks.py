@@ -20,7 +20,7 @@
 import os
 import urllib.parse
 from celery.signals import task_prerun
-from flask_login import current_user
+from app.auth_login import current_user
 
 from app import app
 from app import db

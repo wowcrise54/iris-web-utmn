@@ -67,7 +67,8 @@ def run_migrations_online():
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
+    # SQLAlchemy 2 no longer autocommits: persist DDL and the revision together.
+    with connectable.begin() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

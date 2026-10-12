@@ -19,7 +19,7 @@
 import os
 import uuid
 
-from flask import url_for
+from app.web import url_for
 
 
 def get_url(endpoint_or_url):

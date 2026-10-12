@@ -1,0 +1,142 @@
+#  Minimal backend-only stack for CI.
+#
+#  Brings up rabbitmq + db + app + worker, no nginx, no frontend.
+#  The tests/ REST suite hits app:8000 directly at http://127.0.0.1:8000
+#  from the runner host, so the app service publishes that port.
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: ${IRIS_CONTAINER_PREFIX:-iris}_rabbitmq
+    user: rabbitmq
+    networks:
+      - iris_backend
+    healthcheck:
+      test: rabbitmq-diagnostics check_port_connectivity || exit 1
+      start_period: 60s
+      start_interval: 1s
+
+  db:
+    image: ${LOCAL_DB_IMAGE:-iris-db:ci}
+    build:
+      context: docker/db
+    container_name: ${IRIS_CONTAINER_PREFIX:-iris}_db
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_ADMIN_USER
+      - POSTGRES_ADMIN_PASSWORD
+      - POSTGRES_DB
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      # tests_database_migration inspects the schema directly over
+      # postgresql://...@localhost:5432 from the runner host.
+      - "127.0.0.1:${IRIS_DB_HOST_PORT:-5432}:5432"
+    networks:
+      - iris_backend
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U postgres -d iris_db || exit 1
+      start_period: 60s
+      start_interval: 1s
+
+  app:
+    image: ${LOCAL_APP_IMAGE:-iris-backend:ci}
+    build:
+      context: .
+      dockerfile: docker/webApp/Dockerfile
+    container_name: ${IRIS_CONTAINER_PREFIX:-iris}_app
+    command: ["./iris-entrypoint.sh", "iriswebapp"]
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_ADMIN_USER
+      - POSTGRES_ADMIN_PASSWORD
+      - POSTGRES_SERVER
+      - POSTGRES_PORT
+      - IRIS_SECRET_KEY
+      - IRIS_SECURITY_PASSWORD_SALT
+    ports:
+      # tests/iris.py hits http://127.0.0.1:8000 from the runner host
+      - "127.0.0.1:${IRIS_APP_HOST_PORT:-8000}:8000"
+    networks:
+      - iris_backend
+    healthcheck:
+      # Database initialisation runs to completion before gunicorn
+      # binds :8000, so nothing answers until the schema is created
+      # and every alembic migration has applied. CI drives this with
+      # `up --wait`, which fails the job on an unhealthy service —
+      # `start_interval` still flips it healthy the moment it responds,
+      # so the headroom only costs anything on a genuinely stuck boot.
+      test: curl --head --fail http://localhost:8000 || exit 1
+      start_period: 180s
+      start_interval: 1s
+
+  worker:
+    image: ${LOCAL_APP_IMAGE:-iris-backend:ci}
+    build:
+      context: .
+      dockerfile: docker/webApp/Dockerfile
+    container_name: ${IRIS_CONTAINER_PREFIX:-iris}_worker
+    command:
+      [
+        "./wait-for-iriswebapp.sh",
+        "app:8000",
+        "./iris-entrypoint.sh",
+        "iris-worker",
+      ]
+    depends_on:
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_ADMIN_USER
+      - POSTGRES_ADMIN_PASSWORD
+      - POSTGRES_SERVER
+      - POSTGRES_PORT
+      - IRIS_SECRET_KEY
+      - IRIS_SECURITY_PASSWORD_SALT
+      - IRIS_WORKER
+      - LOG_LEVEL
+    networks:
+      - iris_backend
+    healthcheck:
+      # `-b <broker>` rather than `-A app.celery`: `inspect ping` is a broker
+      # broadcast and needs no task registry, but `-A` imports the whole Flask
+      # app first — ~2s of CPU and a few hundred MB of RSS per probe. Paired
+      # with a 1s start_interval that spawned a fresh interpreter every second
+      # without waiting for the previous one to answer, which is enough to push
+      # a shared runner into swap. start_interval now exceeds the probe cost so
+      # probes cannot stack, and the start period covers a slow, contended boot.
+      test: celery -b "$${CELERY_BROKER:-amqp://rabbitmq}" inspect ping --timeout 10 || exit 1
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 180s
+      start_interval: 10s
+
+volumes:
+  db_data:
+
+networks:
+  iris_backend:
+    # Named per-stack: test-api and test-database-migration run concurrently
+    # on the same self-hosted runner. Sharing one network would put two
+    # containers behind the `db` / `app` service aliases at once.
+    name: ${IRIS_CONTAINER_PREFIX:-iris}_backend

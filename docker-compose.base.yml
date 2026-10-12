@@ -20,12 +20,22 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: iriswebapp_rabbitmq
     restart: always
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     networks:
       - iris_backend
 
   db:
     container_name: iriswebapp_db
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     environment:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -49,8 +59,14 @@ services:
       - server_data:/home/iris/server_data
     restart: always
     depends_on:
-      - "rabbitmq"
-      - "db"
+      rabbitmq: {condition: service_healthy}
+      db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/login')"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 90s
     env_file:
       - .env
     environment:
@@ -85,9 +101,9 @@ services:
       - user_templates:/home/iris/user_templates
       - server_data:/home/iris/server_data
     depends_on:
-      - "rabbitmq"
-      - "db"
-      - "app"
+      rabbitmq: {condition: service_healthy}
+      db: {condition: service_healthy}
+      app: {condition: service_healthy}
     env_file:
       - .env
     environment:
@@ -99,7 +115,7 @@ services:
       - POSTGRES_PORT
       - IRIS_SECRET_KEY
       - IRIS_SECURITY_PASSWORD_SALT
-      - IRIS_WORKER
+      - IRIS_WORKER=1
       - LOG_LEVEL
     networks:
       - iris_backend
@@ -119,12 +135,12 @@ services:
     networks:
       - iris_frontend
     ports:
-      - "${INTERFACE_HTTPS_PORT:-443}:${INTERFACE_HTTPS_PORT:-443}"
+      - "${IRIS_BIND_ADDRESS:-0.0.0.0}:${INTERFACE_HTTPS_PORT:-443}:${INTERFACE_HTTPS_PORT:-443}"
     volumes:
       - "./certificates/web_certificates/:/www/certs/:ro"
     restart: always
     depends_on:
-      - "app"
+      app: {condition: service_healthy}
 
 volumes:
   iris-downloads:

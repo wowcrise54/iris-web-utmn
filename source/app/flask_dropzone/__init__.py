@@ -8,13 +8,14 @@
     :license: MIT, see LICENSE for more details.
 """
 import warnings
-from flask import Blueprint
-from markupsafe import Markup
-from flask import current_app
-from flask import render_template_string
-from flask import url_for
+from app.web import Blueprint
+from app.web import Markup
+from app.web import current_app
+from app.web import render_template_string
+from app.web import url_for
 
-from app.flask_dropzone.utils import get_url
+from .utils import get_url  # noqa
+from .utils import random_filename
 
 #: defined normal file type
 allowed_file_extensions = {

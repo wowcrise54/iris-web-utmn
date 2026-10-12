@@ -25,27 +25,46 @@ services:
     extends:
       file: docker-compose.base.yml
       service: db
-    image: ${DB_IMAGE_NAME:-ghcr.io/dfir-iris/iriswebapp_db}:${DB_IMAGE_TAG:-v2.4.20}
+    build:
+      context: docker/db
+      dockerfile: Dockerfile
+    image: ${DB_IMAGE_NAME:-iriswebapp_db}:${DB_IMAGE_TAG:-local}
+    pull_policy: build
 
 
   app:
     extends:
       file: docker-compose.base.yml
       service: app
-    image: ${APP_IMAGE_NAME:-ghcr.io/dfir-iris/iriswebapp_app}:${APP_IMAGE_TAG:-v2.4.20}
+    build:
+      context: .
+      dockerfile: docker/webApp/Dockerfile
+    image: ${APP_IMAGE_NAME:-iriswebapp_app}:${APP_IMAGE_TAG:-2.4.29-fastapi}
+    pull_policy: build
 
   worker:
     extends:
       file: docker-compose.base.yml
       service: worker
-    image: ${APP_IMAGE_NAME:-ghcr.io/dfir-iris/iriswebapp_app}:${APP_IMAGE_TAG:-v2.4.20}
+    build:
+      context: .
+      dockerfile: docker/webApp/Dockerfile
+    image: ${APP_IMAGE_NAME:-iriswebapp_app}:${APP_IMAGE_TAG:-2.4.29-fastapi}
+    pull_policy: build
 
 
   nginx:
     extends:
       file: docker-compose.base.yml
       service: nginx
-    image: ${NGINX_IMAGE_NAME:-ghcr.io/dfir-iris/iriswebapp_nginx}:${NGINX_IMAGE_TAG:-v2.4.20}
+    build:
+      context: docker/nginx
+      dockerfile: Dockerfile
+      args:
+        NGINX_CONF_GID: "1234"
+        NGINX_CONF_FILE: ${NGINX_CONF_FILE:-nginx.conf}
+    image: ${NGINX_IMAGE_NAME:-iriswebapp_nginx}:${NGINX_IMAGE_TAG:-local}
+    pull_policy: build
 
 
 volumes:
@@ -56,7 +75,7 @@ volumes:
 
 networks:
   iris_backend:
-    name: iris_backend
+    name: ${COMPOSE_PROJECT_NAME:-iris-web-utmn}_backend
   iris_frontend:
-    name: iris_frontend
+    name: ${COMPOSE_PROJECT_NAME:-iris-web-utmn}_frontend
 

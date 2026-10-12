@@ -1,0 +1,1 @@
+"""Internationalization route blueprint (language switch)."""

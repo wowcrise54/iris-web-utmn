@@ -1,0 +1,13 @@
+{
+  "project": "iris-upgrade-2-4-29-fastapi",
+  "compose_files": [
+    "docker-compose.upgrade-validation.yml",
+    "docker-compose.saved-data.yml",
+    "docker-compose.v3.yml",
+    "docker-compose.v3-live.yml"
+  ],
+  "address": "https://localhost:18543",
+  "backup": "D:\\Diplom\\backups\\iris-v3-cutover-20261010-160726",
+  "volumes_prefix": "iris-web-utmn-v3-20261010-160726",
+  "version": "v3.0.0-beta.6"
+}

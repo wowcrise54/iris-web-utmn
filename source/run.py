@@ -17,15 +17,17 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 import logging
 
-from app import app
-from app import socket_io
+from app import app as iris_app
+from app import asgi_app as app
 
 if __name__ != '__main__':
-    gunicorn_logger = logging.getLogger('gunicorn.error')
-    app.logger.addHandler(gunicorn_logger.handlers)
-    app.logger.setLevel(logging.INFO)
+    server_logger = logging.getLogger('uvicorn.error')
+    for handler in server_logger.handlers:
+        iris_app.logger.addHandler(handler)
+    iris_app.logger.setLevel(logging.INFO)
 
 
 if __name__ == "__main__":
-    socket_io.run(app, host='127.0.0.1', port=8000, debug=True)
+    import uvicorn
+    uvicorn.run('run:app', host='127.0.0.1', port=8000)
 

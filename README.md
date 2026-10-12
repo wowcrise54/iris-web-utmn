@@ -6,7 +6,7 @@
 <p align="center">
   Incident Response Investigation System
   <br>
-  <i>Current Version v2.4.20</i>
+  <i>Current Version v2.4.29</i>
   <br>
   <a href="https://v200.beta.dfir-iris.org">Online Demonstration</a>
 </p>
@@ -43,6 +43,41 @@ IrisWeb can work without any modules though defaults ones are preinstalled. Head
 to configure and enable them. 
 
 ### Running Iris
+This checkout runs the backend on **FastAPI / Uvicorn**, with the existing web
+interface, REST endpoints, SQLAlchemy models and Socket.IO events of IRIS v2.4.29.
+The application and worker images are built from the local source.
+The default Compose configuration also builds the PostgreSQL initialization and
+Nginx images from `docker/db` and `docker/nginx`. These four services use
+`pull_policy: build`, so `docker compose up -d` automatically builds local images
+and includes changed source files, while reusing Docker's build cache. RabbitMQ
+uses its official image; Dockerfile base images are downloaded as needed.
+The standard stack requires your `.env` and HTTPS certificates. The isolated
+environment below supplies separate test configuration and certificates.
+
+For the prepared local configuration in this checkout, run `docker compose up -d`
+and open `https://localhost`. The administrator username and password are stored
+in `.env` as `IRIS_ADM_USERNAME` and `IRIS_ADM_PASSWORD`. The localhost certificate
+is signed by the IRIS CA under `certificates/rootCA`; `.env` and certificates are
+excluded from the application Docker build context.
+
+For a separate local Docker environment with test data and HTTPS:
+
+```powershell
+python tests/upgrade_2_4_29/prepare_stack.py
+docker compose -p iris-upgrade-2-4-29-fastapi -f docker-compose.upgrade-validation.yml up -d
+```
+
+Open `https://localhost:18543`. The isolated test account is `administrator` with
+password `MySuperAdminPassword!` (configured in `tests/upgrade_2_4_29/public.env`).
+The HTTPS certificate is generated locally. Stop this environment with:
+
+```powershell
+docker compose -p iris-upgrade-2-4-29-fastapi -f docker-compose.upgrade-validation.yml down
+```
+
+Migration verification commands and results are documented in
+[tests/upgrade_2_4_29/README.md](tests/upgrade_2_4_29/README.md).
+
 To ease the installation and upgrades, Iris is shipped in Docker containers. Thanks to Docker compose, 
 it can be ready in a few minutes.  
 
@@ -52,15 +87,12 @@ git clone https://github.com/dfir-iris/iris-web.git
 cd iris-web
 
 # Checkout to the last tagged version 
-git checkout v2.4.20
+git checkout v2.4.29
 # Copy the environment file 
 cp .env.model .env
 
-# Pull the dockers
-docker compose pull
-
-# Run IRIS 
-docker compose up
+# Build and run this checkout's FastAPI backend
+docker compose up -d
 ```
 
 Iris shall be available on the host interface, port 443, protocol HTTPS - ``https://<your_instance_ip>``.  

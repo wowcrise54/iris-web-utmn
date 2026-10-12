@@ -1,0 +1,70 @@
+import { ApiService } from './api.service';
+import type { ApiOptions, RequestResponse } from './api.service';
+
+export type HookObjectType =
+	| 'case'
+	| 'ioc'
+	| 'asset'
+	| 'note'
+	| 'event'
+	| 'task'
+	| 'evidence'
+	| 'global_task'
+	| 'alert';
+
+export interface HookOption {
+	hook_name: string;
+	manual_hook_ui_name: string;
+	module_name: string;
+	/** Set on entries of native webhooks subscribed to the manual trigger. */
+	webhook_id?: number;
+}
+
+export interface InvokeHookBody {
+	hook_name: string;
+	module_name: string;
+	hook_ui_name: string;
+	type: HookObjectType;
+	targets: number[];
+	/** Sends to this webhook instead of the modules. */
+	webhook_id?: number;
+}
+
+/** Same payload minus `type` — the alert endpoint only knows alerts. */
+export type InvokeAlertHookBody = Omit<InvokeHookBody, 'type'>;
+
+export interface InvokeHookResult {
+	queued: number;
+	logs?: string[];
+}
+
+export class HooksService {
+	static async list(
+		objectType: HookObjectType,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<HookOption[]>> {
+		return ApiService.get<HookOption[]>(
+			`/dim-hooks?target=${encodeURIComponent(objectType)}`,
+			options
+		);
+	}
+
+	static async invoke(
+		caseId: number,
+		body: InvokeHookBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<InvokeHookResult>> {
+		return ApiService.post<InvokeHookResult>(`/cases/${caseId}/dim-hooks/invoke`, body, options);
+	}
+
+	/**
+	 * Alerts don't belong to a case, so they have their own invoker
+	 * rather than a `type: 'alert'` target on the case-scoped one.
+	 */
+	static async invokeForAlerts(
+		body: InvokeAlertHookBody,
+		options: ApiOptions = {}
+	): Promise<RequestResponse<InvokeHookResult>> {
+		return ApiService.post<InvokeHookResult>('/alerts/dim-hooks/invoke', body, options);
+	}
+}

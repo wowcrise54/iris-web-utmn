@@ -20,3 +20,4 @@
 FROM postgres:12-alpine
 
 COPY create_user.sh   /docker-entrypoint-initdb.d/10-create_user.sh
+RUN sed -i 's/\r$//' /docker-entrypoint-initdb.d/10-create_user.sh
