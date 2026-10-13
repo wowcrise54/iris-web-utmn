@@ -4557,5 +4557,9 @@
   "Are you sure you want to proceed with this action?": "Вы уверены, что хотите выполнить это действие?",
   "asset": "актив",
   "Body mode": "Режим тела запроса",
-  "HTTP method": "Метод HTTP"
+  "HTTP method": "Метод HTTP",
+  "Incident card": "Карточка инцидента",
+  "Position": "Должность",
+  "Remove person": "Удалить участника",
+  "· IRIS": "· IRIS"
 }

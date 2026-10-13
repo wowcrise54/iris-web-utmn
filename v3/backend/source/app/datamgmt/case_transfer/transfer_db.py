@@ -93,6 +93,12 @@ def _read_row(row, spec, collector):
         else:
             payload[column] = make_ref(spec.key, value)
 
+    if spec.key == 'incident_card':
+        from app.business.incident_card_transfer import encode_card_references
+        from app.datamgmt.case.incident_card_db import get_incident_card
+        payload['fields'] = get_incident_card(row.case_id)['fields']
+        payload = encode_card_references(payload)
+
     return payload
 
 
@@ -369,6 +375,26 @@ def write_case_bundle(new_case_identifier, entities, ref_map):
     for spec in ENTITIES:
         rows = entities.get(spec.key) or []
         deferred = []
+
+        if spec.key == 'incident_card':
+            if len(rows) > 1:
+                raise ValueError('A case can contain only one incident card')
+            from app.business.incident_card_transfer import decode_card_references
+            from app.business.incident_cards import validate_update, timestamp
+            rows = [decode_card_references(payload, ref_map) for payload in rows]
+            for payload in rows:
+                fields = {key: {'mode': entry.get('mode'), 'value': entry.get('value')}
+                          for key, entry in (payload.get('fields') or {}).items()}
+                cleaned = validate_update({'schema_version': payload.get('schema_version'),
+                                           'revision': payload.get('revision'), 'fields': fields,
+                                           'selections': payload.get('selections') or {}})
+                payload['selections'] = cleaned['selections']
+                # Carry a snapshot through the transfer, not source-instance attribution or IDs.
+                payload['fields'] = {key: dict(entry, source=None, status='missing'
+                                              if entry['mode'] == 'auto' else 'manual')
+                                     for key, entry in cleaned['fields'].items()}
+                for key in ('created_at', 'updated_at'):
+                    payload[key] = timestamp(payload[key]) if payload.get(key) else None
 
         for payload in rows:
             row = spec.model()
