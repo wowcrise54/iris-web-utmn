@@ -12,6 +12,7 @@
   immediately, no tab switching required.
 -->
 <script lang="ts">
+	import { translateActivity } from "$lib/i18n/activity";
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -623,7 +624,7 @@
 			<div class="flex min-w-0 items-center gap-3">
 				<div class="min-w-0">
 					<p class="text-2xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-						{greeting()}
+						{irisT(greeting(), $irisLocale)}
 					</p>
 					<h1 class="truncate text-2xl font-semibold leading-tight tracking-tight">
 						{firstName}
@@ -1198,8 +1199,8 @@
 										class="flex flex-col gap-0.5 px-4 py-2 transition-colors hover:bg-muted/50"
 									>
 										<div class="flex items-center gap-2 text-sm">
-											<span class="min-w-0 flex-1 truncate" title={a.activity_desc ?? ''}>
-												{a.activity_desc ?? '—'}
+											<span class="min-w-0 flex-1 truncate" title={translateActivity(a.activity_desc ?? '', $irisLocale)}>
+												{translateActivity(a.activity_desc ?? '—', $irisLocale)}
 											</span>
 											<span class="shrink-0 text-2xs tabular-nums text-muted-foreground">
 												{formatRelative(a.activity_date)}
@@ -1220,8 +1221,8 @@
 								{:else}
 									<div class="flex flex-col gap-0.5 px-4 py-2">
 										<div class="flex items-center gap-2 text-sm">
-											<span class="min-w-0 flex-1 truncate" title={a.activity_desc ?? ''}>
-												{a.activity_desc ?? '—'}
+											<span class="min-w-0 flex-1 truncate" title={translateActivity(a.activity_desc ?? '', $irisLocale)}>
+												{translateActivity(a.activity_desc ?? '—', $irisLocale)}
 											</span>
 											<span class="shrink-0 text-2xs tabular-nums text-muted-foreground">
 												{formatRelative(a.activity_date)}

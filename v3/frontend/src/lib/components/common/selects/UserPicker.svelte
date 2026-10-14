@@ -118,12 +118,12 @@
 	const clearScope = () => onChange([], labels);
 
 	const summary = $derived.by(() => {
-		if (values.length === 0) return 'All users';
-		if (values.length === 1) return labels[values[0]] ?? `User #${values[0]}`;
+		if (values.length === 0) return irisT('All users', $irisLocale);
+		if (values.length === 1) return labels[values[0]] ?? `${irisT("User", $irisLocale)} #${values[0]}`;
 		if (values.length === 2) {
 			return values.map((id) => labels[id] ?? `#${id}`).join(', ');
 		}
-		return `${values.length} users selected`;
+		return irisT("Users selected: {count}", $irisLocale, { count: values.length });
 	});
 </script>
 

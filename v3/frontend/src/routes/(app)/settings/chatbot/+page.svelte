@@ -36,6 +36,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from '$lib/components/ui/toast';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
+	import ProviderCheck from '$lib/components/chat/ProviderCheck.svelte';
 	import SearchSelect from '$lib/components/common/selects/SearchSelect.svelte';
 	import {
 		ChatbotAdminService,
@@ -665,6 +666,7 @@
 								<option value="">{irisT("— select —", $irisLocale)}</option>
 								<option value="anthropic">{irisT("Anthropic", $irisLocale)}</option>
 								<option value="openai">{irisT("OpenAI", $irisLocale)}</option>
+								<option value="custom">{irisT("Custom (OpenAI-compatible)", $irisLocale)}</option>
 								<option value="ollama">{irisT("Ollama (self-hosted)", $irisLocale)}</option>
 							</select>
 						</div>
@@ -717,10 +719,11 @@
 								for="chatbot-base-url"
 								class="text-2xs font-medium uppercase tracking-wide text-muted-foreground"
 							>
-								{irisT("Base URL (optional)", $irisLocale)}
+								{irisT(srvForm.chatbot_provider === 'custom' ? 'Base URL (required)' : 'Base URL (optional)', $irisLocale)}
 							</label>
 							<Input
 								id="chatbot-base-url"
+								required={srvForm.chatbot_provider === 'custom'}
 								class="h-7 text-xs"
 								placeholder={irisT("e.g. https://<resource>.openai.azure.com/anthropic  or  http://ollama.internal:11434", $irisLocale)}
 								value={String(srvForm.chatbot_base_url ?? '')}
@@ -735,6 +738,20 @@
 								>{irisT("). The provider's standard path is appended automatically (e.g.", $irisLocale)}
 								<code class="rounded bg-muted px-1 py-0.5 font-mono text-2xs">/v1/messages</code> {irisT("for\n\t\t\t\t\t\t\t\tAnthropic).", $irisLocale)}
 							</p>
+							<p class="text-2xs text-muted-foreground">{irisT('OpenAI-compatible URLs may include /v1. API key is optional for unauthenticated custom servers.', $irisLocale)}</p>
+						</div>
+
+						<div class="sm:col-span-2">
+							<ProviderCheck
+								body={{
+									provider: srvForm.chatbot_provider,
+									model: srvForm.chatbot_model,
+									base_url: srvForm.chatbot_base_url,
+									...(srvFieldChanged('chatbot_api_key') ? { api_key: srvForm.chatbot_api_key } : {})
+								}}
+								disabled={srvSaving}
+								onModel={(model) => (srvForm.chatbot_model = model)}
+							/>
 						</div>
 
 						<div class="flex flex-col gap-1">
@@ -1147,7 +1164,13 @@
 			</label>
 			<label class="flex flex-col gap-1">
 				<span>{irisT("Provider", $irisLocale)}</span>
-				<Input bind:value={form.provider} placeholder={irisT("anthropic / openai / ollama", $irisLocale)} />
+				<select class="h-8 rounded border bg-background px-2" bind:value={form.provider}>
+					<option value="">{irisT('Use global provider', $irisLocale)}</option>
+					<option value="anthropic">Anthropic</option>
+					<option value="openai">OpenAI</option>
+					<option value="custom">{irisT('Custom (OpenAI-compatible)', $irisLocale)}</option>
+					<option value="ollama">{irisT('Ollama (self-hosted)', $irisLocale)}</option>
+				</select>
 			</label>
 			<label class="flex flex-col gap-1">
 				<span>{irisT("Model", $irisLocale)}</span>
@@ -1217,6 +1240,19 @@
 				/>
 				<span>{irisT("Redact hashes", $irisLocale)}</span>
 			</label>
+		</div>
+		<div class="mb-3">
+			<ProviderCheck
+				body={{
+					policy_id: editing?.id ?? null,
+					provider: form.provider,
+					model: form.model,
+					base_url: form.base_url,
+					...(apiKeyTouched ? { api_key: apiKeyInput || null } : {})
+				}}
+				disabled={submitting}
+				onModel={(model) => (form.model = model)}
+			/>
 		</div>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (editorOpen = false)} disabled={submitting}>

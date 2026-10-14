@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from app.business.server_settings import get_srv_settings
 from app.iris_engine.llm.providers.anthropic import AnthropicProvider
@@ -150,7 +151,7 @@ def get_llm_provider(config: ChatbotConfig | None = None) -> LLMProvider:
     if not cfg.provider:
         raise ChatbotDisabledError(
             'Chatbot provider is not configured — pick anthropic, openai, '
-            'or ollama in Settings → Server → Chatbot.'
+            'ollama, or custom in Settings → Chatbot.'
         )
     if not cfg.model:
         raise ChatbotDisabledError(
@@ -165,12 +166,22 @@ def get_llm_provider(config: ChatbotConfig | None = None) -> LLMProvider:
                 'Anthropic requires an API key — set chatbot_api_key.')
         return AnthropicProvider(
             api_key=cfg.api_key, base_url=cfg.base_url or None)
-    if provider == 'openai':
-        if not cfg.api_key:
+    if provider in ('openai', 'custom'):
+        if provider == 'custom':
+            url = urlsplit(cfg.base_url.strip())
+            if (url.scheme not in ('http', 'https') or not url.hostname
+                    or url.username or url.password or url.query or url.fragment):
+                raise ChatbotDisabledError(
+                    'Custom provider requires an HTTP(S) Base URL without '
+                    'credentials, query parameters, or fragment.')
+        if provider == 'openai' and not cfg.api_key:
             raise ChatbotDisabledError(
                 'OpenAI requires an API key — set chatbot_api_key.')
-        return OpenAIProvider(
-            api_key=cfg.api_key, base_url=cfg.base_url or None)
+        adapter = OpenAIProvider(
+            api_key=cfg.api_key, base_url=cfg.base_url.strip() or None,
+            require_api_key=provider == 'openai')
+        adapter.name = provider
+        return adapter
     if provider == 'ollama':
         # Ollama runs unauthenticated by default; api_key is optional.
         return OllamaProvider(

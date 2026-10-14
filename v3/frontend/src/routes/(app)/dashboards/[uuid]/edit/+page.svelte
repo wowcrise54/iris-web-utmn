@@ -781,14 +781,14 @@
 														onValueChange={(v) => setWidgetSize(sIdx, wIdx, v)}
 														type="single"
 													>
-														<SelectTrigger class="h-7 w-20 text-xs"
-															>{widgetSize(widget)}</SelectTrigger
+														<SelectTrigger class="h-7 w-36 text-xs"
+															>{irisT(({ third: "One third", half: "Half width", full: "Full width", kpi: "KPI" } as Record<string, string>)[widgetSize(widget)] ?? widgetSize(widget), $irisLocale)}</SelectTrigger
 														>
 														<SelectContent>
-															<SelectItem value="kpi">{irisT("kpi", $irisLocale)}</SelectItem>
-															<SelectItem value="third">{irisT("third", $irisLocale)}</SelectItem>
-															<SelectItem value="half">{irisT("half", $irisLocale)}</SelectItem>
-															<SelectItem value="full">{irisT("full", $irisLocale)}</SelectItem>
+															<SelectItem value="kpi">{irisT("KPI", $irisLocale)}</SelectItem>
+															<SelectItem value="third">{irisT("One third", $irisLocale)}</SelectItem>
+															<SelectItem value="half">{irisT("Half width", $irisLocale)}</SelectItem>
+															<SelectItem value="full">{irisT("Full width", $irisLocale)}</SelectItem>
 														</SelectContent>
 													</Select>
 													<Button

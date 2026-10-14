@@ -61,11 +61,18 @@ _FINISH_REASON_MAP = {
 class OpenAIProvider(LLMProvider):
     name = 'openai'
 
-    def __init__(self, *, api_key: str, base_url: str | None = None):
-        if not api_key:
+    def __init__(self, *, api_key: str, base_url: str | None = None,
+                 require_api_key: bool = True):
+        if require_api_key and not api_key:
             raise ValueError('OpenAIProvider requires an api_key')
         self._api_key = api_key
         self._base_url = base_url.rstrip('/') if base_url else _OPENAI_BASE
+
+    def api_url(self, path: str) -> str:
+        base = self._base_url
+        if not base.endswith('/v1'):
+            base += '/v1'
+        return f'{base}/{path}'
 
     def stream_completion(
         self,
@@ -78,10 +85,11 @@ class OpenAIProvider(LLMProvider):
     ) -> Iterator[LLMEvent]:
         body = self._build_body(model, system, messages, tools, max_tokens)
         headers = {
-            'Authorization': f'Bearer {self._api_key}',
             'content-type': 'application/json',
         }
-        url = f'{self._base_url}/v1/chat/completions'
+        if self._api_key:
+            headers['Authorization'] = f'Bearer {self._api_key}'
+        url = self.api_url('chat/completions')
 
         try:
             resp = requests.post(

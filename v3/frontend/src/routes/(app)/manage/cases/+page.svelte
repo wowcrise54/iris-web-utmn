@@ -577,7 +577,7 @@
 				<div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center">
 					<div class="flex items-center gap-1.5 text-xs">
 						<span class="text-muted-foreground">{irisT("State:", $irisLocale)}</span>
-						{#each [{ label: 'Open', value: true }, { label: 'Closed', value: false }, { label: 'All', value: null }] as choice (String(choice.value))}
+						{#each [{ label: 'Open cases', value: true }, { label: 'Closed cases', value: false }, { label: 'All', value: null }] as choice (String(choice.value))}
 							{@const active = openFilter === choice.value}
 							<button
 								type="button"
@@ -587,7 +587,7 @@
 									? irisT("border-primary/40 bg-primary/10 text-foreground", $irisLocale)
 									: irisT("border-border bg-card text-muted-foreground hover:bg-muted/50", $irisLocale)}"
 							>
-								{choice.label}
+								{irisT(choice.label, $irisLocale)}
 							</button>
 						{/each}
 					</div>

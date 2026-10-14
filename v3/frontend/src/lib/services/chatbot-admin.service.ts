@@ -65,6 +65,23 @@ export interface ChatbotPolicyBody {
 	retention_days?: number;
 }
 
+export interface ProviderCheckBody {
+	provider?: string | null;
+	model?: string | null;
+	base_url?: string | null;
+	api_key?: string | null;
+	/** null checks a new policy using global fallbacks. */
+	policy_id?: number | null;
+}
+
+export interface ProviderCheckResult {
+	models: string[];
+	models_error: string | null;
+	model: string;
+	model_accessible: boolean | null;
+	model_error: string | null;
+}
+
 export interface AdminSession extends ChatConversation {
 	resolved_policy_id: number | null;
 	resolved_restriction_level: number;
@@ -109,6 +126,12 @@ export interface AdminSessionTurn {
 }
 
 export class ChatbotAdminService {
+	static async checkProvider(
+		body: ProviderCheckBody
+	): Promise<RequestResponse<ProviderCheckResult>> {
+		return ApiService.post('/manage/case-chat/provider/check', body);
+	}
+
 	static async listPolicies(
 		options: ApiOptions = {}
 	): Promise<RequestResponse<{ policies: ChatbotPolicy[] }>> {

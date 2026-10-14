@@ -18,6 +18,7 @@ Two surfaces live here, both `server_administrator`-gated:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import replace
 
 from app.web import Blueprint, request
 
@@ -55,6 +56,47 @@ _audit_schema = CaseChatEgressAuditSchema()
 _policy_schema = ChatbotPolicySchema()
 _conv_schema = CaseChatConversationSchema()
 _msg_schema = CaseChatMessageSchema()
+
+
+@case_chat_admin_blueprint.post('/provider/check')
+@ac_api_requires(Permissions.server_administrator)
+@api_doc(tags=['ManageCaseChat'], summary='Check provider models and selected model access')
+def check_provider():
+    from app.iris_engine.llm.client import load_config, ChatbotDisabledError
+    from app.iris_engine.llm.connection_check import check_connection
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return response_api_error('Expected a JSON object.')
+    allowed = {'provider', 'model', 'base_url', 'api_key', 'policy_id'}
+    if body.keys() - allowed:
+        return response_api_error('Unknown provider check fields.')
+    for field in ('provider', 'model', 'base_url', 'api_key'):
+        if field in body and body[field] is not None and not isinstance(body[field], str):
+            return response_api_error(f'{field} must be a string or null.')
+        if isinstance(body.get(field), str) and len(body[field]) > 4096:
+            return response_api_error(f'{field} is too long.')
+    policy = None
+    if body.get('policy_id') is not None:
+        if type(body['policy_id']) is not int or body['policy_id'] <= 0:
+            return response_api_error('policy_id must be a positive integer.')
+        policy = db.session.get(ChatbotPolicy, body['policy_id'])
+        if policy is None:
+            return response_api_not_found()
+    config = load_config(policy)
+    overrides = {}
+    for field in ('provider', 'model', 'base_url', 'api_key'):
+        if field in body:
+            value = body[field] or ''
+            # Empty policy fields inherit global defaults, as in load_config.
+            if 'policy_id' in body and not value:
+                value = getattr(load_config(), field)
+            overrides[field] = value.strip() if field != 'api_key' else value
+    try:
+        result = check_connection(replace(config, **overrides))
+    except (ChatbotDisabledError, ValueError) as exc:
+        return response_api_error(str(exc))
+    return response_api_success(result)
 
 
 @case_chat_admin_blueprint.get('/egress-audit')

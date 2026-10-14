@@ -14,6 +14,8 @@
   as an inline card.
 -->
 <script lang="ts">
+	import { translate as irisT, useLocale } from "$lib/i18n/context";
+	const irisLocale = useLocale();
 	import MentionList, {
 		type MentionItem
 	} from '$lib/components/common/MarkDown/MentionList.svelte';
@@ -382,8 +384,8 @@
 				: SLASH_COMMANDS_LIST;
 			items = matching.map((c) => ({
 				id: c.cmd,
-				label: c.usage,
-				sublabel: c.desc,
+				label: irisT(c.usage, $irisLocale),
+				sublabel: irisT(c.desc, $irisLocale),
 				// Reuse the 'task' icon — it visually reads as
 				// "actionable command" and matches the existing
 				// MentionList icon vocabulary so we don't have to

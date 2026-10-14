@@ -6940,6 +6940,21 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/v2/manage/case-chat/provider/check:
+    post:
+      operationId: check_provider_post
+      summary: Check provider models and selected model access
+      tags:
+      - ManageCaseChat
+      security:
+      - ApiKey: []
+      responses:
+        '200':
+          description: Success
+        '400':
+          $ref: '#/components/responses/ApiError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /api/v2/manage/case-chat/retention/run:
     post:
       operationId: run_retention_post

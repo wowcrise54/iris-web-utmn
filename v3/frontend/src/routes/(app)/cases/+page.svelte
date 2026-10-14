@@ -970,10 +970,10 @@
 					}}
 					type="single"
 				>
-					<SelectTrigger>{perPage} / page</SelectTrigger>
+					<SelectTrigger>{irisT("{count} / page", $irisLocale, { count: perPage })}</SelectTrigger>
 					<SelectContent>
 						{#each perPageOptions as perPageOption (perPageOption.value)}
-							<SelectItem value={perPageOption.value}>{perPageOption.label}</SelectItem>
+							<SelectItem value={perPageOption.value}>{irisT("{count} entries", $irisLocale, { count: perPageOption.value })}</SelectItem>
 						{/each}
 					</SelectContent>
 				</Select>
