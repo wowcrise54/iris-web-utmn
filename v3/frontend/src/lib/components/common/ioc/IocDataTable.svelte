@@ -33,6 +33,7 @@
 	export let showTags: boolean = false;
 	export let onShowEnrichment: ((ioc: Ioc) => void) | undefined = undefined;
 	export let onEdit: ((ioc: Ioc) => void) | undefined = undefined;
+	export let onDelete: ((ioc: Ioc) => void) | undefined = undefined;
 
 	const dispatch = createEventDispatcher();
 
@@ -135,7 +136,7 @@
 			header: () => 'OpenCTI',
 			cell: (cell) => renderComponent(OpenCTIStatus, { enrichment: cell.row.original.ioc_enrichment })
 		},
-		...(onEdit || onShowEnrichment
+		...(onEdit || onDelete || onShowEnrichment
 			? [
 					{
 						id: '__actions__',
@@ -148,6 +149,7 @@
 								hasEnrichment: !!ioc.ioc_enrichment,
 								onShowEnrichment: onShowEnrichment && (() => onShowEnrichment?.(ioc)),
 								onEdit: onEdit && (() => onEdit?.(ioc)),
+								onDelete: onDelete && (() => onDelete?.(ioc)),
 								editLabel: 'Edit IOC',
 								enrichmentLabel: 'View IOC enrichment'
 							});

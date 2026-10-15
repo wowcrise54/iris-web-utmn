@@ -2644,6 +2644,7 @@ class AlertSchema(ma.SQLAlchemyAutoSchema):
     owner = ma.Nested(UserSchema, only=['id', 'user_name', 'user_login', 'user_email'])
     iocs = ma.Nested(IocSchema, many=True)
     assets = ma.Nested(CaseAssetsSchema, many=True, exclude=['alerts'])
+    artifacts = fields.Method('_artifacts', dump_only=True)
     resolution_status = ma.Nested(AlertResolutionSchema)
     cases = fields.Pluck(AlertCaseSchema, 'case_id', many=True, required=False)
     clusters = fields.Method('_cluster_ids', dump_only=True)
@@ -2658,6 +2659,9 @@ class AlertSchema(ma.SQLAlchemyAutoSchema):
 
     def _cluster_ids(self, alert: Alert):
         return [c.cluster_id for c in (alert.clusters or [])]
+
+    def _artifacts(self, alert):
+        return [row.serialize() for row in alert.artifacts]
 
     def _flow_summary(self, alert: Alert):
         flow = alert.investigation_flow

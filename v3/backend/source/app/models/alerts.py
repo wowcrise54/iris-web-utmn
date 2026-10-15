@@ -34,6 +34,7 @@ from sqlalchemy.orm import relationship
 from app.db import db
 from app.models.assets import alert_assets_association
 from app.models.iocs import alert_iocs_association
+from app.models.alert_artifacts import AlertArtifact  # noqa: F401
 
 
 class AlertCaseAssociation(db.Model):
@@ -93,6 +94,7 @@ class Alert(db.Model):
 
     assets = relationship('CaseAssets', secondary=alert_assets_association, back_populates='alerts')
     iocs = relationship('Ioc', secondary=alert_iocs_association, back_populates='alerts')
+    artifacts = relationship('AlertArtifact', back_populates='alert', cascade='all, delete-orphan')
 
 
 class Severity(db.Model):
