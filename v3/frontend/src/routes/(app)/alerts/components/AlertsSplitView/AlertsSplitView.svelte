@@ -35,6 +35,8 @@
 	import { toast } from '$lib/stores/toast.store';
 	import { callAlertHook, hookOptionKey } from '$lib/utils/hooks';
 	import EnrichmentDialog from '$lib/components/common/EnrichmentDialog.svelte';
+	import OpenCTIStatus from '$lib/components/common/OpenCTIStatus.svelte';
+	import { readOpenCTI, startOpenCTIRefresh } from '$lib/utils/opencti';
 	import { MarkDownPreview } from '$lib/components/common/MarkDown';
 	import { CommentsThread } from '$lib/components/common/Comments';
 	import InvestigationFlowSteps from '$lib/components/common/InvestigationFlow/InvestigationFlowSteps.svelte';
@@ -167,6 +169,7 @@
 		 * refresh the alert and keep the tab's count honest.
 		 */
 		onCommentsChanged?: (alert: Alert) => void;
+		onEnrichmentRefresh?: (alertId: number) => Promise<void>;
 		onOpenCluster: (clusterId: number) => void;
 		onPageChange: (page: number) => void;
 		onQueueTabChange: (tab: 'mine' | 'unassigned' | 'escalated' | null) => void;
@@ -210,6 +213,7 @@
 		onEdit,
 		onDelete,
 		onCommentsChanged,
+		onEnrichmentRefresh,
 		onOpenCluster,
 		onPageChange,
 		onQueueTabChange,
@@ -274,9 +278,18 @@
 		alertHooks.options.length > 0 && userCtx?.can('alerts_write') === true
 	);
 
+	let queuedEnrichment = $state<{ alertId: number; checks: Record<number, string> } | null>(null);
 	const triggerHook = async (alert: Alert, hookOption: HookOption) => {
 		showModulesMenu = false;
 		const result = await callAlertHook([alert.alert_id], hookOption);
+		if (result.status === 'success' && hookOption.module_name === 'IRIS OpenCTI' && alert.iocs.length) {
+			queuedEnrichment = {
+				alertId: alert.alert_id,
+				checks: Object.fromEntries(alert.iocs.map(ioc => [
+					ioc.ioc_id, readOpenCTI(ioc.ioc_enrichment)?.checkedAt ?? ''
+				]))
+			};
+		}
 		toast({
 			title: result.message,
 			variant: result.status === 'error' ? 'destructive' : 'success'
@@ -627,6 +640,20 @@
 	// ---- derived detail data -----------------------------------------
 
 	const iocs = $derived(focused?.iocs ?? []);
+	const enrichmentQueued = $derived(
+		queuedEnrichment?.alertId === focusedId && iocs.some(ioc =>
+			ioc.ioc_id in (queuedEnrichment?.checks ?? {}) &&
+			(readOpenCTI(ioc.ioc_enrichment)?.checkedAt ?? '') === queuedEnrichment?.checks[ioc.ioc_id]
+		)
+	);
+
+	$effect(() => {
+		const id = focusedId;
+		const refresh = onEnrichmentRefresh;
+		if (!id || !refresh || (activeTab !== 'iocs' && !enrichmentQueued) ||
+			!alertHooks.options.some(hook => hook.module_name === 'IRIS OpenCTI')) return;
+		return startOpenCTIRefresh(() => refresh(id));
+	});
 	const rawEvent = $derived(formatRawEvent(focused?.alert_source_content));
 
 	// ---- observable details ------------------------------------------
@@ -637,6 +664,10 @@
 	let enrichmentOpen = $state(false);
 	let enrichmentSubject = $state('');
 	let enrichmentValue = $state<unknown>(null);
+	let enrichmentIocId = $state<number | null>(null);
+	const currentEnrichment = $derived(
+		iocs.find(ioc => ioc.ioc_id === enrichmentIocId)?.ioc_enrichment ?? enrichmentValue
+	);
 
 	let editedIoc = $state<Ioc | null>(null);
 	let iocDialogOpen = $state(false);
@@ -648,9 +679,10 @@
 	// only covers the fields, not the buttons between them.
 	const observableDialogOpen = $derived(enrichmentOpen || iocDialogOpen || assetDialogOpen);
 
-	const showEnrichment = (subject: string, enrichment: unknown) => {
+	const showEnrichment = (subject: string, enrichment: unknown, iocId: number | null = null) => {
 		enrichmentSubject = subject;
 		enrichmentValue = enrichment;
+		enrichmentIocId = iocId;
 		enrichmentOpen = true;
 	};
 
@@ -1753,6 +1785,9 @@
 						{/if}
 
 						{#if activeTab === 'iocs'}
+							{#if enrichmentQueued}
+								<p role="status" class="mb-3 text-xs text-muted-foreground">{irisT('OpenCTI enrichment queued. Results update automatically.', $irisLocale)}</p>
+							{/if}
 							<section class="section">
 								<h3 class="section-title">{irisT("Observables", $irisLocale)}</h3>
 								{#if iocs.length === 0}
@@ -1781,6 +1816,7 @@
 															)}
 														</div>
 														{@render metaLine(iocFields(ioc), `ioc-${ioc.ioc_id}`)}
+														<OpenCTIStatus enrichment={ioc.ioc_enrichment} />
 													</div>
 
 													<div class="obs-actions">
@@ -1789,7 +1825,7 @@
 															class="obs-btn"
 															disabled={!ioc.ioc_enrichment}
 															title={ioc.ioc_enrichment ? irisT("View enrichment", $irisLocale) : irisT("No enrichment", $irisLocale)}
-															onclick={() => showEnrichment(ioc.ioc_value, ioc.ioc_enrichment)}
+															onclick={() => showEnrichment(ioc.ioc_value, ioc.ioc_enrichment, ioc.ioc_id)}
 															>{irisT("Enrichment", $irisLocale)}</button
 														>
 														<button
@@ -2011,7 +2047,7 @@
 <EnrichmentDialog
 	bind:open={enrichmentOpen}
 	subject={enrichmentSubject}
-	enrichment={enrichmentValue}
+	enrichment={currentEnrichment}
 />
 
 {#if editedIoc}

@@ -9,6 +9,7 @@
 		markings
 	} from '$lib/utils/opencti';
 	const locale = useLocale();
+	import OpenCTIStatus from './OpenCTIStatus.svelte';
 	let { enrichment }: { enrichment: unknown } = $props();
 	const result = $derived(readOpenCTI(enrichment));
 </script>
@@ -17,9 +18,7 @@
 	<section class="mb-4 space-y-3 rounded-md border p-4" aria-label={irisT('OpenCTI', $locale)}>
 		<div class="flex flex-wrap items-center justify-between gap-2">
 			<h3 class="font-semibold">OpenCTI</h3>
-			<span class="text-sm"
-				>{irisT(openctiStatuses[result.status] ?? 'Unknown status', $locale)}</span
-			>
+			<OpenCTIStatus {enrichment} />
 		</div>
 		<p class="text-xs text-muted-foreground">{irisT('Checked at', $locale)}: {result.checkedAt}</p>
 		{#if result.inputValue}<p class="break-all font-mono text-xs">

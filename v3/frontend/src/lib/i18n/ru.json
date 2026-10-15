@@ -1,4 +1,5 @@
 {
+  "OpenCTI enrichment queued. Results update automatically.": "Обогащение OpenCTI поставлено в очередь. Результаты обновляются автоматически.",
   "Matches found": "Найдены совпадения",
   "OpenCTI HTTP error": "Ошибка HTTP OpenCTI",
   "OpenCTI response too large": "Превышен размер ответа OpenCTI",

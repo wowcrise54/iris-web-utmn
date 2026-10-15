@@ -21,6 +21,26 @@ export const openctiStatuses: Record<string, string> = {
 	not_yet_valid: 'Not yet valid'
 };
 
+/** Poll IRIS for asynchronous module results while its IOC view is open. */
+export function startOpenCTIRefresh(refresh: () => Promise<void>): () => void {
+	let cancelled = false;
+	let timer: ReturnType<typeof setTimeout>;
+	const poll = async () => {
+		try {
+			if (!document.hidden) await refresh();
+		} catch {
+			// Keep the last confirmed result and retry after a network failure.
+		} finally {
+			if (!cancelled) timer = setTimeout(() => void poll(), 5000);
+		}
+	};
+	timer = setTimeout(() => void poll(), 1000);
+	return () => {
+		cancelled = true;
+		clearTimeout(timer);
+	};
+}
+
 type Entity = Record<string, unknown> & { id: string };
 const record = (value: unknown): Record<string, unknown> | null =>
 	value !== null && typeof value === 'object' && !Array.isArray(value)

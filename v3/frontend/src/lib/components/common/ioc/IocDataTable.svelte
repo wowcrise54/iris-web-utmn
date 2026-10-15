@@ -9,6 +9,7 @@
 	import DataTable from '$lib/components/ui/data-table-tanstack/data-table.svelte';
 	import TlpBadge from '../tlp/TlpBadge.svelte';
 	import IocNameCell from './IocNameCell.svelte';
+	import OpenCTIStatus from '../OpenCTIStatus.svelte';
 	import RowCheckbox from '$lib/components/common/RowCheckbox.svelte';
 	import TagDisplay from '$lib/components/common/tag/TagDisplay.svelte';
 	import RowActionsCell from '$lib/components/common/table/RowActionsCell.svelte';
@@ -129,6 +130,11 @@
 					} as ColumnDef<Ioc>
 				]
 			: []),
+		{
+			id: 'opencti',
+			header: () => 'OpenCTI',
+			cell: (cell) => renderComponent(OpenCTIStatus, { enrichment: cell.row.original.ioc_enrichment })
+		},
 		...(onEdit || onShowEnrichment
 			? [
 					{
