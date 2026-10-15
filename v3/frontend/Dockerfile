@@ -34,7 +34,7 @@ RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 # Strip dev dependencies so the runtime image only carries what `node
 # build` needs at runtime.
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --no-audit --no-fund
 
 
 # ---------------------------------------------------------------------------

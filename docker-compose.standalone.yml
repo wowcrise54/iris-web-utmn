@@ -1,0 +1,138 @@
+name: iris-standalone
+
+x-backend: &backend
+  image: iris-standalone-backend:local
+  build:
+    context: ./v3/backend
+    dockerfile: docker/webApp/Dockerfile.standalone
+  environment: &backend-env
+    IRIS_ALLOW_ORIGIN: ${IRIS_PUBLIC_URL:-https://localhost:18545}
+  volumes:
+    - runtime:/runtime:ro
+    - downloads:/home/iris/downloads
+    - templates:/home/iris/user_templates
+    - server-data:/home/iris/server_data
+
+services:
+  init:
+    <<: *backend
+    command: [init]
+    environment:
+      IRIS_PUBLIC_URL: ${IRIS_PUBLIC_URL:-https://localhost:18545}
+    volumes:
+      - runtime:/runtime
+    restart: "no"
+
+  db:
+    image: postgres:18-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/18/docker
+    entrypoint: [/bin/sh, -ec]
+    command: ['set -a; . /runtime/iris.env; set +a; exec /usr/local/bin/docker-entrypoint.sh postgres']
+    volumes:
+      - runtime:/runtime:ro
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d iris_db]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    hostname: rabbitmq
+    entrypoint: [/bin/sh, -ec]
+    command: ['set -a; . /runtime/iris.env; set +a; exec /usr/local/bin/docker-entrypoint.sh rabbitmq-server']
+    volumes:
+      - runtime:/runtime:ro
+      - broker-data:/var/lib/rabbitmq
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      init: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  app:
+    <<: *backend
+    command: [app]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/manage/server/authentication-settings')"]
+      interval: 5s
+      timeout: 5s
+      retries: 90
+      start_period: 120s
+    depends_on:
+      db: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command: [worker]
+    environment:
+      <<: *backend-env
+      IRIS_WORKER: "1"
+      NUMBER_OF_CHILD: "2"
+    depends_on:
+      app: {condition: service_healthy}
+    restart: unless-stopped
+
+  frontend:
+    image: iris-standalone-frontend:local
+    build:
+      context: ./v3/frontend
+      args: {NODE_VERSION: 26-alpine}
+    environment:
+      PUBLIC_INTERNAL_API_URL: http://app:8000
+      PUBLIC_EXTERNAL_API_URL: ${IRIS_PUBLIC_URL:-https://localhost:18545}
+      IRIS_ALLOW_ORIGIN: ${IRIS_PUBLIC_URL:-https://localhost:18545}
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      PUBLIC_USE_MOCK_API_DATA: "false"
+      BODY_SIZE_LIMIT: Infinity
+      NODE_ENV: production
+    healthcheck:
+      test: [CMD, node, -e, "require('http').get('http://localhost:5173/login', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    restart: unless-stopped
+
+  nginx:
+    image: iris-standalone-nginx:local
+    build:
+      context: ./v3/backend/docker/nginx
+      args: {NGINX_CONF_GID: "1234", NGINX_CONF_FILE: nginx-newui.conf}
+    environment:
+      IRIS_UPSTREAM_SERVER: app
+      IRIS_UPSTREAM_PORT: "8000"
+      IRIS_FRONTEND_SERVER: frontend
+      IRIS_FRONTEND_PORT: "5173"
+      INTERFACE_HTTPS_PORT: "8443"
+      SERVER_NAME: _
+      CERT_FILENAME: iris-cert.pem
+      KEY_FILENAME: iris-key.pem
+    ports:
+      - "${IRIS_BIND_ADDRESS:-0.0.0.0}:${IRIS_HTTPS_PORT:-18545}:8443"
+    volumes:
+      - runtime:/www/certs:ro
+    depends_on:
+      init: {condition: service_completed_successfully}
+      app: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+    restart: unless-stopped
+
+volumes:
+  runtime: {}
+  db-data: {}
+  broker-data: {}
+  downloads: {}
+  templates: {}
+  server-data: {}

@@ -1261,8 +1261,6 @@ class PostInit:
             add_user_to_group(user_id=user.id, group_id=gadm.group_id)
             add_user_to_organisation(user_id=user.id, org_id=def_org.org_id)
 
-            self._logger.warning(f">>> Administrator password: {password}")
-
             db.session.commit()
 
         else:
@@ -1534,7 +1532,10 @@ class PostInit:
                 self._logger.warning(f"| IRIS IS READY on port  {os.getenv('INTERFACE_HTTPS_PORT')} |")
                 self._logger.warning("===============================")
 
-                # If an administrative user was created, log their credentials
+                # A configured password is already available to its operator.
                 if pwd is not None:
-                    self._logger.info(f'You can now login with user {admin.user} and password >>> {pwd} <<< '
-                                      f'on {os.getenv("INTERFACE_HTTPS_PORT")}')
+                    if self._configuration.get('IRIS_ADM_PASSWORD'):
+                        self._logger.info(f'You can now login with user {admin.user} using the configured password')
+                    else:
+                        self._logger.info(f'You can now login with user {admin.user} and password >>> {pwd} <<< '
+                                          f'on {os.getenv("INTERFACE_HTTPS_PORT")}')

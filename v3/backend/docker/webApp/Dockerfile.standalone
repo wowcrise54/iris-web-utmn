@@ -1,0 +1,27 @@
+FROM python:3.12-bookworm AS dependencies
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+COPY source/dependencies /dependencies
+COPY source/requirements.txt /requirements.txt
+RUN cd / && pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.12-slim-bookworm
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 DOCKERIZED=1
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends p7zip-full gnupg rsync postgresql-client openssl libmagic1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /home/iris/downloads /home/iris/user_templates \
+       /home/iris/certificates/rootCA /home/iris/certificates/web_certificates \
+       /home/iris/server_data/backup /home/iris/server_data/updates \
+       /home/iris/server_data/custom_assets /home/iris/server_data/datastore
+COPY --from=dependencies /opt/venv /opt/venv
+WORKDIR /iriswebapp
+COPY source .
+COPY docker/webApp/native-entrypoint.sh /iriswebapp/native-entrypoint.sh
+COPY docker/standalone/entrypoint.sh /usr/local/bin/iris-standalone
+COPY docker/standalone/init.py /usr/local/lib/iris-standalone-init.py
+RUN sed -i 's/\r$//' /iriswebapp/native-entrypoint.sh /usr/local/bin/iris-standalone \
+    && chmod +x /iriswebapp/native-entrypoint.sh /usr/local/bin/iris-standalone \
+    && find scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} +
+ENTRYPOINT ["/usr/local/bin/iris-standalone"]
+CMD ["app"]

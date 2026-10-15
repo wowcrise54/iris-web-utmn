@@ -1,63 +1,60 @@
-# Fresh Linux deployment
+# Standalone Linux deployment
 
-This guide creates a **new, empty** v3 database and file volumes. It does not
-import the Windows data volumes and must not be combined with
-`docker-compose.saved-data.yml` or `docker-compose.v3-live.yml`.
-
-From the repository root:
+From the repository root, with Docker Engine and Docker Compose installed:
 
 ```bash
-bash scripts/create-v3-linux-env.sh
-
-mkdir -p tests/upgrade_2_4_29/runtime/certs
-if [[ ! -s tests/upgrade_2_4_29/runtime/certs/upgrade-key.pem || \
-      ! -s tests/upgrade_2_4_29/runtime/certs/upgrade-cert.pem ]]; then
-  umask 077
-  openssl req -x509 -nodes -newkey rsa:2048 -days 7 \
-    -keyout tests/upgrade_2_4_29/runtime/certs/upgrade-key.pem \
-    -out tests/upgrade_2_4_29/runtime/certs/upgrade-cert.pem \
-    -subj /CN=localhost \
-    -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
-fi
-
-export V3_VOLUME_PREFIX=iris-opencti-linux
+docker compose -p iris-standalone -f docker-compose.standalone.yml up -d --build
 ```
 
-Build the local v2 base image referenced by `Dockerfile.native`, then the v3
-application and its UI. The Linux overlay clears the inherited PostgreSQL 12
-build, uses PostgreSQL 18, takes DB credentials only from the generated file,
-and lets Compose create project-specific volumes.
+This single Compose file builds backend, worker, frontend and nginx from source.
+The backend starts from public Python images; no locally built IRIS v2 image,
+other Compose files, host env file, prepared certificates or external volumes
+are required. PostgreSQL 18 and RabbitMQ use their public images.
+
+The initialization service generates database/broker passwords, IRIS keys and a
+self-signed TLS certificate inside the persistent `runtime` volume. Its secret
+file has mode 600. Restarts keep credentials; the certificate is refreshed when
+its hostname changes or it approaches expiry. App initialization runs migrations
+before the worker starts. OpenCTI is installed disabled by default.
+
+By default nginx publishes HTTPS on port 18545 on all host interfaces. Open
+`https://localhost:18545` when using a browser on that host. For access from
+another computer, specify the server's actual IP or DNS name before starting:
 
 ```bash
-docker compose -p iris-opencti-linux \
-  -f docker-compose.upgrade-validation.yml \
-  build app
-
-docker compose -p iris-opencti-linux \
-  -f docker-compose.upgrade-validation.yml \
-  -f docker-compose.v3.yml \
-  -f docker-compose.v3-linux.yml \
-  build app worker frontend nginx
-
-docker compose -p iris-opencti-linux \
-  -f docker-compose.upgrade-validation.yml \
-  -f docker-compose.v3.yml \
-  -f docker-compose.v3-linux.yml \
-  up -d --no-build
-
-docker compose -p iris-opencti-linux \
-  -f docker-compose.upgrade-validation.yml \
-  -f docker-compose.v3.yml \
-  -f docker-compose.v3-linux.yml \
-  ps
+export IRIS_PUBLIC_URL=https://192.0.2.10:18545  # replace with your server address
+docker compose -p iris-standalone -f docker-compose.standalone.yml up -d --build
 ```
 
-Open `https://localhost:18545` on the Linux host. The bootstrap admin username
-is `administrator`; its generated password is in the mode-600 `.env.v3.validation`
-file. Keep that file on the host and back it up securely: the same PostgreSQL
-password, IRIS session key and encryption key are required after restart. The
-certificate is self-signed and the nginx ports bind to loopback by default. For
-remote access, use an SSH tunnel such as `ssh -L 18545:127.0.0.1:18545 srvadmin@HOST`.
+The public URL is used consistently for browser API calls, backend origin checks
+and the certificate's hostname/IP SAN. Use the same value on later deployments.
+`IRIS_BIND_ADDRESS` defaults to `0.0.0.0`; set it to `127.0.0.1` for tunnel-only
+access. `IRIS_HTTPS_PORT` defaults to `18545`; if changed, update the port in
+`IRIS_PUBLIC_URL` too. Only nginx is published; database, broker and backend
+remain on the private Compose network. The generated certificate is self-signed,
+so the browser will ask you to trust it. The host firewall must permit the port
+when using direct network access.
 
-After first login, configure the OpenCTI URL and read-only API token under
-Settings → Modules and enable **IRIS OpenCTI**. It is installed disabled by default.
+Check progress:
+
+The `init` service exiting with code 0 is normal; the other services stay running.
+
+```bash
+docker compose -p iris-standalone -f docker-compose.standalone.yml ps -a
+docker compose -p iris-standalone -f docker-compose.standalone.yml logs --tail 100 init app worker nginx
+```
+
+Initial username: `administrator`. Read its generated password locally:
+
+```bash
+docker compose -p iris-standalone -f docker-compose.standalone.yml exec app \
+  sh -c '. /runtime/iris.env; printf "%s\n" "$IRIS_ADM_PASSWORD"'
+```
+
+Keep the `runtime`, database, broker and file volumes when updating or stopping
+the stack; back up runtime credentials with the database and files. A new project
+name creates a separate installation with separate volumes. This profile creates
+a fresh database and does not import the Windows deployment's data.
+
+The earlier `docker-compose.v3-linux.yml` is retained as a legacy overlay. The
+standalone command above replaces the old multi-file quickstart for new hosts.
