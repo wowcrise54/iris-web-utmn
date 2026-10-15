@@ -18,6 +18,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import IOCCard from '$lib/components/common/ioc/IOCCard.svelte';
 	import IocDataTable from '$lib/components/common/ioc/IocDataTable.svelte';
+	import EnrichmentDialog from '$lib/components/common/EnrichmentDialog.svelte';
 	import { Tooltip, TooltipProvider, TooltipTrigger } from '$lib/components/ui/tooltip';
 	import TooltipContent from '$lib/components/ui/tooltip/tooltip-content.svelte';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
@@ -35,6 +36,7 @@
 	const caseIocs = getContext<CaseIocsContext>(CASE_IOCS_CTX);
 
 	let isLoading = $state(false);
+	let enrichmentIoc = $state<Ioc | null>(null);
 	let isRefreshing = $state(false);
 	let searchTerm = $state('');
 	let searchConditions = $state<SearchCondition[]>([]);
@@ -505,6 +507,7 @@
 				className="h-full w-full"
 				iocs={displayIocs}
 				caseId={page.params.case_id}
+				onShowEnrichment={(ioc) => (enrichmentIoc = ioc)}
 				tablePage={caseIocs.list.currentPage}
 				totalPages={caseIocs.list.lastPage}
 				perPage={caseIocs.list.params.per_page}
@@ -598,3 +601,6 @@
 	confirmText="Delete"
 	onConfirm={deleteSelected}
 />
+
+<EnrichmentDialog open={enrichmentIoc !== null} subject={enrichmentIoc?.ioc_value ?? ''}
+	enrichment={enrichmentIoc?.ioc_enrichment} onClose={() => (enrichmentIoc = null)} />

@@ -47,6 +47,7 @@
 	import MarkDownPreview from '$lib/components/common/MarkDown/MarkDownPreview.svelte';
 	import ChipHoverHost from '$lib/components/common/MarkDown/ChipHoverHost.svelte';
 	import CaseWorkspace from './components/CaseWorkspace.svelte';
+	import OpenCTICaseSummary from '$lib/components/common/OpenCTICaseSummary.svelte';
 
 	const cases = getContext<CasesContext>(CASES_CTX);
 	const caseAssets = getContext<CaseAssetsContext>(CASE_ASSETS_CTX);
@@ -377,6 +378,7 @@
 		  fill the workspace vertically.
 		-->
 		<div class="flex w-full grow flex-col bg-card">
+			<OpenCTICaseSummary attributes={currentCase.custom_attributes} />
 			<!-- Case summary card -->
 			<section class="flex min-h-0 grow flex-col bg-card text-card-foreground">
 				<!--

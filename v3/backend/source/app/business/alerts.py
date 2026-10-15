@@ -687,6 +687,8 @@ def alerts_unmerge(alert: Alert, target_case_id: int) -> tuple[Alert, str]:
                    caseid=target_case_id)
     add_obj_history_entry(alert, f'Alert unmerged from case #{target_case_id}')
     call_modules_hook('on_postload_alert_unmerge', alert)
+    # The removed relationship is no longer reachable from the alert in a worker.
+    call_modules_hook('on_postload_case_update', case, caseid=target_case_id)
     return alert, message
 
 

@@ -557,6 +557,21 @@ def server_put_settings() -> Response:
     return server_operations.update_settings()
 
 
+@server_blueprint.get('/mcp/tools')
+@ac_api_requires(Permissions.server_administrator)
+@demo_mode_owner_only
+@api_doc(tags=['ManageServer'], summary='List available MCP tools')
+def server_get_mcp_tools() -> Response:
+    # Reuse MCP discovery rules while allowing the settings page's session auth.
+    from app.blueprints.rest.v2.mcp.dispatch import build_tools_list
+    from app.blueprints.rest.v2.mcp.classification import mutates
+
+    return response_api_success({'tools': [
+        {**tool, 'read_only': not mutates(tool['name'])}
+        for tool in build_tools_list()
+    ]})
+
+
 @server_blueprint.post('/backups/db')
 @ac_api_requires(Permissions.server_administrator)
 @demo_mode_owner_only
