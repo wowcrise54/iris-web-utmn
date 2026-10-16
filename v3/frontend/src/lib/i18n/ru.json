@@ -1,4 +1,10 @@
 {
+  "File checks from the incident and /sandbox check in the war room. Background analysis, a separate chat result, full report and original logs, optional Yuki analysis.": "Проверка файлов из инцидента и командой /sandbox check в war room. Фоновый анализ, отдельный результат в чате, полный отчёт и исходные логи, анализ Yuki по запросу.",
+  "Save the settings below, then check the connection. The check verifies the product version and lists VM images without uploading files.": "Сохраните настройки ниже и проверьте подключение. Проверка определяет версию продукта и показывает образы виртуальных машин без отправки файлов.",
+  "Connection verified": "Подключение проверено",
+  "Connection not verified": "Подключение не подтверждено",
+  "Available VM images": "Доступные образы виртуальных машин",
+  "Connection has not been checked for the saved settings.": "Подключение с сохранёнными настройками ещё не проверено.",
   "OpenCTI enrichment queued. Results update automatically.": "Обогащение OpenCTI поставлено в очередь. Результаты обновляются автоматически.",
   "Matches found": "Найдены совпадения",
   "OpenCTI HTTP error": "Ошибка HTTP OpenCTI",

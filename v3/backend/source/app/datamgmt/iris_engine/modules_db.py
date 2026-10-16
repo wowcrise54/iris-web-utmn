@@ -77,6 +77,15 @@ def iris_module_save_parameter(mod_id, mod_config, parameter, value, section=Non
     if data is None:
         return False
 
+    if data.module_name == 'iris_ptsandbox_module':
+        from copy import deepcopy
+        from app.business.ptsandbox import prepare_parameter
+        mod_config = deepcopy(data.module_config or [])
+        existing = next((p.get('value') for p in mod_config if p['param_name'] == parameter), None)
+        value = prepare_parameter(parameter, value, existing)
+        for p in mod_config:
+            p.pop('connection_check', None)
+
     index = 0
     for config in mod_config:
 

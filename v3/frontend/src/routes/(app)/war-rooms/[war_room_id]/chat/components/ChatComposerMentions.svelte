@@ -66,6 +66,7 @@
 			desc: 'Detach a case from the war room'
 		},
 		{ cmd: '/task', usage: '/task [@user] <title>', desc: 'Create a war-room task' },
+		{ cmd: '/sandbox', usage: '/sandbox check <case_id> <file_id> --confirm', desc: 'Send a case file to PT Sandbox' },
 		{
 			cmd: '/assign',
 			usage: '/assign @user <title>',

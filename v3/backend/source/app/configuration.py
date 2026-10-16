@@ -233,6 +233,7 @@ class CeleryConfig:
     include = [
         'app.iris_engine.cluster_rules.tasks',
         'app.iris_engine.webhooks.tasks',
+        'app.iris_engine.ptsandbox.tasks',
     ]
 
 
