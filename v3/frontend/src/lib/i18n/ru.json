@@ -4683,5 +4683,14 @@
   "Selected model is not accessible:": "Выбранная модель недоступна:",
   "Select a model and check again to verify generation access.": "Выберите модель и повторите проверку доступа к генерации.",
   "Available models": "Доступные модели",
-  "Select a model": "Выберите модель"
+  "Select a model": "Выберите модель",
+  "Waiting for model response": "Ожидаю ответ модели",
+  "Writing response": "Пишу ответ",
+  "Executing tool": "Выполняю инструмент",
+  "Processing tool result": "Обрабатываю результат инструмента",
+  "Waiting for approval": "Ожидаю подтверждения",
+  "Request failed": "Запрос завершился с ошибкой",
+  "Running": "Выполняется",
+  "Chat connection lost. Reopen the conversation to load saved messages.": "Соединение с чатом потеряно. Откройте разговор заново, чтобы загрузить сохранённые сообщения.",
+  "Tool iteration limit reached. Send a new message to continue.": "Достигнут лимит циклов инструментов. Отправьте новое сообщение, чтобы продолжить."
 }

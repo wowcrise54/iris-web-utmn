@@ -322,6 +322,10 @@ def _emit_for_conv(conversation_id: int):
     """Return an `Emitter` bound to a per-conversation room, so every
     panel the analyst has open on this conversation sees the stream."""
     def _emit(event: ChatEvent) -> None:
+        from app.blueprints.rest.v2.case_chat.progress import progress_for_event
+        progress = progress_for_event(event.name, event.payload)
+        if progress is not None:
+            _emit(ChatEvent('assistant_progress', progress))
         # Late import to avoid a cycle at module init.
         from app import socket_io
         socket_io.emit(
