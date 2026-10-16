@@ -229,6 +229,10 @@ def run_one_iteration(
             return
         # All-reads turn → loop back and let the model see the results.
 
+    emit(ChatEvent('error', {
+        'message': 'Tool iteration limit reached. Send a new message to continue.',
+    }))
+
 
 # ---- Internals -----------------------------------------------------
 
@@ -486,6 +490,9 @@ def _consume_stream(
     row(s) and return early with paused_on_write=True. On end_turn,
     persist the final assistant message and return terminated=True."""
 
+    emit(ChatEvent('assistant_progress', {
+        'stage': 'processing_result' if history and history[-1].role == ROLE_TOOL else 'waiting_model',
+    }))
     text_buffer: list[str] = []
     tool_uses: list[dict[str, Any]] = []
     response_bytes = 0
@@ -495,6 +502,8 @@ def _consume_stream(
     ):
         response_bytes += _event_bytes(event)
         if isinstance(event, TextDelta):
+            if not text_buffer:
+                emit(ChatEvent('assistant_progress', {'stage': 'responding'}))
             text_buffer.append(event.text)
             emit(ChatEvent('assistant_delta', {'text': event.text}))
             continue

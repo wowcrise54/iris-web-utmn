@@ -239,7 +239,19 @@ export class ChatService {
  * inbound events into user-supplied handlers. Auth mirrors the
  * `/notifications` pattern in `notifications.store.ts`.
  */
+export type ChatProgressStage =
+	| 'waiting_model'
+	| 'responding'
+	| 'executing_tool'
+	| 'processing_result'
+	| 'awaiting_approval'
+	| 'completed'
+	| 'failed';
+export type ChatProgress = { stage: ChatProgressStage; tool_name?: string; tool_use_id?: string };
+
 export type ChatSocketHandlers = {
+	onAssistantProgress?: (payload: ChatProgress & { conversation_id: number }) => void;
+	onDisconnect?: () => void;
 	onAssistantDelta?: (payload: { conversation_id: number; text: string }) => void;
 	onAssistantToolStart?: (payload: {
 		conversation_id: number;
@@ -264,7 +276,7 @@ export type ChatSocketHandlers = {
 		usage?: ChatUsage;
 	}) => void;
 	onUserMessagePersisted?: (payload: { conversation_id: number }) => void;
-	onError?: (payload: { message: string }) => void;
+	onError?: (payload: { conversation_id?: number; message: string }) => void;
 	onConnectFailure?: () => void;
 };
 
@@ -288,6 +300,8 @@ export class ChatSocketClient {
 			reconnectionAttempts: 3
 		});
 
+		this.socket.on('assistant_progress', (p) => this.handlers.onAssistantProgress?.(p));
+		this.socket.on('disconnect', () => this.handlers.onDisconnect?.());
 		this.socket.on('assistant_delta', (p) => this.handlers.onAssistantDelta?.(p));
 		this.socket.on('assistant_tool_start', (p) => this.handlers.onAssistantToolStart?.(p));
 		this.socket.on('assistant_tool_result', (p) => this.handlers.onAssistantToolResult?.(p));

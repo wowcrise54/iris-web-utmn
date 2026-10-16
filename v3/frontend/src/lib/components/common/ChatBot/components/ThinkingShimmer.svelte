@@ -1,31 +1,21 @@
-<!--
-  Thinking indicator — a shimmer bar that plays under the assistant
-  avatar while the model is running but no text has streamed yet.
-
-  Two situations trigger it:
-    1. Initial latency after `send` — the request is in flight but the
-       provider hasn't emitted its first text delta.
-    2. Between a tool_result and the next TextDelta — the model is
-       reasoning on the tool output.
-
-  Kept as CSS-only (no JS animation loop) so it costs nothing when
-  offscreen. Uses the existing `--muted` + `--muted-foreground` design
-  tokens for light/dark parity.
--->
+<!-- Observable request stage; only active processing stages animate. -->
 <script lang="ts">
-	let { label = 'Yuki is thinking' }: { label?: string } = $props();
+	let {
+		label = 'Waiting for model response',
+		active = true
+	}: { label?: string; active?: boolean } = $props();
 </script>
 
-<div class="flex gap-2 text-xs" aria-live="polite">
+<div class="flex gap-2 text-xs" role="status" aria-live="polite">
 	<div
 		class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary"
 	>
 		<!-- Empty avatar circle. The sparkle icon lives in the header,
 		     using it here would compete with the shimmer for attention. -->
 	</div>
-	<div class="flex min-w-[220px] max-w-[80%] flex-col gap-1.5 rounded-md bg-muted px-3 py-2">
-		<span class="text-2xs italic text-muted-foreground">{label}…</span>
-		<div class="shimmer-bar" aria-hidden="true"></div>
+	<div class="flex min-w-0 max-w-[80%] flex-col gap-1.5 rounded-md bg-muted px-3 py-2">
+		<span class="break-words text-xs font-medium text-foreground">{label}{active ? '…' : ''}</span>
+		{#if active}<div class="shimmer-bar" aria-hidden="true"></div>{/if}
 	</div>
 </div>
 
@@ -47,6 +37,12 @@
 		);
 		background-size: 200% 100%;
 		animation: shimmer 1.4s ease-in-out infinite;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.shimmer-bar {
+			animation: none;
+		}
 	}
 
 	@keyframes shimmer {
