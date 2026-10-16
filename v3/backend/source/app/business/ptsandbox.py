@@ -14,7 +14,7 @@ from app.models.sandbox import SandboxScan, SandboxLog
 from app.models.war_rooms import WarRoomCase
 from app.models.errors import BusinessProcessingError
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
-from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, report_summary
+from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, report_summary, parse_verify_tls
 from app.datamgmt.datastore.datastore_db import datastore_get_local_file_path
 
 MODULE = 'iris_ptsandbox_module'
@@ -37,7 +37,23 @@ def module_config(module_id=None, *, active=True, require_image=True):
 
 
 def client_from_config(cfg):
-    return SandboxClient(cfg.get('sandbox_url'), cfg.get('sandbox_token'), cfg.get('ca_bundle'))
+    return SandboxClient(cfg.get('sandbox_url'), cfg.get('sandbox_token'), cfg.get('ca_bundle'),
+                         verify_tls=cfg.get('verify_tls', True))
+
+
+def sync_module_parameters():
+    """Add the new setting to installed modules without replacing their configuration."""
+    from iris_ptsandbox_module.IrisPTSandboxInterface import IrisPTSandboxInterface
+    parameter = next(p for p in IrisPTSandboxInterface._module_configuration if p['param_name'] == 'verify_tls')
+    for row in IrisModule.query.filter_by(module_name=MODULE):
+        if not any(p['param_name'] == 'verify_tls' for p in row.module_config or []):
+            config = copy.deepcopy(row.module_config or [])
+            for p in config:
+                if p['param_name'] == 'sandbox_url':
+                    p['param_description'] = 'PT Sandbox 5.37 appliance; /api/v1 is optional.'
+            row.module_config = [*config, {**parameter, 'value': True}]
+            row.module_version = IrisPTSandboxInterface._module_version
+    db.session.commit()
 
 
 def prepare_parameter(name, value, existing=None):
@@ -48,7 +64,9 @@ def prepare_parameter(name, value, existing=None):
             raise BusinessProcessingError('API token is required')
         return encrypt_secret(value.strip())
     try:
-        if name == 'sandbox_url':
+        if name == 'verify_tls':
+            value = parse_verify_tls(value)
+        elif name == 'sandbox_url':
             validate_url(value)
         elif name in ('analysis_duration', 'max_file_mb'):
             lower, upper = (10, 600) if name == 'analysis_duration' else (1, 512)

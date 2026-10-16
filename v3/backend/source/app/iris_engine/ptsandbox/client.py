@@ -10,6 +10,14 @@ class SandboxError(Exception):
     pass
 
 
+def parse_verify_tls(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ('true', 'false'):
+        return value.strip().lower() == 'true'
+    raise SandboxError('TLS verification must be true or false')
+
+
 def validate_url(value):
     if not isinstance(value, str):
         raise SandboxError('PT Sandbox URL is required')
@@ -63,14 +71,14 @@ def report_summary(report):
 
 
 class SandboxClient:
-    def __init__(self, url, token, ca_bundle=None):
+    def __init__(self, url, token, ca_bundle=None, *, verify_tls=True):
         self.url = validate_url(url)
         if not isinstance(token, str) or not token.strip() or '\n' in token or '\r' in token:
             raise SandboxError('PT Sandbox API token is required')
         self.session = requests.Session()
         self.session.trust_env = False
         self.session.headers.update({'X-API-Key': token, 'Accept': 'application/json'})
-        self.verify = ca_bundle or True
+        self.verify = (ca_bundle or True) if parse_verify_tls(verify_tls) else False
 
     def close(self):
         self.session.close()

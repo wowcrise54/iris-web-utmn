@@ -1500,6 +1500,9 @@ class PostInit:
                     self._logger.info("Registering default modules")
                     self._register_default_modules()
 
+                from app.business.ptsandbox import sync_module_parameters
+                sync_module_parameters()
+
                 self._logger.info('Creating initial customer')
                 client = create_safe_client()
 

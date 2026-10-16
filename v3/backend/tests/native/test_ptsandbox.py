@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -65,6 +66,22 @@ def test_upload_sends_original_stream_and_no_redirects(client_module):
     assert client.session.trust_env is False
 
 
+@pytest.mark.parametrize('setting,ca,expected', [(True, None, True), (False, None, False),
+    (True, '/trusted/ca.pem', '/trusted/ca.pem'), (False, '/trusted/ca.pem', False),
+    ('true', None, True), ('false', None, False)])
+def test_tls_setting_reaches_http_transport(client_module, setting, ca, expected):
+    client = client_module.SandboxClient('https://sandbox.test', 'private-token', ca, verify_tls=setting)
+    client.session.request = Mock(return_value=Response({'data': {'status': 'ok'}}))
+    client.request('maintenance/checkHealth', method='GET')
+    assert client.session.request.call_args.kwargs['verify'] == expected
+
+
+@pytest.mark.parametrize('value', [None, 0, 1, '', 'yes'])
+def test_invalid_tls_setting_rejected(client_module, value):
+    with pytest.raises(client_module.SandboxError, match='true or false'):
+        client_module.SandboxClient('https://sandbox.test', 'private-token', verify_tls=value)
+
+
 def test_report_unknown_fields_are_preserved(client_module):
     report = {'result': {'verdict': 'DANGEROUS'}, 'vendor_extension': {'new': [1, 2]}}
     client = client_with_response(client_module, Response({'data': report}))
@@ -121,6 +138,7 @@ def business(client_module):
         'BusinessProcessingError': RuntimeError, 'SandboxError': client_module.SandboxError,
         'SandboxClient': client_module.SandboxClient, 'validate_url': client_module.validate_url,
         'report_summary': client_module.report_summary,
+        'parse_verify_tls': client_module.parse_verify_tls,
         'encrypt_secret': lambda value: 'encrypted:' + value,
     })
 
@@ -133,6 +151,37 @@ def test_public_configuration_never_exposes_token_or_mutates_storage(business):
     assert original[0]['value'] == 'encrypted:secret'
     assert business.prepare_parameter('sandbox_token', '', 'encrypted:old') == 'encrypted:old'
     assert business.prepare_parameter('sandbox_token', 'new') == 'encrypted:new'
+
+
+def test_configured_tls_and_default_are_used_by_all_callers(business):
+    config = {'sandbox_url': 'https://sandbox.test', 'sandbox_token': 'private-token', 'ca_bundle': '/ca.pem'}
+    assert business.client_from_config(config).verify == '/ca.pem'
+    assert business.client_from_config({**config, 'verify_tls': False}).verify is False
+    assert business.prepare_parameter('verify_tls', 'false') is False
+    assert business.prepare_parameter('verify_tls', True) is True
+    with pytest.raises(RuntimeError, match='true or false'):
+        business.prepare_parameter('verify_tls', 'invalid')
+
+
+def test_installed_module_gets_tls_setting_without_resetting_secrets_or_choices(business, monkeypatch):
+    interface = SimpleNamespace(_module_configuration=[{'param_name': 'verify_tls', 'type': 'bool', 'default': True}],
+                                _module_version='1.0.1')
+    monkeypatch.setitem(sys.modules, 'iris_ptsandbox_module.IrisPTSandboxInterface',
+                        SimpleNamespace(IrisPTSandboxInterface=interface))
+    row = SimpleNamespace(module_config=[{'param_name': 'sandbox_token', 'value': 'encrypted:existing'},
+        {'param_name': 'sandbox_url', 'value': 'https://original.test', 'connection_check': {'ok': True}}], is_active=True)
+    namespace = business.sync_module_parameters.__globals__
+    namespace['IrisModule'] = SimpleNamespace(query=Mock())
+    namespace['IrisModule'].query.filter_by.return_value = [row]
+    namespace['db'] = SimpleNamespace(session=Mock())
+    business.sync_module_parameters()
+    assert row.module_config[0]['value'] == 'encrypted:existing'
+    assert row.module_config[1]['connection_check'] == {'ok': True}
+    assert row.is_active is True
+    assert row.module_config[-1]['value'] is True
+    row.module_config[-1]['value'] = False
+    business.sync_module_parameters()
+    assert len(row.module_config) == 3 and row.module_config[-1]['value'] is False
 
 
 def test_text_logs_are_paged_and_compressed_logs_supported(business):
