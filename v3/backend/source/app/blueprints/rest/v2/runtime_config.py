@@ -113,7 +113,10 @@ def _chatbot_runtime(settings) -> dict:
     provider = (getattr(settings, 'chatbot_provider', '') or '').lower()
     model = getattr(settings, 'chatbot_model', '') or ''
     api_key = getattr(settings, 'chatbot_api_key', '') or ''
-    if provider == 'ollama':
+    if provider == 'custom':
+        provider_available = bool(
+            enabled and model and getattr(settings, 'chatbot_base_url', ''))
+    elif provider == 'ollama':
         # Ollama typically runs unauthenticated on localhost — no key
         # required. `chatbot_base_url` should be set though.
         provider_available = bool(enabled and model)

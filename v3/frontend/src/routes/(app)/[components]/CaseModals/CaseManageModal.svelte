@@ -152,7 +152,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Are you sure?", $irisLocale)}
-	message="You are about to delete this case forever. This cannot be reverted. All associated data will be deleted."
+	message={irisT("This case will be permanently deleted. This cannot be undone.", $irisLocale)}
 	onConfirm={async () => {
 		if (!(await cases.remove(case_id))) {
 			toast({

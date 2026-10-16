@@ -83,6 +83,41 @@ class TestsRestDatastore(TestCase):
         root_key = next(iter(tree))
         self.assertTrue(tree[root_key].get('is_root'))
 
+    def test_filter_tree_should_apply_legacy_q_contract(self):
+        case_identifier = self._subject.create_dummy_case()
+        root = self._get_root_folder_id(case_identifier)
+        self._upload_file(case_identifier, root, filename='needle.txt')
+        self._upload_file(case_identifier, root, filename='other.txt')
+        query = '{"name":["needle"]}'
+
+        response = self._subject.get(
+            f'/api/v2/cases/{case_identifier}/datastore/filter', {'q': query}
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn('needle.txt', str(response.json()))
+        self.assertNotIn('other.txt', str(response.json()))
+
+    def test_filter_tree_should_reject_scalar_filter_values(self):
+        case_identifier = self._subject.create_dummy_case()
+
+        response = self._subject.get(
+            f'/api/v2/cases/{case_identifier}/datastore/filter',
+            {'q': '{"name":"needle"}'},
+        )
+
+        self.assertEqual(400, response.status_code)
+
+    def test_filter_tree_should_reject_non_string_ids_instead_of_failing(self):
+        case_identifier = self._subject.create_dummy_case()
+
+        response = self._subject.get(
+            f'/api/v2/cases/{case_identifier}/datastore/filter',
+            {'q': '{"id":[1]}'},
+        )
+
+        self.assertEqual(400, response.status_code)
+
     # ------------------------------------------------------------------
     # folder CRUD
     # ------------------------------------------------------------------

@@ -348,7 +348,7 @@
 </script>
 
 <svelte:head>
-	<title>#{case_id} - Summary</title>
+	<title>#{case_id} - {irisT("Summary", $irisLocale)}</title>
 </svelte:head>
 
 <!--

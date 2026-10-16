@@ -639,7 +639,7 @@
 					type="button"
 					{disabled}
 					class="inline-flex size-4 shrink-0 items-center justify-center rounded transition-colors hover:bg-foreground/10 disabled:cursor-not-allowed"
-					aria-label={`Remove ${chip.text}`}
+					aria-label={`${irisT("Remove", $irisLocale)} ${chip.text}`}
 					onclick={() => removeChip(chip)}
 				>
 					<XIcon class="size-3" />

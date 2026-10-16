@@ -46,11 +46,11 @@
 			<Tooltip.Trigger class="flex items-center gap-1">
 				<Badge class="items-center gap-1 {config.color}" icon={config.icon}></Badge>
 			</Tooltip.Trigger>
-			<Tooltip.Content>{severity} {irisT("severity", $irisLocale)}</Tooltip.Content>
+			<Tooltip.Content>{irisT(severity, $irisLocale)} {irisT("severity", $irisLocale)}</Tooltip.Content>
 		</Tooltip.Root>
 	</Tooltip.Provider>
 {:else}
 	<Badge class="items-center gap-1 {config.color}" icon={config.icon}>
-		{severity}
+		{irisT(severity, $irisLocale)}
 	</Badge>
 {/if}

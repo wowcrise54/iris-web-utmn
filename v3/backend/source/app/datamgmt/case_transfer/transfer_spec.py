@@ -54,6 +54,7 @@ from app.models.evidences import CaseReceivedFile
 from app.models.evidences import EvidenceTypes
 from app.models.iocs import Ioc
 from app.models.iocs import Tlp
+from app.models.incident_cards import IncidentCard
 from app.models.models import CaseEventCategory
 from app.models.models import CaseEventsAssets
 from app.models.models import CaseEventsIoc
@@ -296,6 +297,11 @@ ENTITIES = [
     EntitySpec('object_state', ObjectState, 'object_id', case_column='object_case_id',
                fields=('object_name', 'object_state', 'object_last_update'),
                user_refs=('object_updated_by_id',)),
+
+    EntitySpec('incident_card', IncidentCard, 'case_id', case_column='case_id',
+               fields=('schema_version', 'revision', 'fields', 'selections', 'author_name',
+                       'created_at', 'updated_at', 'missing_sources'),
+               user_refs=('author_id',)),
 ]
 
 ENTITIES_BY_KEY = {spec.key: spec for spec in ENTITIES}

@@ -119,7 +119,7 @@
 <Popover.Root bind:open={listOpen}>
 	<Popover.Trigger
 		class="inline-flex items-center gap-2 rounded-md px-1.5 py-0.5 text-2xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-		aria-label={`${people.length} people on this war room`}
+		aria-label={`${people.length} ${irisT("people on this war room", $irisLocale)}`}
 	>
 		{#if loading}
 			<div class="flex items-center -space-x-1.5">
@@ -149,7 +149,7 @@
 				{#if overflow > 0}
 					<div
 						class="flex h-5 min-w-5 items-center justify-center rounded-full border bg-muted px-1 text-[10px] font-medium tabular-nums"
-						aria-label={`+${overflow} more`}
+						aria-label={`+${overflow} ${irisT("more", $irisLocale)}`}
 					>
 						+{overflow}
 					</div>

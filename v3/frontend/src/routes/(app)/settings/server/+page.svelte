@@ -268,7 +268,7 @@
 </script>
 
 <svelte:head>
-	<title>Server Settings</title>
+	<title>{irisT("Server Settings", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

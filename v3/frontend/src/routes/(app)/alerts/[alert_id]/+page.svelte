@@ -184,7 +184,7 @@
 </script>
 
 <svelte:head>
-	<title>Alert #{alert_id}</title>
+	<title>{irisT("Alert", $irisLocale)} #{alert_id}</title>
 </svelte:head>
 
 <div class="mx-auto flex w-full max-w-8xl grow flex-col gap-4 p-4">
@@ -267,7 +267,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Are you sure?", $irisLocale)}
-	message="You are about to delete this forever. This cannot be reverted. All associated data will be deleted."
+	message={irisT("The selected alert and its dependent records and associations will be permanently deleted. Linked cases, assets, and IOCs will not be deleted.", $irisLocale)}
 	onConfirm={deleteAlert}
 	onCancel={() => (showConfirmDelete = false)}
 />

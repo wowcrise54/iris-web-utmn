@@ -100,7 +100,7 @@
 							<th class="py-2 pr-4 text-left font-medium">{irisT("Event", $irisLocale)}</th>
 							{#each payload.channels as channel}
 								<th class="w-32 py-2 text-center font-medium">
-									{CHANNEL_LABELS[channel] ?? channel}
+									{irisT(CHANNEL_LABELS[channel] ?? channel, $irisLocale)}
 								</th>
 							{/each}
 						</tr>
@@ -109,14 +109,14 @@
 						{#each payload.event_types as event}
 							<tr class="border-b last:border-b-0">
 								<td class="py-2 pr-4">
-									<Label>{EVENT_LABELS[event] ?? event}</Label>
+									<Label>{irisT(EVENT_LABELS[event] ?? event, $irisLocale)}</Label>
 								</td>
 								{#each payload.channels as channel}
 									<td class="text-center">
 										<Checkbox
 											checked={grid[event]?.[channel] ?? false}
 											onCheckedChange={() => toggle(event, channel)}
-											aria-label={`${event} — ${channel}`}
+											aria-label={`${irisT(EVENT_LABELS[event] ?? event, $irisLocale)} — ${irisT(CHANNEL_LABELS[channel] ?? channel, $irisLocale)}`}
 										/>
 									</td>
 								{/each}

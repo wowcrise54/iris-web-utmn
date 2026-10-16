@@ -756,7 +756,7 @@
 									<Checkbox
 										{checked}
 										onCheckedChange={() => toggleSelect(t.timeline_id)}
-										aria-label={`Toggle ${t.name}`}
+										aria-label={`${irisT("Toggle", $irisLocale)} ${t.name}`}
 									/>
 									{#if safeColor}
 										<span
@@ -779,7 +779,7 @@
 											variant="ghost"
 											class="h-5 w-5"
 											onclick={() => openCreateEvent(t)}
-											aria-label={`Add event to ${t.name}`}
+											aria-label={`${irisT("Add event to", $irisLocale)} ${t.name}`}
 										>
 											<Plus class="h-3 w-3" />
 										</Button>
@@ -788,7 +788,7 @@
 											variant="ghost"
 											class="h-5 w-5"
 											onclick={() => startEdit(t)}
-											aria-label={`Edit ${t.name}`}
+											aria-label={`${irisT("Edit", $irisLocale)} ${t.name}`}
 										>
 											<Pencil class="h-2.5 w-2.5" />
 										</Button>
@@ -798,7 +798,7 @@
 												variant="ghost"
 												class="h-5 w-5 text-destructive hover:text-destructive"
 												onclick={() => removeTimeline(t)}
-												aria-label={`Delete ${t.name}`}
+												aria-label={`${irisT("Delete", $irisLocale)} ${t.name}`}
 											>
 												<Trash2 class="h-2.5 w-2.5" />
 											</Button>
@@ -878,7 +878,7 @@
 													<Checkbox
 														{checked}
 														onCheckedChange={() => toggleCaseTimeline(ct.timeline_id)}
-														aria-label={`Toggle ${ct.name} from case #${lc.case_id}`}
+														aria-label={`${irisT("Toggle", $irisLocale)} ${ct.name} ${irisT("from case", $irisLocale)} #${lc.case_id}`}
 													/>
 													{#if safeCTColor}
 														<span

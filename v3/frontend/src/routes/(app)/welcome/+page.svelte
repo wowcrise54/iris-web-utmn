@@ -33,7 +33,7 @@
 </script>
 
 <svelte:head>
-	<title>Welcome</title>
+	<title>{irisT("Welcome", $irisLocale)}</title>
 </svelte:head>
 
 <div class="mx-auto my-4 w-full max-w-6xl">

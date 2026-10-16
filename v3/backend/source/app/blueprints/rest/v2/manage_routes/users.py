@@ -50,6 +50,7 @@ from marshmallow import ValidationError
 from app.blueprints.access_controls import ac_api_requires
 from app.blueprints.iris_user import iris_current_user
 from app.blueprints.rest.api_doc import api_doc
+from app.blueprints.rest.parsing import parse_comma_separated_identifiers
 from app.blueprints.rest.endpoints import response_api_created
 from app.blueprints.rest.endpoints import response_api_deleted
 from app.blueprints.rest.endpoints import response_api_error
@@ -80,6 +81,8 @@ from app.iris_engine.demo_builder import demo_mode_blocks_password_change
 from app.iris_engine.demo_builder import protect_demo_mode_user
 from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import Permissions
+from app.models.authorization import User
+from app.models.authorization import UserClient
 from app.models.errors import BusinessProcessingError
 from app.models.errors import ObjectNotFoundError
 from app.schema.marshables import UserApiKeySchema
@@ -142,18 +145,40 @@ class Users:
         per_page = max(1, min(per_page, 200))
         search = (request.args.get('search') or '').strip() or None
 
+        raw_user_ids = request.args.get('user_ids')
+        try:
+            user_ids = parse_comma_separated_identifiers(raw_user_ids) if raw_user_ids else None
+        except ValueError:
+            return response_api_error('Invalid user_ids parameter')
+
+        raw_customer_id = request.args.get('customer_id')
+        try:
+            customer_id = int(raw_customer_id) if raw_customer_id is not None else None
+        except (TypeError, ValueError):
+            return response_api_error('Invalid customer_id parameter')
+
+        sort = (request.args.get('sort') or 'desc').lower()
+        if sort not in ('asc', 'desc'):
+            return response_api_error("Invalid sort parameter (expected 'asc' or 'desc')")
+
         # `get_filtered_users` accepts user_name + user_login as
         # independent ILIKE filters; calling it twice would be ugly so
         # we pass the same needle as both and ORM_collapses them via
         # the function's existing `and_` reduction. To preserve OR
         # semantics we instead query manually here.
-        from app.models.authorization import User
         from sqlalchemy import or_
         query = User.query
+        if user_ids is not None:
+            query = query.filter(User.id.in_(user_ids))
+        if customer_id is not None:
+            query = query.join(UserClient, UserClient.user_id == User.id).filter(
+                UserClient.client_id == customer_id
+            )
         if search:
             needle = f'%{search}%'
             query = query.filter(or_(User.name.ilike(needle), User.user.ilike(needle)))
-        paginated = query.order_by(User.id.desc()).paginate(
+        order = User.id.asc() if sort == 'asc' else User.id.desc()
+        paginated = query.order_by(order).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
@@ -228,7 +253,14 @@ users_blueprint = Blueprint('users_rest_v2', __name__, url_prefix='/users')
 
 @users_blueprint.get('')
 @ac_api_requires(Permissions.server_administrator)
-@api_doc(tags=['ManageUsers'], summary='List users')
+@api_doc(tags=['ManageUsers'], summary='List users', query_params=[
+    ('page', 'integer'),
+    ('per_page', 'integer'),
+    ('search', 'string'),
+    ('user_ids', 'string', 'Comma-separated user IDs'),
+    ('customer_id', 'integer'),
+    ('sort', 'string', "ID sort direction: 'asc' or 'desc'"),
+])
 def search_users():
     return users.search()
 

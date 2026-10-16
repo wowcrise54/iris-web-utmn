@@ -18,7 +18,9 @@
 
 import base64
 import datetime
+import json
 import marshmallow.exceptions
+import urllib.parse
 from app.web import Blueprint
 from app.web import request
 from app.web import send_file
@@ -41,6 +43,7 @@ from app.business.datastore import datastore_add_file_as_evidence
 from app.business.datastore import datastore_add_file_as_ioc
 from app.business.datastore import datastore_delete_file
 from app.business.datastore import datastore_delete_node
+from app.business.datastore import datastore_filter_tree
 from app.business.datastore import datastore_get_file
 from app.business.datastore import datastore_get_interactive_path_node
 from app.business.datastore import datastore_get_local_file_path
@@ -63,6 +66,10 @@ from app.util import add_obj_history_entry
 
 _READ_LEVELS = [CaseAccessLevel.read_only, CaseAccessLevel.full_access]
 _WRITE_LEVELS = [CaseAccessLevel.full_access]
+_FILTER_LIST_FIELDS = {
+    'id', 'uuid', 'sha256', 'name', 'storage_name', 'tag', 'description'
+}
+_FILTER_FLAG_FIELDS = {'is_ioc', 'is_evidence', 'has_password'}
 
 
 def _check_case_access(case_identifier, access_levels):
@@ -79,6 +86,30 @@ def _truthy(value):
     if value is None:
         return False
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def _validate_filter_tree(value):
+    if not isinstance(value, dict):
+        return None
+    if set(value) - _FILTER_LIST_FIELDS - _FILTER_FLAG_FIELDS:
+        return None
+
+    validated = {}
+    for key in _FILTER_LIST_FIELDS:
+        if key not in value:
+            continue
+        items = value[key]
+        if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
+            return None
+        validated[key] = items
+    for key in _FILTER_FLAG_FIELDS:
+        if key not in value:
+            continue
+        if not isinstance(value[key], bool):
+            return None
+        if value[key]:
+            validated[key] = True
+    return validated
 
 
 # Allowlist of multipart form fields a caller may write through the file
@@ -123,6 +154,33 @@ class DatastoreOperations:
             return access_error
 
         return response_api_success(ds_list_tree(case_identifier))
+
+    def filter_tree(self, case_identifier):
+        access_error = _check_case_access(case_identifier, _READ_LEVELS)
+        if access_error:
+            return access_error
+
+        query_filter = request.args.get('q')
+        if not query_filter:
+            return response_api_error('Invalid query')
+        try:
+            try:
+                query_data = json.loads(query_filter)
+            except json.JSONDecodeError:
+                query_data = json.loads(urllib.parse.unquote(query_filter))
+            filter_data = _validate_filter_tree(
+                query_data
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return response_api_error('Invalid query')
+
+        if filter_data is None:
+            return response_api_error('Invalid query')
+
+        data, _ = datastore_filter_tree(filter_data, case_identifier)
+        if data is None:
+            return response_api_error('Invalid query')
+        return response_api_success(data)
 
     # ---------------------------------------------------------------------
     # File list (flat, paginated). The legacy UI rendered the whole tree at
@@ -544,6 +602,14 @@ case_datastore_blueprint = Blueprint(
 @api_doc(tags=['CaseDatastore'], summary='Get the datastore tree')
 def datastore_tree(case_identifier):
     return datastore_operations.tree(case_identifier)
+
+
+@case_datastore_blueprint.get('/filter')
+@ac_api_requires()
+@api_doc(tags=['CaseDatastore'], summary='Filter the datastore tree',
+         query_params=[('q', 'string', 'URL-encoded datastore filter object', True)])
+def datastore_filter(case_identifier):
+    return datastore_operations.filter_tree(case_identifier)
 
 
 # Files -------------------------------------------------------------------

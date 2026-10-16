@@ -10,6 +10,9 @@
 	import { CASE_IOCS_CTX, type CaseIocsContext } from '$lib/contexts/case-iocs.context.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+
+	const irisLocale = useLocale();
 
 	// May be undefined when rendered outside the case/iocs route (e.g. dashboard).
 	const caseIocs = getContext<CaseIocsContext | undefined>(CASE_IOCS_CTX);
@@ -63,7 +66,7 @@
 	type="button"
 	class="block w-full text-left"
 	onclick={handleClick}
-	aria-label={`View details for IOC ${ioc.ioc_value}`}
+	aria-label={`${irisT("View details for IOC", $irisLocale)} ${ioc.ioc_value}`}
 	disabled={compact}
 >
 	<EntityRow

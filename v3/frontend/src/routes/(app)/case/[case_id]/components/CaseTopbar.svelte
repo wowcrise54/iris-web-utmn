@@ -1035,7 +1035,7 @@
 			<Popover.Root>
 				<Popover.Trigger
 					class="inline-flex items-center gap-1 rounded-sm bg-transparent text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-					aria-label={`${linkedAlertsTotal} linked alert${linkedAlertsTotal === 1 ? '' : 's'}`}
+					aria-label={`${linkedAlertsTotal} ${irisT(linkedAlertsTotal === 1 ? "linked alert" : "linked alerts", $irisLocale)}`}
 				>
 					<BellIcon size={14} />
 					<span class="tabular-nums">
@@ -1085,7 +1085,7 @@
 											<button
 												type="button"
 												class="my-1 mr-1 rounded-sm px-2 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
-												aria-label={`Unlink alert #${alert.alert_id} from case`}
+											aria-label={`${irisT("Unlink alert", $irisLocale)} #${alert.alert_id} ${irisT("from case", $irisLocale)}`}
 												title={irisT("Unlink from case", $irisLocale)}
 												onclick={(e) => {
 													e.preventDefault();
@@ -1377,7 +1377,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmUnlinkAlertCluster}
 	title={irisT("Unlink alert cluster from case?", $irisLocale)}
-	message={`Alert Cluster #${sourceAlertCluster?.cluster_id ?? ''} will go back to Investigating and every alert currently linked to this case will be detached (status reset to Assigned). The case itself remains.`}
+	message={irisT("Alert Cluster #{id} will return to Investigating. Every alert currently linked to this case will be detached and reset to Assigned. The case itself remains.", $irisLocale, { id: sourceAlertCluster?.cluster_id ?? '' })}
 	onConfirm={confirmUnlinkSourceAlertCluster}
 />
 

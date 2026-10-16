@@ -16,6 +16,7 @@
     • shareable URL state (page, search term, scope toggle).
 -->
 <script lang="ts">
+	import { translateActivity } from "$lib/i18n/activity";
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -328,7 +329,7 @@
 </script>
 
 <svelte:head>
-	<title>Activities</title>
+	<title>{irisT("Activities", $irisLocale)}</title>
 </svelte:head>
 
 <!--
@@ -651,8 +652,8 @@
 										</td>
 										<td class="px-3 py-2 text-xs">
 											<div class="flex items-start gap-2">
-												<span class="line-clamp-2 flex-1" title={row.activity_desc ?? ''}>
-													{row.activity_desc ?? '—'}
+												<span class="line-clamp-2 flex-1" title={translateActivity(row.activity_desc ?? '', $irisLocale)}>
+													{translateActivity(row.activity_desc ?? '—', $irisLocale)}
 												</span>
 												{#if (row.occurrences ?? 1) > 1}
 													<!--

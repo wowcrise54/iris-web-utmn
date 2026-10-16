@@ -6,8 +6,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	import NoteDetailView from './NoteDetailView.svelte';
 
+	const irisLocale = useLocale();
 	const warRoomId = $derived(Number(page.params.war_room_id));
 	const noteId = $derived(Number(page.params.note_id));
 
@@ -17,7 +19,7 @@
 </script>
 
 <svelte:head>
-	<title>War room #{warRoomId} - Note #{noteId}</title>
+	<title>{irisT("War room", $irisLocale)} #{warRoomId} - {irisT("Note", $irisLocale)} #{noteId}</title>
 </svelte:head>
 
 {#if Number.isFinite(noteId)}

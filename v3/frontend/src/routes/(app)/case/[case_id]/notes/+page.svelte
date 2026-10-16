@@ -23,7 +23,7 @@
 </script>
 
 <svelte:head>
-	<title>#{page.params.case_id} - Notes</title>
+	<title>#{page.params.case_id} - {irisT("Notes", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col items-center gap-2 bg-white pt-8 text-lg dark:bg-black/80">

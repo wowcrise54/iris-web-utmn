@@ -458,6 +458,10 @@ def cases_export_to_json(case_id):
     export['tasks'] = export_case_tasks_json(case_id)
     export['comments'] = export_case_comments_json(case_id)
     export['notes'] = export_case_notes_json(case_id)
+    from app.datamgmt.case.incident_card_db import get_incident_card, get_stored_incident_card
+    export['incident_card'] = get_stored_incident_card(case_id)
+    if export['incident_card'] is not None:
+        export['incident_card']['fields'] = get_incident_card(case_id)['fields']
     export['export_date'] = datetime.datetime.utcnow()
 
     return export

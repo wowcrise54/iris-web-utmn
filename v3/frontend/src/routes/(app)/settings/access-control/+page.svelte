@@ -109,7 +109,7 @@
 </script>
 
 <svelte:head>
-	<title>Access Control</title>
+	<title>{irisT("Access Control", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

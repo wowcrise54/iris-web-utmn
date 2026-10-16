@@ -149,7 +149,7 @@
 </script>
 
 <svelte:head>
-	<title>MFA Setup</title>
+	<title>{irisT("MFA Setup", $irisLocale)}</title>
 </svelte:head>
 
 <div

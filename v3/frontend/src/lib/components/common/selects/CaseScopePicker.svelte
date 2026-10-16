@@ -435,7 +435,7 @@
 								>
 									<Checkbox
 										checked={isSelected(c)}
-										aria-label={`Toggle case #${c.case_id}`}
+										aria-label={`${irisT("Toggle case", $irisLocale)} #${c.case_id}`}
 										class="pointer-events-none"
 									/>
 									<span class="flex min-w-0 flex-1 flex-col overflow-hidden">

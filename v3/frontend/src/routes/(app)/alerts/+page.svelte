@@ -1248,7 +1248,7 @@
 </script>
 
 <svelte:head>
-	<title>Alerts</title>
+	<title>{irisT("Alerts", $irisLocale)}</title>
 </svelte:head>
 
 <!--
@@ -1911,7 +1911,9 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Are you sure?", $irisLocale)}
-	message="You are about to delete this forever. This cannot be reverted. All associated data will be deleted."
+	message={getSelectedCount() === 1
+		? irisT("The selected alert and its dependent records and associations will be permanently deleted. Linked cases, assets, and IOCs will not be deleted.", $irisLocale)
+		: irisT("The selected alerts and their dependent records and associations will be permanently deleted. Linked cases, assets, and IOCs will not be deleted.", $irisLocale)}
 	onConfirm={deleteSelected}
 	onCancel={() => (showConfirmDelete = false)}
 />
@@ -1919,7 +1921,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmDeletePreset}
 	title={irisT("Delete preset filter?", $irisLocale)}
-	message={`Are you sure you want to delete "${selectedSavedFilter?.filter_name ?? ''}"? This cannot be undone.`}
+	message={irisT("Delete saved filter \"{name}\"? This cannot be undone.", $irisLocale, { name: selectedSavedFilter?.filter_name ?? '' })}
 	onConfirm={deleteSelectedSavedFilter}
 	onCancel={() => (showConfirmDeletePreset = false)}
 />

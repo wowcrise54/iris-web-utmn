@@ -39,6 +39,31 @@ class TestsRestCases(TestCase):
     def tearDown(self):
         self._subject.clear_database()
 
+    def test_get_case_should_include_status_name_and_protagonists(self):
+        identifier = self._subject.create_dummy_case()
+        self._subject.update(f'/api/v2/cases/{identifier}', {
+            'protagonists': [{
+                'name': 'Incident owner',
+                'role': 'Reporter',
+                'contact': 'owner@example.test',
+            }],
+        })
+
+        response = self._subject.get(f'/api/v2/cases/{identifier}')
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual('unknown', response.json()['status_name'])
+        self.assertEqual('Incident owner', response.json()['protagonists'][0]['name'])
+
+    def test_update_case_should_reject_non_list_protagonists(self):
+        identifier = self._subject.create_dummy_case()
+
+        response = self._subject.update(
+            f'/api/v2/cases/{identifier}', {'protagonists': 'invalid'}
+        )
+
+        self.assertEqual(400, response.status_code)
+
     def test_manage_case_filter_api_rest_should_fail(self):
         self._subject.create_dummy_case()
         response = self._subject.get('/manage/cases/filter').json()

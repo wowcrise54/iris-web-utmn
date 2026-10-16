@@ -91,11 +91,8 @@ def datastore_list_tree(caseid):
     return response_success("", data=data)
 
 
-# TODO: no v2 equivalent. GET /api/v2/cases/{case_identifier}/datastore/files
-# is a flat paginated list with order_by/sort_dir only, and /datastore/tree
-# returns the whole tree unfiltered — neither accepts the `q` filter tree this
-# route parses through `datastore_filter_tree`. Port the query language onto
-# the v2 file list before deprecating.
+# Equivalent: GET /api/v2/cases/{case_identifier}/datastore/filter?q=...
+# Keep this route until known legacy consumers have migrated.
 @datastore_rest_blueprint.route('/datastore/list/filter', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 @ac_api_requires()

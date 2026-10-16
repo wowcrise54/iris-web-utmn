@@ -621,7 +621,7 @@
 </script>
 
 <svelte:head>
-	<title>Manage assets</title>
+	<title>{irisT("Manage assets", $irisLocale)}</title>
 </svelte:head>
 
 <!--

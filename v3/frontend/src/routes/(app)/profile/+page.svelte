@@ -112,11 +112,11 @@
 	const alertsDefaultViewItems = $derived([
 		...ALERTS_DEFAULT_VIEW_OPTIONS.map((option) => ({
 			value: option.mode,
-			label: option.label
+			label: irisT(option.label, $irisLocale)
 		})),
 		...alertPresets.map((preset) => ({
 			value: `${PRESET_PREFIX}${preset.filter_id}`,
-			label: `Preset — ${preset.filter_name}`
+			label: `${irisT("Preset", $irisLocale)} — ${preset.filter_name}`
 		}))
 	]);
 
@@ -385,14 +385,14 @@
 		{ value: 'true', label: irisT("☾ Dark", $irisLocale) }
 	];
 
-	const promptOptions = [
+	const promptOptions = $derived([
 		{ value: 'false', label: irisT("Off", $irisLocale) },
 		{ value: 'true', label: irisT("On", $irisLocale) }
-	];
+	]);
 </script>
 
 <svelte:head>
-	<title>My profile</title>
+	<title>{irisT("My profile", $irisLocale)}</title>
 </svelte:head>
 
 <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
@@ -582,7 +582,7 @@
 						items={alertsDefaultViewItems}
 						bind:value={alertsDefaultViewValue}
 						placeholder={irisT("Select a default view", $irisLocale)}
-						searchPlaceholder="Search views..."
+						searchPlaceholder={irisT("Search views...", $irisLocale)}
 						emptyMessage={irisT("No views found.", $irisLocale)}
 						aria-label={irisT("Default alerts view", $irisLocale)}
 						onValueChange={setAlertsDefaultView}

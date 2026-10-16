@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Dialog as DialogPrimitive } from 'bits-ui';
 	import DialogContent from './dialog-content.svelte';
@@ -10,8 +12,8 @@
 
 	let {
 		open = $bindable(),
-		title = 'Confirm Action',
-		message = 'Are you sure you want to proceed with this action?',
+		title = irisT('Confirm Action', $irisLocale),
+		message = irisT('Are you sure you want to proceed with this action?', $irisLocale),
 		confirmText = 'Confirm',
 		cancelText = 'Cancel',
 		onConfirm = () => {},
@@ -75,9 +77,9 @@
 			</DialogDescription>
 		</DialogHeader>
 		<DialogFooter class="pt-4">
-			<Button variant="outline" onclick={handleCancel}>{cancelText}</Button>
+			<Button variant="outline" onclick={handleCancel}>{irisT(cancelText, $irisLocale)}</Button>
 			<Button variant={confirmButtonVariant ?? undefined} onclick={handleConfirm}
-				>{confirmText}</Button
+				>{irisT(confirmText, $irisLocale)}</Button
 			>
 		</DialogFooter>
 	</DialogContent>

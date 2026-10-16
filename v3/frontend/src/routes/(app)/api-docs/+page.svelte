@@ -105,7 +105,7 @@
 </script>
 
 <svelte:head>
-	<title>IRIS API reference</title>
+	<title>{irisT("IRIS API reference", $irisLocale)}</title>
 </svelte:head>
 
 <div class="h-full w-full overflow-auto bg-white">

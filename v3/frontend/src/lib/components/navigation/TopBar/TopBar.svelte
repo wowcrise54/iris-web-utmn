@@ -105,6 +105,7 @@
 
 	const caseButtons = [
 		{ label: irisT("Summary", $irisLocale), path: '' },
+		{ label: $irisLocale === "ru" ? "Карточка инцидента" : "Incident card", path: 'incident-card' },
 		{ label: irisT("Notes", $irisLocale), path: 'notes' },
 		{ label: irisT("Assets", $irisLocale), path: 'assets' },
 		{ label: irisT("IOC", $irisLocale), path: 'iocs' },

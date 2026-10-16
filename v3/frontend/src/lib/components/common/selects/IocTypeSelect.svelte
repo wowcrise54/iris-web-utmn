@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { translate as irisT, useLocale } from '$lib/i18n/context';
+	const irisLocale = useLocale();
 	import { SearchableSelect } from '$lib/components/ui/searchable-select';
 	import { iocTypes } from '$lib/stores/ioc-types.store';
 
@@ -62,7 +64,7 @@
 	{required}
 	class={className + (hasError ? ' border-destructive' : '')}
 	{id}
-	aria-label={ariaLabel}
+	aria-label={irisT(ariaLabel, $irisLocale)}
 	onValueChange={handleValueChange}
 	{...restProps}
 />

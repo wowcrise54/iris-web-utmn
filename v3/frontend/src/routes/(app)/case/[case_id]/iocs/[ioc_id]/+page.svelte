@@ -23,7 +23,7 @@
 </script>
 
 <svelte:head>
-	<title>#{caseId} - IOC #{iocId}</title>
+	<title>#{caseId} - {irisT("IOC", $irisLocale)} #{iocId}</title>
 </svelte:head>
 
 {#if Number.isFinite(iocId)}

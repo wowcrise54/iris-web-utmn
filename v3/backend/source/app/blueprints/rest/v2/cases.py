@@ -36,6 +36,7 @@ from app.blueprints.rest.endpoints import response_api_paginated
 from app.blueprints.rest.parsing import parse_pagination_parameters
 from app.business.activity import activity_add_manual_entry
 from app.business.activity import activity_search_in_case
+from app.blueprints.rest.v2.case_routes.incident_card import case_incident_card_blueprint
 from app.blueprints.rest.v2.case_routes.assets import case_assets_blueprint
 from app.blueprints.rest.v2.case_routes.iocs import case_iocs_blueprint
 from app.blueprints.rest.v2.case_routes.notes import case_notes_blueprint
@@ -322,6 +323,8 @@ class CasesOperations:
                                                               [CaseAccessLevel.read_only, CaseAccessLevel.full_access]):
                 return ac_api_return_access_denied(caseid=identifier)
             result = CaseSchemaForAPIV2().dump(case)
+            # Only detail needs this query; list serialization must not add one query per case.
+            result['protagonists'] = CaseDetailsSchema().get_protagonists(case)
             return response_api_success(result)
         except ObjectNotFoundError:
             return response_api_not_found()
@@ -443,6 +446,7 @@ class CasesOperations:
 cases_blueprint = Blueprint('cases',
                             __name__,
                             url_prefix='/cases')
+cases_blueprint.register_blueprint(case_incident_card_blueprint)
 cases_blueprint.register_blueprint(case_assets_blueprint)
 cases_blueprint.register_blueprint(case_iocs_blueprint)
 cases_blueprint.register_blueprint(case_notes_directories_blueprint)

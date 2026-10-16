@@ -36,6 +36,8 @@
 		type RenderedWidget
 	} from '$lib/services/custom-dashboards.service';
 
+	const dashboardText = (text: string = "") => dashboard?.is_system ? irisT(text, $irisLocale) : text;
+
 	let dashboard: CustomDashboard | null = $state(null);
 	let widgets: RenderedWidget[] = $state([]);
 	let renderedSections: RenderedSection[] = $state([]);
@@ -173,11 +175,16 @@
 	// dashboard carries its own explanations.
 	function widgetHelp(widget: RenderedWidget): string | null {
 		const h = (widget.options as Record<string, unknown> | undefined)?.help;
-		return typeof h === 'string' && h.trim() ? h : null;
+		return typeof h === 'string' && h.trim() ? dashboardText(h) : null;
 	}
 
 	function formatValue(widget: RenderedWidget): string {
-		if (widget.formatted_value) return widget.formatted_value;
+		if (widget.formatted_value) {
+            if ($irisLocale === 'ru' && widget.options?.value_format === 'duration') {
+                return widget.formatted_value.replace(/(\d+)d\b/g, '$1 д').replace(/(\d+)h\b/g, '$1 ч').replace(/(\d+)m\b/g, '$1 мин').replace(/(\d+)s\b/g, '$1 с');
+            }
+            return widget.formatted_value;
+        }
 		const v = widget.value;
 		if (v === null || v === undefined) return '—';
 		return typeof v === 'number' ? v.toLocaleString() : String(v);
@@ -189,7 +196,7 @@
 </script>
 
 <svelte:head>
-	<title>{dashboard?.name ?? 'Dashboard'}</title>
+	<title>{(dashboard?.name ? dashboardText(dashboard.name) : null) ?? irisT("Dashboard", $irisLocale)}</title>
 </svelte:head>
 
 <TooltipProvider>
@@ -202,9 +209,9 @@
 				>
 					<ArrowLeftIcon class="size-3" /> {irisT("All dashboards", $irisLocale)}
 				</a>
-				<h1 class="text-3xl font-semibold tracking-tight">{dashboard?.name ?? '…'}</h1>
+				<h1 class="text-3xl font-semibold tracking-tight">{(dashboard?.name ? dashboardText(dashboard.name) : null) ?? '…'}</h1>
 				{#if dashboard?.description}
-					<p class="text-sm text-muted-foreground">{dashboard.description}</p>
+					<p class="text-sm text-muted-foreground">{dashboardText(dashboard.description)}</p>
 				{/if}
 			</div>
 			{#if dashboard && !dashboard.is_system}
@@ -292,7 +299,7 @@
 						<CardTitle
 							class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
 						>
-							<span>{widget.name}</span>
+							<span>{dashboardText(widget.name)}</span>
 							{#if help}{@render helpBubble(help)}{/if}
 						</CardTitle>
 					</CardHeader>
@@ -309,7 +316,7 @@
 				>
 					<CardHeader>
 						<CardTitle class="flex items-center gap-1.5">
-							<span>{widget.name}</span>
+							<span>{dashboardText(widget.name)}</span>
 							{#if help}{@render helpBubble(help)}{/if}
 						</CardTitle>
 					</CardHeader>
@@ -319,7 +326,7 @@
 				<Card class="{sizeClass(widget)} hover:shadow-elevation-4 transition-shadow duration-200">
 					<CardHeader>
 						<CardTitle class="flex items-center gap-1.5">
-							<span>{widget.name}</span>
+							<span>{dashboardText(widget.name)}</span>
 							{#if help}{@render helpBubble(help)}{/if}
 						</CardTitle>
 					</CardHeader>
@@ -341,14 +348,14 @@
 				<Card class="{sizeClass(widget)} hover:shadow-elevation-4 transition-shadow duration-200">
 					<CardHeader>
 						<CardTitle class="flex items-center gap-1.5">
-							<span>{widget.name}</span>
+							<span>{dashboardText(widget.name)}</span>
 							{#if help}{@render helpBubble(help)}{/if}
 						</CardTitle>
 					</CardHeader>
 					<CardContent>
 						<Chart
 							type={(widget.chart_type as 'bar' | 'line' | 'pie' | 'timechart') ?? 'bar'}
-							labels={widget.labels ?? widget.display_labels ?? []}
+							labels={(widget.labels ?? widget.display_labels ?? []).map(dashboardText)}
 							datasets={widget.datasets ?? []}
 							color={widgetColor(widget)}
 							palette={widgetPalette(widget)}
@@ -368,10 +375,10 @@
 							class={`flex flex-col gap-0.5 ${section.show_divider && sIdx > 0 ? 'border-t pt-4' : ''}`}
 						>
 							{#if section.title}
-								<h2 class="text-lg font-semibold">{section.title}</h2>
+								<h2 class="text-lg font-semibold">{dashboardText(section.title)}</h2>
 							{/if}
 							{#if section.description}
-								<p class="text-xs text-muted-foreground">{section.description}</p>
+								<p class="text-xs text-muted-foreground">{dashboardText(section.description)}</p>
 							{/if}
 						</header>
 					{:else if section.show_divider && sIdx > 0}

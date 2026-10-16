@@ -864,7 +864,7 @@
 </script>
 
 <svelte:head>
-	<title>Overview</title>
+	<title>{irisT("Overview", $irisLocale)}</title>
 </svelte:head>
 
 <div class="ov-root">
@@ -970,10 +970,10 @@
 					}}
 					type="single"
 				>
-					<SelectTrigger>{perPage} / page</SelectTrigger>
+					<SelectTrigger>{irisT("{count} / page", $irisLocale, { count: perPage })}</SelectTrigger>
 					<SelectContent>
 						{#each perPageOptions as perPageOption (perPageOption.value)}
-							<SelectItem value={perPageOption.value}>{perPageOption.label}</SelectItem>
+							<SelectItem value={perPageOption.value}>{irisT("{count} entries", $irisLocale, { count: perPageOption.value })}</SelectItem>
 						{/each}
 					</SelectContent>
 				</Select>
@@ -1072,11 +1072,11 @@
 						type="button"
 						class="q-sort {col.cls}"
 						class:q-sort--active={arrow !== ''}
-						aria-label="Sort by {col.label}{arrow === ''
+						aria-label={`${irisT("Sort by", $irisLocale)} ${col.label}${arrow === ''
 							? ''
 							: arrow === '▲'
-								? ' (ascending)'
-								: ' (descending)'}"
+								? ` ${irisT("(ascending)", $irisLocale)}`
+								: ` ${irisT("(descending)", $irisLocale)}`}`}
 						onclick={() => toggleSort(col)}
 					>
 						<span>{col.label}</span>

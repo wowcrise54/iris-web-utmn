@@ -267,7 +267,7 @@
 </script>
 
 <svelte:head>
-	<title>Dim Tasks</title>
+	<title>{irisT("Dim Tasks", $irisLocale)}</title>
 </svelte:head>
 
 <!--

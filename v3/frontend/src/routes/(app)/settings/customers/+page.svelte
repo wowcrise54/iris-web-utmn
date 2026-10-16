@@ -494,7 +494,7 @@
 </script>
 
 <svelte:head>
-	<title>Customers</title>
+	<title>{irisT("Customers", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">

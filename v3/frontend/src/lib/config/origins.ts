@@ -112,3 +112,16 @@ export function isServedOrigin(
 	const normalised = normaliseOrigin(origin);
 	return normalised !== null && allowedOrigins.includes(normalised);
 }
+
+/** Shared CSRF rule for the hook and same-deployment language selection. */
+export function isRequestOriginAllowed(
+	origin: string | null,
+	requestOrigin: string,
+	allowedOrigins: readonly string[]
+): boolean {
+	const normalised = normaliseOrigin(origin);
+	return (
+		normalised !== null &&
+		(normalised === normaliseOrigin(requestOrigin) || isServedOrigin(normalised, allowedOrigins))
+	);
+}

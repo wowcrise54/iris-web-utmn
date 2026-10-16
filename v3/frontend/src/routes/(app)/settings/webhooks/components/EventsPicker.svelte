@@ -121,7 +121,7 @@
 								checked={state === 'all'}
 								indeterminate={state === 'some'}
 								onCheckedChange={() => toggleGroup(names)}
-								aria-label={`All ${group.label} events`}
+								aria-label={`${irisT("All", $irisLocale)} ${group.label} ${irisT("events", $irisLocale)}`}
 							/>
 							<span class="text-xs font-semibold">{group.label}</span>
 						</label>

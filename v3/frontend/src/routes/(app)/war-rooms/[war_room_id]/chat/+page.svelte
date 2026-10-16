@@ -2011,7 +2011,7 @@
 								<Checkbox
 									checked={selected}
 									onCheckedChange={() => toggleTopicSelection(t)}
-									aria-label={`Toggle ${t.name}`}
+									aria-label={`${irisT("Toggle", $irisLocale)} ${t.name}`}
 									class="ml-1"
 								/>
 								<button
@@ -2047,7 +2047,7 @@
 										type="button"
 										class="invisible shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:visible group-hover/topic:visible"
 										onclick={() => doArchiveTopic(t)}
-										aria-label={`Archive ${t.name}`}
+										aria-label={`${irisT("Archive", $irisLocale)} ${t.name}`}
 										title={irisT("Archive topic", $irisLocale)}
 									>
 										<Archive class="h-3 w-3" />
@@ -2081,7 +2081,7 @@
 											<Checkbox
 												checked={selected}
 												onCheckedChange={() => toggleTopicSelection(t)}
-												aria-label={`Toggle archived ${t.name}`}
+												aria-label={`${irisT("Toggle archived", $irisLocale)} ${t.name}`}
 												class="ml-1"
 											/>
 											<button
@@ -2099,7 +2099,7 @@
 												type="button"
 												class="invisible shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:visible group-hover/atopic:visible"
 												onclick={() => doUnarchiveTopic(t)}
-												aria-label={`Unarchive ${t.name}`}
+												aria-label={`${irisT("Unarchive", $irisLocale)} ${t.name}`}
 												title={irisT("Restore topic", $irisLocale)}
 											>
 												<ArchiveRestore class="h-3 w-3" />
@@ -2260,7 +2260,7 @@
 											type="button"
 											class="invisible mt-1 shrink-0 rounded p-1 text-destructive transition-colors hover:bg-destructive/10 focus:visible group-hover/trace:visible"
 											onclick={() => removeTraceEntry(t)}
-											aria-label={`Delete this ${meta.label.toLowerCase()}`}
+											aria-label={`${irisT("Delete this", $irisLocale)} ${meta.label.toLowerCase()}`}
 											title={irisT("Delete", $irisLocale)}
 										>
 											<Trash2 class="h-3 w-3" />
@@ -2299,7 +2299,7 @@
 								<Checkbox
 									checked={on}
 									onCheckedChange={() => toggleGlobal(f.key)}
-									aria-label={`Toggle ${f.label}`}
+									aria-label={`${irisT("Toggle", $irisLocale)} ${f.label}`}
 								/>
 							</label>
 						</li>
@@ -2356,7 +2356,7 @@
 									<Checkbox
 										checked={caseOn}
 										onCheckedChange={() => toggleCase(att.case_id)}
-										aria-label={`Toggle case #${att.case_id} in stream`}
+										aria-label={`${irisT("Toggle case", $irisLocale)} #${att.case_id} ${irisT("in stream", $irisLocale)}`}
 									/>
 								</div>
 
@@ -2390,7 +2390,7 @@
 														indeterminate={gState === 'some'}
 														onCheckedChange={() => toggleGroup(att.case_id, g)}
 														disabled={!caseOn}
-														aria-label={`Toggle ${g.label} for case #${att.case_id}`}
+														aria-label={`${irisT("Toggle", $irisLocale)} ${g.label} ${irisT("for case", $irisLocale)} #${att.case_id}`}
 													/>
 												</div>
 

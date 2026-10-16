@@ -25,6 +25,7 @@ from app.datamgmt.manage.manage_users_db import add_user_to_customer
 from app.datamgmt.client.client_db import get_paginated_customers
 from app.datamgmt.client.client_db import get_customer
 from app.datamgmt.client.client_db import get_customer_by_name
+from app.datamgmt.client.client_db import get_client_cases
 from app.datamgmt.client.client_db import update_customer
 from app.datamgmt.client.client_db import delete_client
 from app.models.errors import ObjectNotFoundError
@@ -58,6 +59,10 @@ def customers_get_by_name(name) -> Client:
     if not customer:
         raise ObjectNotFoundError()
     return customer
+
+
+def customers_list_cases(identifier):
+    return get_client_cases(identifier)
 
 
 def customers_exists_another_with_same_name(identifier, name: str) -> bool:

@@ -389,7 +389,7 @@
 <ConfirmationDialog
 	bind:open={showConfirmDelete}
 	title={irisT("Are you sure?", $irisLocale)}
-	message="You are about to delete this forever. This cannot be reverted. All associated data will be deleted."
+	message={irisT("This note will be permanently deleted. This cannot be undone.", $irisLocale)}
 	onConfirm={onDeleteNote}
 	onCancel={() => (showConfirmDelete = false)}
 />

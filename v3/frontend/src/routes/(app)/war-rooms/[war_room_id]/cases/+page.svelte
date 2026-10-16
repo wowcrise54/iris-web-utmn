@@ -387,7 +387,7 @@
 							type="button"
 							class="flex min-w-0 flex-1 items-start gap-2 text-left"
 							onclick={() => openDetail(a.case_id)}
-							aria-label={`Open details for case #${a.case_id}`}
+							aria-label={`${irisT("Open details for case", $irisLocale)} #${a.case_id}`}
 						>
 							<WaypointsIcon class="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 							<span class="min-w-0 flex-1">
@@ -571,7 +571,7 @@
 									<Checkbox
 										checked={selected}
 										onCheckedChange={() => toggleCandidate(c)}
-										aria-label={`Select case #${c.case_id}`}
+										aria-label={`${irisT("Select case", $irisLocale)} #${c.case_id}`}
 									/>
 									<span class="flex min-w-0 flex-1 items-center gap-2">
 										<span class="font-mono text-2xs text-muted-foreground">

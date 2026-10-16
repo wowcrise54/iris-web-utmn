@@ -541,7 +541,7 @@
 							<ChoiceGroup
 								options={METHODS.map((m) => ({ value: m, label: m }))}
 								bind:value={form.method}
-								ariaLabel="HTTP method"
+								ariaLabel={irisT("HTTP method", $irisLocale)}
 							/>
 							<Input
 								class="h-8 min-w-[280px] flex-1 font-mono text-xs"
@@ -592,7 +592,7 @@
 							options={AUTH_TYPES}
 							bind:value={form.auth_type}
 							onChange={onAuthTypeChange}
-							ariaLabel="Authentication"
+								ariaLabel={irisT("Authentication", $irisLocale)}
 						/>
 						{#if form.auth_type !== 'none'}
 							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -838,7 +838,7 @@
 <ConfirmationDialog
 	bind:open={confirmLeaveOpen}
 	title={irisT("Discard unsaved changes?", $irisLocale)}
-	message="Your changes to this webhook have not been saved."
+	message={irisT("Your changes to this webhook have not been saved.", $irisLocale)}
 	confirmText="Discard"
 	onConfirm={onClose}
 />

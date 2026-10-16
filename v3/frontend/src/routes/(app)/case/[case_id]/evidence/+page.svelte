@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-	<title>#{page.params.case_id} - Evidence</title>
+	<title>#{page.params.case_id} - {irisT("Evidence", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col items-center justify-center">

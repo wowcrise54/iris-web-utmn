@@ -173,7 +173,7 @@
 </script>
 
 <svelte:head>
-	<title>War Rooms</title>
+	<title>{irisT("War Rooms", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col gap-4 p-6">

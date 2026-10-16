@@ -371,7 +371,7 @@
 	<ConfirmationDialog
 		bind:open={confirmDeleteOpen}
 		title={irisT("Delete event?", $irisLocale)}
-		message="This timeline event will be permanently deleted. This cannot be undone."
+		message={irisT("This timeline event will be permanently deleted. This cannot be undone.", $irisLocale)}
 		onConfirm={confirmDelete}
 		onCancel={() => {
 			confirmDeleteOpen = false;

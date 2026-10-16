@@ -218,7 +218,7 @@
 					type="button"
 					class="flex h-4 w-4 items-center justify-center rounded-full hover:bg-muted-foreground/20"
 					onclick={() => removeTag(index)}
-					aria-label={`Remove ${tag.tag_title} tag`}
+					aria-label={`${irisT("Remove", $irisLocale)} ${tag.tag_title} ${irisT("tag", $irisLocale)}`}
 				>
 					<XIcon class="h-3 w-3" />
 				</button>

@@ -381,7 +381,7 @@
 </script>
 
 <svelte:head>
-	<title>Search</title>
+	<title>{irisT("Search", $irisLocale)}</title>
 </svelte:head>
 
 <!--

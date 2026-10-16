@@ -204,7 +204,7 @@
 </script>
 
 <svelte:head>
-	<title>Banners</title>
+	<title>{irisT("Banners", $irisLocale)}</title>
 </svelte:head>
 
 <div class="flex h-full w-full flex-col overflow-hidden">
@@ -378,7 +378,7 @@
 	bind:open={confirmOpen}
 	title={irisT("Delete banner?", $irisLocale)}
 	message={pendingDelete
-		? `The banner "${truncate(pendingDelete.text, 60)}" will be permanently deleted.`
+		? irisT("The banner \"{name}\" will be permanently deleted.", $irisLocale, { name: truncate(pendingDelete.text, 60) })
 		: ''}
 	confirmText="Delete"
 	confirmButtonVariant="destructive"
