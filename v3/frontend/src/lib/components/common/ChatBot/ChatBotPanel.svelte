@@ -66,14 +66,24 @@
 	});
 
 	const streaming = $derived(chat.state.streamingConversationId != null);
-	const disabled = $derived(streaming || chat.state.pendingToolCalls.length > 0);
+	const disabled = $derived(
+		streaming ||
+			chat.state.pendingToolCalls.length > 0 ||
+			chat.state.progress?.stage === 'awaiting_approval'
+	);
 
-	// True in the initial-latency window: the user just sent and the
-	// stream is running but no text has arrived yet. Also true between
-	// a tool_result and the next TextDelta (model reasoning on the
-	// tool output). Drives the shimmer bar.
-	const thinking = $derived(
-		streaming && (!chat.state.streamingAssistant || chat.state.streamingAssistant.text.length === 0)
+	const progressLabels = {
+		waiting_model: 'Waiting for model response',
+		responding: 'Writing response',
+		executing_tool: 'Executing tool',
+		processing_result: 'Processing tool result',
+		awaiting_approval: 'Waiting for approval',
+		completed: 'Done',
+		failed: 'Request failed'
+	} as const;
+	const progress = $derived(chat.state.progress);
+	const progressLabel = $derived(
+		progress ? irisT(progressLabels[progress.stage], $irisLocale) : ''
 	);
 
 	async function newHere() {
@@ -176,7 +186,7 @@
 
 		if (!renamed) {
 			toast({
-				title: irisT("Failed to rename conversation", $irisLocale),
+				title: irisT('Failed to rename conversation', $irisLocale),
 				description: chat.mutation.error ?? undefined,
 				variant: 'destructive'
 			});
@@ -357,9 +367,11 @@
 			)}px;"
 		>
 			<SparklesIcon size={14} />
-			{irisT("Yuki", $irisLocale)}
+			{irisT('Yuki', $irisLocale)}
 			{#if chat.state.streamingAssistant}
-				<span class="ml-1 size-2 animate-pulse rounded-full bg-primary" aria-label={irisT("streaming", $irisLocale)}
+				<span
+					class="ml-1 size-2 animate-pulse rounded-full bg-primary"
+					aria-label={irisT('streaming', $irisLocale)}
 				></span>
 			{/if}
 		</button>
@@ -374,7 +386,7 @@
 			class="fixed z-50 flex flex-col overflow-hidden rounded-lg border bg-background shadow-2xl"
 			style="left: {win.x}px; top: {win.y}px; width: {win.w}px; height: {win.h}px;"
 			role="dialog"
-			aria-label={irisT("Yuki", $irisLocale)}
+			aria-label={irisT('Yuki', $irisLocale)}
 		>
 			<!-- Drag handle / header. -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -412,7 +424,7 @@
 					<button
 						type="button"
 						class="min-w-0 flex-1 truncate text-left text-xs font-semibold hover:underline"
-						title={irisT("Click to rename", $irisLocale)}
+						title={irisT('Click to rename', $irisLocale)}
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={beginRenameCurrent}
 					>
@@ -420,7 +432,7 @@
 							`Untitled #${chat.state.currentConversation.id}`}
 					</button>
 				{:else}
-					<span class="text-xs font-semibold">{irisT("Yuki", $irisLocale)}</span>
+					<span class="text-xs font-semibold">{irisT('Yuki', $irisLocale)}</span>
 				{/if}
 				{#if chat.state.currentConversation?.model}
 					<span class="hidden text-2xs font-normal text-muted-foreground sm:inline">
@@ -431,8 +443,8 @@
 					<button
 						type="button"
 						class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						title={irisT("History", $irisLocale)}
-						aria-label={irisT("History", $irisLocale)}
+						title={irisT('History', $irisLocale)}
+						aria-label={irisT('History', $irisLocale)}
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={() => (showHistory = !showHistory)}
 					>
@@ -442,8 +454,8 @@
 						<button
 							type="button"
 							class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-							title={irisT("Rename", $irisLocale)}
-							aria-label={irisT("Rename", $irisLocale)}
+							title={irisT('Rename', $irisLocale)}
+							aria-label={irisT('Rename', $irisLocale)}
 							onpointerdown={(e) => e.stopPropagation()}
 							onclick={beginRenameCurrent}
 						>
@@ -453,8 +465,8 @@
 					<button
 						type="button"
 						class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						title={irisT("Minimize", $irisLocale)}
-						aria-label={irisT("Minimize", $irisLocale)}
+						title={irisT('Minimize', $irisLocale)}
+						aria-label={irisT('Minimize', $irisLocale)}
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={toggleMinimize}
 					>
@@ -463,8 +475,8 @@
 					<button
 						type="button"
 						class="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						title={irisT("Close", $irisLocale)}
-						aria-label={irisT("Close", $irisLocale)}
+						title={irisT('Close', $irisLocale)}
+						aria-label={irisT('Close', $irisLocale)}
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={() => chat.closePanel()}
 					>
@@ -478,7 +490,8 @@
 				<div class="flex items-center gap-2">
 					<Button size="sm" variant="outline" class="h-7" onclick={newHere}>
 						<PlusIcon size={12} class="mr-1" />
-						{irisT("New chat", $irisLocale)} {currentWarRoomId != null
+						{irisT('New chat', $irisLocale)}
+						{currentWarRoomId != null
 							? `in war-room #${currentWarRoomId}`
 							: currentCaseId != null
 								? `on case #${currentCaseId}`
@@ -494,10 +507,11 @@
 					<button
 						type="button"
 						class="ml-auto flex items-center gap-1 rounded border bg-background px-2 py-0.5 text-2xs text-muted-foreground hover:bg-muted hover:text-foreground"
-						title={irisT("Change scope for next new chat", $irisLocale)}
+						title={irisT('Change scope for next new chat', $irisLocale)}
 						onclick={() => (showHeaderScopePicker = !showHeaderScopePicker)}
 					>
-						{irisT("Scope:", $irisLocale)} {chat.state.currentConversation
+						{irisT('Scope:', $irisLocale)}
+						{chat.state.currentConversation
 							? currentConversationScope
 							: currentWarRoomId != null
 								? `war-room #${currentWarRoomId}`
@@ -524,7 +538,8 @@
 				>
 					<ShieldCheckIcon size={12} class="mt-0.5 shrink-0" />
 					<span class="min-w-0">
-						{irisT("Policy", $irisLocale)} <span class="font-medium">{policy.name}</span> {irisT("is enforced on this conversation", $irisLocale)}{#if policyNotes.length}
+						{irisT('Policy', $irisLocale)} <span class="font-medium">{policy.name}</span>
+						{irisT('is enforced on this conversation', $irisLocale)}{#if policyNotes.length}
 							— {policyNotes.join(' · ')}{/if}
 					</span>
 				</div>
@@ -588,18 +603,26 @@
 												argsData={tu.arguments}
 												result={tu.result}
 												error={tu.error}
+												status={tu.error
+													? 'failed'
+													: tu.finished
+														? 'completed'
+														: tu.pending
+															? 'awaiting_approval'
+															: 'executing_tool'}
 											/>
 										{/each}
 									</div>
 								{/if}
 							</div>
 						</div>
-					{:else if thinking}
-						<!-- Latency window: stream started but nothing has
-						     arrived yet, or model reasoning after a
-						     tool_result. Show the shimmer instead of an
-						     empty bubble. -->
-						<ThinkingShimmer />
+					{/if}
+
+					{#if progress}
+						<ThinkingShimmer
+							label={progressLabel + (progress.tool_name ? `: ${progress.tool_name}` : '')}
+							active={!['awaiting_approval', 'completed', 'failed'].includes(progress.stage)}
+						/>
 					{/if}
 
 					{#if chat.state.pendingToolCalls.length > 1}
@@ -615,7 +638,7 @@
 								class="text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
 								onclick={() => chat.denyAllPending()}
 							>
-								{irisT("Deny all (", $irisLocale)}{chat.state.pendingToolCalls.length})
+								{irisT('Deny all (', $irisLocale)}{chat.state.pendingToolCalls.length})
 							</button>
 						</div>
 					{/if}
@@ -624,7 +647,7 @@
 					{/each}
 
 					{#if chat.state.error}
-						<p class="text-2xs text-destructive">{chat.state.error}</p>
+						<p class="text-2xs text-destructive">{irisT(chat.state.error, $irisLocale)}</p>
 					{/if}
 				{/if}
 			</div>
@@ -653,7 +676,7 @@
 				class="absolute bottom-0 right-0 h-4 w-4 cursor-nwse-resize"
 				style="background-image: linear-gradient(135deg, transparent 50%, hsl(var(--muted-foreground) / 0.4) 50%, hsl(var(--muted-foreground) / 0.4) 60%, transparent 60%, transparent 70%, hsl(var(--muted-foreground) / 0.4) 70%, hsl(var(--muted-foreground) / 0.4) 80%, transparent 80%);"
 				role="separator"
-				aria-label={irisT("Resize", $irisLocale)}
+				aria-label={irisT('Resize', $irisLocale)}
 				onpointerdown={onResizePointerDown}
 				onpointermove={onResizePointerMove}
 				onpointerup={onResizePointerUp}
