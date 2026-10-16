@@ -9,6 +9,7 @@
 	import DataTable from '$lib/components/ui/data-table-tanstack/data-table.svelte';
 	import TlpBadge from '../tlp/TlpBadge.svelte';
 	import IocNameCell from './IocNameCell.svelte';
+	import OpenCTIStatus from '../OpenCTIStatus.svelte';
 	import RowCheckbox from '$lib/components/common/RowCheckbox.svelte';
 	import TagDisplay from '$lib/components/common/tag/TagDisplay.svelte';
 	import RowActionsCell from '$lib/components/common/table/RowActionsCell.svelte';
@@ -32,6 +33,7 @@
 	export let showTags: boolean = false;
 	export let onShowEnrichment: ((ioc: Ioc) => void) | undefined = undefined;
 	export let onEdit: ((ioc: Ioc) => void) | undefined = undefined;
+	export let onDelete: ((ioc: Ioc) => void) | undefined = undefined;
 
 	const dispatch = createEventDispatcher();
 
@@ -129,7 +131,12 @@
 					} as ColumnDef<Ioc>
 				]
 			: []),
-		...(onEdit || onShowEnrichment
+		{
+			id: 'opencti',
+			header: () => 'OpenCTI',
+			cell: (cell) => renderComponent(OpenCTIStatus, { enrichment: cell.row.original.ioc_enrichment })
+		},
+		...(onEdit || onDelete || onShowEnrichment
 			? [
 					{
 						id: '__actions__',
@@ -142,6 +149,7 @@
 								hasEnrichment: !!ioc.ioc_enrichment,
 								onShowEnrichment: onShowEnrichment && (() => onShowEnrichment?.(ioc)),
 								onEdit: onEdit && (() => onEdit?.(ioc)),
+								onDelete: onDelete && (() => onDelete?.(ioc)),
 								editLabel: 'Edit IOC',
 								enrichmentLabel: 'View IOC enrichment'
 							});

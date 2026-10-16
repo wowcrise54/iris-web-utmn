@@ -1261,8 +1261,6 @@ class PostInit:
             add_user_to_group(user_id=user.id, group_id=gadm.group_id)
             add_user_to_organisation(user_id=user.id, org_id=def_org.org_id)
 
-            self._logger.warning(f">>> Administrator password: {password}")
-
             db.session.commit()
 
         else:
@@ -1306,7 +1304,7 @@ class PostInit:
 
     def _register_default_modules(self):
         modules = ['iris_vt_module', 'iris_misp_module', 'iris_check_module',
-                   'iris_webhooks_module', 'iris_intelowl_module']
+                   'iris_webhooks_module', 'iris_intelowl_module', 'iris_opencti_module', 'iris_ptsandbox_module']
 
         for module_name in modules:
             class_, _ = instantiate_module_from_name(module_name)
@@ -1502,6 +1500,9 @@ class PostInit:
                     self._logger.info("Registering default modules")
                     self._register_default_modules()
 
+                from app.business.ptsandbox import sync_module_parameters
+                sync_module_parameters()
+
                 self._logger.info('Creating initial customer')
                 client = create_safe_client()
 
@@ -1534,7 +1535,10 @@ class PostInit:
                 self._logger.warning(f"| IRIS IS READY on port  {os.getenv('INTERFACE_HTTPS_PORT')} |")
                 self._logger.warning("===============================")
 
-                # If an administrative user was created, log their credentials
+                # A configured password is already available to its operator.
                 if pwd is not None:
-                    self._logger.info(f'You can now login with user {admin.user} and password >>> {pwd} <<< '
-                                      f'on {os.getenv("INTERFACE_HTTPS_PORT")}')
+                    if self._configuration.get('IRIS_ADM_PASSWORD'):
+                        self._logger.info(f'You can now login with user {admin.user} using the configured password')
+                    else:
+                        self._logger.info(f'You can now login with user {admin.user} and password >>> {pwd} <<< '
+                                          f'on {os.getenv("INTERFACE_HTTPS_PORT")}')

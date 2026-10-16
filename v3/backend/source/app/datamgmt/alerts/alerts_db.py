@@ -24,6 +24,9 @@ from datetime import timedelta
 from typing import List
 from typing import Optional
 from typing import Tuple
+from pathlib import Path
+from app.models.alert_artifacts import AlertArtifact
+from app.web import current_app
 
 
 _DATE_ONLY_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
@@ -1813,6 +1816,7 @@ def delete_alerts(alert_ids: List[int]) -> tuple[bool, str]:
     returns:
         True if deleted successfully
     """
+    file_paths = _alert_artifact_paths(alert_ids)
     try:
 
         delete_similar_alerts_cache(alert_ids)
@@ -1825,12 +1829,14 @@ def delete_alerts(alert_ids: List[int]) -> tuple[bool, str]:
 
         Comments.query.filter(Comments.comment_alert_id.in_(alert_ids)).delete()
         Alert.query.filter(Alert.alert_id.in_(alert_ids)).delete()
+        db.session.commit()
 
     except Exception as e:
         db.session.rollback()
         logger.exception(str(e))
         return False, "Server side error"
 
+    _remove_artifact_files(file_paths)
     return True, ""
 
 
@@ -1848,4 +1854,21 @@ def get_alert_status_by_name(name: str) -> AlertStatus:
 
 
 def delete_alert(alert):
+    file_paths = _alert_artifact_paths([alert.alert_id])
     db_delete(alert)
+    _remove_artifact_files(file_paths)
+
+
+def _alert_artifact_paths(alert_ids):
+    root = Path(current_app.config['DATASTORE_PATH']) / 'alerts'
+    return [root / str(row.alert_id) / row.storage_name
+            for row in AlertArtifact.query.filter(AlertArtifact.alert_id.in_(alert_ids)).all()
+            if row.storage_name]
+
+
+def _remove_artifact_files(paths):
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.exception('Unable to remove deleted alert artifact file')

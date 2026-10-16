@@ -59,6 +59,8 @@ from app.iris_engine.utils.tracker import track_activity
 from app.util import add_obj_history_entry
 from app.models.errors import BusinessProcessingError
 from app.models.errors import ObjectNotFoundError
+from app.business.alert_materials import export_artifacts_to_case
+from app.business.alert_materials import require_artifact_import_access
 
 
 class _TokenUserView:
@@ -624,6 +626,7 @@ def alerts_escalate(alert: Alert, iocs_import_list: Optional[list] = None,
         raise BusinessProcessingError('Failed to create case from alert')
 
     ac_set_new_case_access(_resolve_caller(), case.case_id, case.client_id)
+    export_artifacts_to_case(alert, case, _resolve_caller().id)
     case = call_modules_hook('on_postload_case_create', case)
 
     add_obj_history_entry(case, 'created')
@@ -649,6 +652,8 @@ def alerts_merge(alert: Alert, target_case_id: int,
     if case is None:
         raise ObjectNotFoundError()
 
+    require_artifact_import_access(alert, case, _resolve_caller().id)
+
     merged_id = _resolve_alert_status_id('Merged')
     if merged_id is not None:
         alert.alert_status_id = merged_id
@@ -664,6 +669,7 @@ def alerts_merge(alert: Alert, target_case_id: int,
         case_tags=case_tags,
     )
     call_modules_hook('on_postload_alert_merge', alert, caseid=target_case_id)
+    export_artifacts_to_case(alert, case, _resolve_caller().id)
 
     track_activity(f'merge alert #{alert.alert_id} into existing case #{target_case_id}',
                    caseid=target_case_id)
@@ -687,6 +693,8 @@ def alerts_unmerge(alert: Alert, target_case_id: int) -> tuple[Alert, str]:
                    caseid=target_case_id)
     add_obj_history_entry(alert, f'Alert unmerged from case #{target_case_id}')
     call_modules_hook('on_postload_alert_unmerge', alert)
+    # The removed relationship is no longer reachable from the alert in a worker.
+    call_modules_hook('on_postload_case_update', case, caseid=target_case_id)
     return alert, message
 
 
@@ -698,6 +706,11 @@ def alerts_batch_merge(alert_ids: list, target_case_id: int,
     case = get_case(target_case_id)
     if case is None:
         raise ObjectNotFoundError()
+
+    for alert_id in alert_ids:
+        candidate = get_alert_by_id(alert_id)
+        if candidate is not None:
+            require_artifact_import_access(candidate, case, _resolve_caller().id)
 
     merged_id = _resolve_alert_status_id('Merged')
 
@@ -720,6 +733,7 @@ def alerts_batch_merge(alert_ids: list, target_case_id: int,
             case_tags=case_tags,
         )
         add_obj_history_entry(alert, f'Alert merged into existing case #{target_case_id}')
+        export_artifacts_to_case(alert, case, _resolve_caller().id)
         call_modules_hook('on_postload_alert_merge', alert)
 
     if note:
@@ -786,6 +800,8 @@ def alerts_batch_escalate(alert_ids: list,
         raise BusinessProcessingError('Failed to create case from alerts')
 
     ac_set_new_case_access(_resolve_caller(), case.case_id, case.client_id)
+    for alert in alerts_list:
+        export_artifacts_to_case(alert, case, _resolve_caller().id)
     case = call_modules_hook('on_postload_case_create', case)
 
     add_obj_history_entry(case, 'created')

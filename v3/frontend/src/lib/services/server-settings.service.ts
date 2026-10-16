@@ -141,11 +141,22 @@ export interface ServerSettingsResponse {
 
 export type ServerSettingsUpdateBody = Partial<ServerSettings>;
 
+export interface McpToolDescriptor {
+	name: string;
+	description: string;
+	read_only: boolean;
+	inputSchema: Record<string, unknown>;
+}
+
 export interface BackupResult {
 	logs: string[];
 }
 
 export class ServerSettingsService {
+	static async getMcpTools(): Promise<RequestResponse<{ tools: McpToolDescriptor[] }>> {
+		return ApiService.get('/manage/server/mcp/tools');
+	}
+
 	static async get(options: ApiOptions = {}): Promise<RequestResponse<ServerSettingsResponse>> {
 		return ApiService.get<ServerSettingsResponse>('/manage/server/settings', options);
 	}
