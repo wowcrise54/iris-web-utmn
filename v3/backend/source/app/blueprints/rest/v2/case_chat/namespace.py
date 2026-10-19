@@ -237,6 +237,7 @@ class ChatNamespace(Namespace):
                 emit('error', {'message': f'No access to war-room #{conv.war_room_id}.'})
                 return
 
+        logger.info('chat_start nginx_request_id=%s conversation_id=%s', request.headers.get('X-Request-ID', '-'), conv.id)
         text = user_text.strip()
         case_chat_biz.append_message(
             conversation=conv,

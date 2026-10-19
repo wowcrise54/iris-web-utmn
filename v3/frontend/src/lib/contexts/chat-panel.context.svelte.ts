@@ -170,6 +170,10 @@ export const createChatPanelContext = () => {
 	const _ensureSocket = () => {
 		if (socket) return socket;
 		socket = new ChatSocketClient({
+			onAnalysisUpdated: (payload) => {
+				if (payload.conversation_id === state.currentConversation?.id)
+					void refresh(payload.conversation_id);
+			},
 			onAssistantProgress: (payload) => {
 				if (payload.conversation_id !== state.currentConversation?.id) return;
 				if (

@@ -195,7 +195,7 @@ def read_log(case_id, scan_id, log_id):
     return log
 
 
-def text_page(log, offset=0, length=12000):
+def decoded_text_log(log):
     if log.content is None:
         raise BusinessProcessingError(log.error or 'Log is not available')
     raw = log.content
@@ -214,6 +214,11 @@ def text_page(log, offset=0, length=12000):
     if b'\x00' in raw[:4096] or raw[:4] in (b'\xd4\xc3\xb2\xa1', b'\x0a\x0d\x0d\x0a', b'PK\x03\x04'):
         raise BusinessProcessingError('Binary log: download the original; textual analysis is unavailable')
     decoded = raw[:cap].decode('utf-8', errors='replace')
+    return decoded, len(raw) > cap
+
+
+def text_page(log, offset=0, length=12000):
+    decoded, truncated = decoded_text_log(log)
     return {'log_id': log.id, 'name': log.name, 'offset': offset, 'text': decoded[offset:offset + length],
             'next_offset': offset + length if offset + length < len(decoded) else None,
-            'truncated': len(raw) > cap, 'untrusted_data': True}
+            'truncated': truncated, 'untrusted_data': True}

@@ -8,7 +8,7 @@ RUN cd / && pip install --no-cache-dir -r requirements.txt
 FROM python:3.12-slim-bookworm
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 DOCKERIZED=1
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends p7zip-full gnupg rsync postgresql-client openssl libmagic1 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends p7zip-full gnupg rsync postgresql-client openssl libmagic1 tshark libseccomp2 \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /home/iris/downloads /home/iris/user_templates \
        /home/iris/certificates/rootCA /home/iris/certificates/web_certificates \

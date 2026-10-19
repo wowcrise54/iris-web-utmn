@@ -74,76 +74,86 @@ class OllamaProvider(LLMProvider):
                 url, json=body, headers=headers,
                 stream=True, timeout=_STREAM_TIMEOUT,
             )
-        except requests.RequestException as exc:
-            yield Error(message=f'ollama: connection error: {exc}')
+        except requests.Timeout:
+            yield Error('Provider request timed out. You can continue the analysis.', provider_code='timeout')
+            return
+        except requests.RequestException:
+            yield Error(message='ollama: provider connection failed.', provider_code='connection')
             return
 
         if resp.status_code != 200:
-            try:
-                err_body = resp.json()
-            except Exception:
-                err_body = {'error': resp.text[:500]}
-            msg = err_body.get('error') or resp.text[:500]
-            yield Error(message=f'ollama: {msg}')
+            status = resp.status_code
+            resp.close()
+            yield Error(message=f'ollama: provider HTTP {status}. You can continue the analysis.',
+                        provider_code=f'http_{status}', http_status=status)
             return
 
-        stop_reason: str = 'end_turn'
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
-        tool_calls_pending: list[dict[str, Any]] = []
+        try:
+            stop_reason: str = 'end_turn'
+            saw_finish = False
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            tool_calls_pending: list[dict[str, Any]] = []
 
-        for raw in resp.iter_lines(decode_unicode=True):
-            if not raw:
-                continue
-            try:
-                chunk = json.loads(raw)
-            except json.JSONDecodeError:
-                logger.debug('ollama: malformed chunk: %r', raw[:200])
-                continue
-
-            message = chunk.get('message') or {}
-            text = message.get('content') or ''
-            if text:
-                yield TextDelta(text=text)
-
-            for tc in message.get('tool_calls') or []:
-                tool_calls_pending.append(tc)
-
-            if chunk.get('done'):
-                done_reason = chunk.get('done_reason') or 'stop'
-                stop_reason = 'tool_use' if tool_calls_pending else 'end_turn'
-                if done_reason == 'length':
-                    stop_reason = 'max_tokens'
-                prompt_tokens = chunk.get('prompt_eval_count')
-                completion_tokens = chunk.get('eval_count')
-                break
-
-        # Emit accumulated tool_calls after the stream. Ollama doesn't
-        # give us an id per tool_call, so we synthesise one — a stable
-        # `ollama-<index>` id so the tool_result can reference it.
-        for idx, tc in enumerate(tool_calls_pending):
-            fn = tc.get('function') or {}
-            tool_use_id = tc.get('id') or f'ollama-{idx}'
-            name = fn.get('name') or ''
-            args = fn.get('arguments') or {}
-            if isinstance(args, str):
+            for raw in resp.iter_lines(decode_unicode=True):
+                if not raw:
+                    continue
                 try:
-                    args = json.loads(args)
+                    chunk = json.loads(raw)
                 except json.JSONDecodeError:
-                    args = {}
-            yield ToolUseStart(tool_use_id=tool_use_id, name=name)
-            yield ToolUseDelta(
-                tool_use_id=tool_use_id,
-                partial_json=json.dumps(args),
-            )
-            yield ToolUseEnd(
-                tool_use_id=tool_use_id, name=name, arguments=args)
+                    logger.debug('Provider returned a malformed stream frame')
+                    continue
 
-        yield MessageEnd(
-            stop_reason=stop_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-        )
+                message = chunk.get('message') or {}
+                text = message.get('content') or ''
+                if text:
+                    yield TextDelta(text=text)
+
+                for tc in message.get('tool_calls') or []:
+                    tool_calls_pending.append(tc)
+
+                if chunk.get('done'):
+                    saw_finish = True
+                    done_reason = chunk.get('done_reason') or 'stop'
+                    stop_reason = 'tool_use' if tool_calls_pending else 'end_turn'
+                    if done_reason == 'length':
+                        stop_reason = 'max_tokens'
+                    prompt_tokens = chunk.get('prompt_eval_count')
+                    completion_tokens = chunk.get('eval_count')
+                    break
+
+            resp.close()
+            if not saw_finish:
+                yield Error('Provider stream interrupted. You can continue the analysis.', provider_code='incomplete_stream')
+                return
+            # Emit accumulated tool_calls after the stream. Ollama doesn't
+            # give us an id per tool_call, so we synthesise one — a stable
+            # `ollama-<index>` id so the tool_result can reference it.
+            for idx, tc in enumerate(tool_calls_pending):
+                fn = tc.get('function') or {}
+                tool_use_id = tc.get('id') or f'ollama-{idx}'
+                name = fn.get('name') or ''
+                args = fn.get('arguments') or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except json.JSONDecodeError:
+                        args = {}
+                yield ToolUseStart(tool_use_id=tool_use_id, name=name)
+                yield ToolUseDelta(
+                    tool_use_id=tool_use_id,
+                    partial_json=json.dumps(args),
+                )
+                yield ToolUseEnd(
+                    tool_use_id=tool_use_id, name=name, arguments=args)
+
+            yield MessageEnd(
+                stop_reason=stop_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+            )
+        finally:
+            resp.close()
 
     @staticmethod
     def _build_body(

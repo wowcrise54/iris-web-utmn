@@ -63,6 +63,7 @@ from app.iris_engine.llm.providers.base import (
     ToolUseEnd,
 )
 from app.iris_engine.llm.redaction import redact_content_blocks
+from app.iris_engine.llm.diagnostics import provider_events
 from app.iris_engine.llm.system_prompt import system_prompt
 from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import CaseAccessLevel, WarRoomAccessLevel
@@ -497,8 +498,9 @@ def _consume_stream(
     tool_uses: list[dict[str, Any]] = []
     response_bytes = 0
 
-    for event in provider.stream_completion(
-        model=model, system=system, messages=history, tools=tools,
+    request_id = f'chat-{conversation.id}-{getattr(audit_row, "id", 0)}'
+    for event in provider_events(provider, correlation_id=request_id,
+        model=model, system=system, messages=history, tools=tools, max_tokens=2048,
     ):
         response_bytes += _event_bytes(event)
         if isinstance(event, TextDelta):
@@ -537,27 +539,29 @@ def _consume_stream(
                 response_bytes=response_bytes,
                 prompt_tokens=None, completion_tokens=None,
             )
-            emit(ChatEvent('error', {'message': event.message}))
+            if text_buffer:
+                _finalise_turn(text=''.join(text_buffer), tool_uses=[], stop_reason='error',
+                               conversation=conversation, emit=emit)
+            message = ('The AI provider returned HTTP 502. Partial output was saved. You can continue.'
+                       if event.http_status == 502 and text_buffer else
+                       'The AI provider returned HTTP 502. You can retry with a bounded analysis.'
+                       if event.http_status == 502 else event.message)
+            emit(ChatEvent('error', {'message': message, 'code': event.provider_code,
+                                    'http_status': event.http_status, 'request_id': request_id}))
             return _TurnResult(terminated=True)
         # ToolUseStart / ToolUseDelta — no-ops in the loop; the SPA
         # doesn't need them for reads because the final result renders
         # atomically once dispatched, and for writes the pending-row
         # notification carries the args anyway. Could surface later.
 
-    # Stream ended without a MessageEnd — treat as error but persist
-    # whatever text we captured so the analyst can see partial output.
-    case_chat_biz.finalise_egress(
-        audit_row=audit_row,
-        response_bytes=response_bytes,
-        prompt_tokens=None, completion_tokens=None,
-    )
-    return _finalise_turn(
-        text=''.join(text_buffer),
-        tool_uses=tool_uses,
-        stop_reason='end_turn',
-        conversation=conversation,
-        emit=emit,
-    )
+    # An abrupt stream is a failure; keep usable text without inventing a successful finish.
+    case_chat_biz.finalise_egress(audit_row=audit_row, response_bytes=response_bytes,
+                                prompt_tokens=None, completion_tokens=None)
+    if text_buffer:
+        _finalise_turn(text=''.join(text_buffer), tool_uses=[], stop_reason='error', conversation=conversation, emit=emit)
+    emit(ChatEvent('error', {'message': 'Provider stream interrupted. Partial output was saved. You can continue.' if text_buffer else 'Provider stream interrupted. You can retry.',
+                            'code': 'incomplete_stream', 'request_id': request_id}))
+    return _TurnResult(terminated=True)
 
 
 def _finalise_turn(
@@ -572,6 +576,8 @@ def _finalise_turn(
     content: list[dict[str, Any]] = []
     if text:
         content.append({'type': 'text', 'text': text})
+    if stop_reason == 'error':
+        content.append({'type': 'text', 'text': '\n\nЧастичный ответ: поток генерации прерван. Можно продолжить анализ.'})
     for tu in tool_uses:
         content.append({
             'type': 'tool_use',
@@ -589,6 +595,11 @@ def _finalise_turn(
         role=ROLE_ASSISTANT,
         content=content,
     )
+
+    if stop_reason == 'max_tokens' and not tool_uses:
+        assistant_msg.content = [*content, {'type': 'text', 'text': '\n\nResponse limit reached. Ask Yuki to continue.'}]
+        from app.db import db
+        db.session.commit()
 
     if not tool_uses:
         # Attach live usage so the panel's footer refreshes on every turn

@@ -89,121 +89,129 @@ class AnthropicProvider(LLMProvider):
                 url, json=body, headers=headers,
                 stream=True, timeout=_STREAM_TIMEOUT,
             )
-        except requests.RequestException as exc:
-            yield Error(message=f'anthropic: connection error: {exc}')
+        except requests.Timeout:
+            yield Error('Provider request timed out. You can continue the analysis.', provider_code='timeout')
+            return
+        except requests.RequestException:
+            yield Error(message='anthropic: provider connection failed.', provider_code='connection')
             return
 
         if resp.status_code != 200:
-            # Anthropic returns a JSON error body on non-2xx.
-            try:
-                err_body = resp.json()
-            except Exception:
-                err_body = {'error': {'message': resp.text[:500]}}
-            msg = err_body.get('error', {}).get('message') or resp.text[:500]
-            code = err_body.get('error', {}).get('type')
-            yield Error(message=f'anthropic: {msg}', provider_code=code)
+            status = resp.status_code
+            resp.close()
+            yield Error(message=f'anthropic: provider HTTP {status}. You can continue the analysis.',
+                        provider_code=f'http_{status}', http_status=status)
             return
 
-        # Track partial tool_use blocks across content_block_start /
-        # _delta / _stop. Keyed by `index` (Anthropic's block index),
-        # value is a dict with `tool_use_id`, `name`, `partial_json`.
-        pending_tool_use: dict[int, dict[str, Any]] = {}
-        stop_reason: str = 'end_turn'
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
-        cache_read_tokens: int | None = None
-        cache_creation_tokens: int | None = None
+        try:
+            # Track partial tool_use blocks across content_block_start /
+            # _delta / _stop. Keyed by `index` (Anthropic's block index),
+            # value is a dict with `tool_use_id`, `name`, `partial_json`.
+            pending_tool_use: dict[int, dict[str, Any]] = {}
+            stop_reason: str = 'end_turn'
+            saw_finish = False
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            cache_read_tokens: int | None = None
+            cache_creation_tokens: int | None = None
 
-        for event_type, payload in _iter_sse(resp):
-            if event_type in ('ping', ''):
-                continue
-            if event_type == 'message_start':
-                usage = payload.get('message', {}).get('usage') or {}
-                prompt_tokens = usage.get('input_tokens')
-                # Prompt-cache counters — present when the request used
-                # `cache_control` blocks and the model supports caching.
-                # Absent on non-cache models; leave as None so the audit
-                # row doesn't misreport "0 cache" as if caching was on.
-                if usage.get('cache_read_input_tokens') is not None:
-                    cache_read_tokens = usage['cache_read_input_tokens']
-                if usage.get('cache_creation_input_tokens') is not None:
-                    cache_creation_tokens = usage['cache_creation_input_tokens']
-                continue
-            if event_type == 'content_block_start':
-                block = payload.get('content_block') or {}
-                idx = payload.get('index', 0)
-                if block.get('type') == 'tool_use':
-                    tool_use_id = block.get('id') or ''
-                    name = block.get('name') or ''
-                    pending_tool_use[idx] = {
-                        'tool_use_id': tool_use_id,
-                        'name': name,
-                        'partial_json': '',
-                    }
-                    yield ToolUseStart(tool_use_id=tool_use_id, name=name)
-                continue
-            if event_type == 'content_block_delta':
-                delta = payload.get('delta') or {}
-                idx = payload.get('index', 0)
-                dtype = delta.get('type')
-                if dtype == 'text_delta':
-                    text = delta.get('text') or ''
-                    if text:
-                        yield TextDelta(text=text)
-                elif dtype == 'input_json_delta':
-                    entry = pending_tool_use.get(idx)
+            for event_type, payload in _iter_sse(resp):
+                if event_type in ('ping', ''):
+                    continue
+                if event_type == 'message_start':
+                    usage = payload.get('message', {}).get('usage') or {}
+                    prompt_tokens = usage.get('input_tokens')
+                    # Prompt-cache counters — present when the request used
+                    # `cache_control` blocks and the model supports caching.
+                    # Absent on non-cache models; leave as None so the audit
+                    # row doesn't misreport "0 cache" as if caching was on.
+                    if usage.get('cache_read_input_tokens') is not None:
+                        cache_read_tokens = usage['cache_read_input_tokens']
+                    if usage.get('cache_creation_input_tokens') is not None:
+                        cache_creation_tokens = usage['cache_creation_input_tokens']
+                    continue
+                if event_type == 'content_block_start':
+                    block = payload.get('content_block') or {}
+                    idx = payload.get('index', 0)
+                    if block.get('type') == 'tool_use':
+                        tool_use_id = block.get('id') or ''
+                        name = block.get('name') or ''
+                        pending_tool_use[idx] = {
+                            'tool_use_id': tool_use_id,
+                            'name': name,
+                            'partial_json': '',
+                        }
+                        yield ToolUseStart(tool_use_id=tool_use_id, name=name)
+                    continue
+                if event_type == 'content_block_delta':
+                    delta = payload.get('delta') or {}
+                    idx = payload.get('index', 0)
+                    dtype = delta.get('type')
+                    if dtype == 'text_delta':
+                        text = delta.get('text') or ''
+                        if text:
+                            yield TextDelta(text=text)
+                    elif dtype == 'input_json_delta':
+                        entry = pending_tool_use.get(idx)
+                        if entry is None:
+                            continue
+                        chunk = delta.get('partial_json') or ''
+                        entry['partial_json'] += chunk
+                        yield ToolUseDelta(
+                            tool_use_id=entry['tool_use_id'],
+                            partial_json=chunk,
+                        )
+                    continue
+                if event_type == 'content_block_stop':
+                    idx = payload.get('index', 0)
+                    entry = pending_tool_use.pop(idx, None)
                     if entry is None:
                         continue
-                    chunk = delta.get('partial_json') or ''
-                    entry['partial_json'] += chunk
-                    yield ToolUseDelta(
+                    try:
+                        args = json.loads(entry['partial_json'] or '{}')
+                    except json.JSONDecodeError:
+                        args = {}
+                    yield ToolUseEnd(
                         tool_use_id=entry['tool_use_id'],
-                        partial_json=chunk,
+                        name=entry['name'],
+                        arguments=args,
                     )
-                continue
-            if event_type == 'content_block_stop':
-                idx = payload.get('index', 0)
-                entry = pending_tool_use.pop(idx, None)
-                if entry is None:
                     continue
-                try:
-                    args = json.loads(entry['partial_json'] or '{}')
-                except json.JSONDecodeError:
-                    args = {}
-                yield ToolUseEnd(
-                    tool_use_id=entry['tool_use_id'],
-                    name=entry['name'],
-                    arguments=args,
-                )
-                continue
-            if event_type == 'message_delta':
-                delta = payload.get('delta') or {}
-                if delta.get('stop_reason'):
-                    stop_reason = delta['stop_reason']
-                usage = payload.get('usage') or {}
-                if usage.get('output_tokens') is not None:
-                    completion_tokens = usage['output_tokens']
-                continue
-            if event_type == 'message_stop':
-                break
-            # Unknown event type — Anthropic occasionally adds new ones
-            # (e.g. `ping`, `error`). Handle `error` specially, ignore
-            # anything else forward-compatibly.
-            if event_type == 'error':
-                err = payload.get('error', {})
-                yield Error(
-                    message=err.get('message', 'anthropic stream error'),
-                    provider_code=err.get('type'),
-                )
-                return
+                if event_type == 'message_delta':
+                    delta = payload.get('delta') or {}
+                    if delta.get('stop_reason'):
+                        stop_reason = delta['stop_reason']
+                    usage = payload.get('usage') or {}
+                    if usage.get('output_tokens') is not None:
+                        completion_tokens = usage['output_tokens']
+                    continue
+                if event_type == 'message_stop':
+                    saw_finish = True
+                    break
+                # Unknown event type — Anthropic occasionally adds new ones
+                # (e.g. `ping`, `error`). Handle `error` specially, ignore
+                # anything else forward-compatibly.
+                if event_type == 'error':
+                    err = payload.get('error', {})
+                    yield Error(
+                        message='Provider stream failed. You can continue the analysis.',
+                        provider_code='stream_error',
+                    )
+                    return
 
-        yield MessageEnd(
-            stop_reason=stop_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            cache_read_tokens=cache_read_tokens,
-            cache_creation_tokens=cache_creation_tokens,
-        )
+            resp.close()
+            if not saw_finish:
+                yield Error('Provider stream interrupted. You can continue the analysis.', provider_code='incomplete_stream')
+                return
+            yield MessageEnd(
+                stop_reason=stop_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+            )
+        finally:
+            resp.close()
 
     # -----------------------------------------------------------------
 
@@ -275,7 +283,7 @@ def _iter_sse(resp: requests.Response) -> Iterator[tuple[str, dict[str, Any]]]:
                 try:
                     payload = json.loads(joined)
                 except json.JSONDecodeError:
-                    logger.debug('anthropic: malformed data frame: %r', joined)
+                    logger.debug('Provider returned a malformed stream frame')
                     payload = {}
                 yield event_type, payload
             event_type = ''

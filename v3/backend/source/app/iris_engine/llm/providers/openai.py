@@ -96,102 +96,112 @@ class OpenAIProvider(LLMProvider):
                 url, json=body, headers=headers,
                 stream=True, timeout=_STREAM_TIMEOUT,
             )
-        except requests.RequestException as exc:
-            yield Error(message=f'openai: connection error: {exc}')
+        except requests.Timeout:
+            yield Error('Provider request timed out. You can continue the analysis.', provider_code='timeout')
+            return
+        except requests.RequestException:
+            yield Error(message='openai: provider connection failed.', provider_code='connection')
             return
 
         if resp.status_code != 200:
-            try:
-                err_body = resp.json()
-            except Exception:
-                err_body = {'error': {'message': resp.text[:500]}}
-            msg = err_body.get('error', {}).get('message') or resp.text[:500]
-            code = err_body.get('error', {}).get('code')
-            yield Error(message=f'openai: {msg}', provider_code=code)
+            status = resp.status_code
+            resp.close()
+            yield Error(message=f'openai: provider HTTP {status}. You can continue the analysis.',
+                        provider_code=f'http_{status}', http_status=status)
             return
 
-        # Accumulator for tool-call deltas keyed by `index` (OpenAI
-        # numbers parallel tool_calls the same way Anthropic numbers
-        # content blocks).
-        tool_calls: dict[int, dict[str, Any]] = {}
-        emitted_start: set[int] = set()
-        finish_reason: str = 'end_turn'
-        prompt_tokens: int | None = None
-        completion_tokens: int | None = None
-        cache_read_tokens: int | None = None
+        try:
+            # Accumulator for tool-call deltas keyed by `index` (OpenAI
+            # numbers parallel tool_calls the same way Anthropic numbers
+            # content blocks).
+            tool_calls: dict[int, dict[str, Any]] = {}
+            emitted_start: set[int] = set()
+            finish_reason: str = 'end_turn'
+            saw_finish = False
+            prompt_tokens: int | None = None
+            completion_tokens: int | None = None
+            cache_read_tokens: int | None = None
 
-        for chunk in _iter_openai_chunks(resp):
-            usage = chunk.get('usage')
-            if usage:
-                prompt_tokens = usage.get('prompt_tokens')
-                completion_tokens = usage.get('completion_tokens')
-                # Cache hits (`prompt_tokens_details.cached_tokens`) —
-                # emitted on models with automatic prompt caching. OpenAI
-                # has no cache-write concept, so `cache_creation_tokens`
-                # stays None here.
-                details = usage.get('prompt_tokens_details') or {}
-                if details.get('cached_tokens') is not None:
-                    cache_read_tokens = details['cached_tokens']
-                # `usage` typically appears in the final chunk with
-                # `choices: []`; safe to continue processing this frame.
+            for chunk in _iter_openai_chunks(resp):
+                usage = chunk.get('usage')
+                if usage:
+                    prompt_tokens = usage.get('prompt_tokens')
+                    completion_tokens = usage.get('completion_tokens')
+                    # Cache hits (`prompt_tokens_details.cached_tokens`) —
+                    # emitted on models with automatic prompt caching. OpenAI
+                    # has no cache-write concept, so `cache_creation_tokens`
+                    # stays None here.
+                    details = usage.get('prompt_tokens_details') or {}
+                    if details.get('cached_tokens') is not None:
+                        cache_read_tokens = details['cached_tokens']
+                    # `usage` typically appears in the final chunk with
+                    # `choices: []`; safe to continue processing this frame.
 
-            choices = chunk.get('choices') or []
-            if not choices:
-                continue
-            choice = choices[0]
-            delta = choice.get('delta') or {}
+                choices = chunk.get('choices') or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta = choice.get('delta') or {}
 
-            text = delta.get('content')
-            if isinstance(text, str) and text:
-                yield TextDelta(text=text)
+                text = delta.get('content')
+                if isinstance(text, str) and text:
+                    yield TextDelta(text=text)
 
-            for tc_delta in delta.get('tool_calls') or []:
-                idx = tc_delta.get('index', 0)
-                entry = tool_calls.setdefault(idx, {
-                    'id': '', 'name': '', 'partial_json': '',
-                })
-                if tc_delta.get('id'):
-                    entry['id'] = tc_delta['id']
-                fn = tc_delta.get('function') or {}
-                if fn.get('name'):
-                    entry['name'] = fn['name']
-                if idx not in emitted_start and entry['id'] and entry['name']:
-                    emitted_start.add(idx)
-                    yield ToolUseStart(
-                        tool_use_id=entry['id'], name=entry['name'])
-                arg_chunk = fn.get('arguments')
-                if isinstance(arg_chunk, str) and arg_chunk:
-                    entry['partial_json'] += arg_chunk
-                    if entry['id']:
-                        yield ToolUseDelta(
-                            tool_use_id=entry['id'],
-                            partial_json=arg_chunk,
-                        )
+                for tc_delta in delta.get('tool_calls') or []:
+                    idx = tc_delta.get('index', 0)
+                    entry = tool_calls.setdefault(idx, {
+                        'id': '', 'name': '', 'partial_json': '',
+                    })
+                    if tc_delta.get('id'):
+                        entry['id'] = tc_delta['id']
+                    fn = tc_delta.get('function') or {}
+                    if fn.get('name'):
+                        entry['name'] = fn['name']
+                    if idx not in emitted_start and entry['id'] and entry['name']:
+                        emitted_start.add(idx)
+                        yield ToolUseStart(
+                            tool_use_id=entry['id'], name=entry['name'])
+                    arg_chunk = fn.get('arguments')
+                    if isinstance(arg_chunk, str) and arg_chunk:
+                        entry['partial_json'] += arg_chunk
+                        if entry['id']:
+                            yield ToolUseDelta(
+                                tool_use_id=entry['id'],
+                                partial_json=arg_chunk,
+                            )
 
-            raw_finish = choice.get('finish_reason')
-            if raw_finish:
-                finish_reason = _FINISH_REASON_MAP.get(raw_finish, 'end_turn')
+                raw_finish = choice.get('finish_reason')
+                if raw_finish:
+                    saw_finish = True
+                    finish_reason = _FINISH_REASON_MAP.get(raw_finish, 'end_turn')
 
-        # After the stream ends, finalise every accumulated tool_call.
-        for entry in tool_calls.values():
-            if not entry['id']:
-                continue
-            try:
-                args = json.loads(entry['partial_json'] or '{}')
-            except json.JSONDecodeError:
-                args = {}
-            yield ToolUseEnd(
-                tool_use_id=entry['id'],
-                name=entry['name'],
-                arguments=args,
+            if not saw_finish:
+                resp.close()
+                yield Error('Provider stream interrupted. You can continue the analysis.', provider_code='incomplete_stream')
+                return
+            resp.close()
+            # After the stream ends, finalise every accumulated tool_call.
+            for entry in tool_calls.values():
+                if not entry['id']:
+                    continue
+                try:
+                    args = json.loads(entry['partial_json'] or '{}')
+                except json.JSONDecodeError:
+                    args = {}
+                yield ToolUseEnd(
+                    tool_use_id=entry['id'],
+                    name=entry['name'],
+                    arguments=args,
+                )
+
+            yield MessageEnd(
+                stop_reason=finish_reason,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cache_read_tokens=cache_read_tokens,
             )
-
-        yield MessageEnd(
-            stop_reason=finish_reason,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            cache_read_tokens=cache_read_tokens,
-        )
+        finally:
+            resp.close()
 
     # -----------------------------------------------------------------
 
@@ -316,4 +326,4 @@ def _iter_openai_chunks(resp: requests.Response) -> Iterator[dict[str, Any]]:
         try:
             yield json.loads(data)
         except json.JSONDecodeError:
-            logger.debug('openai: malformed chunk: %r', data)
+            logger.debug('Provider returned a malformed stream frame')

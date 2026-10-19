@@ -250,6 +250,11 @@ export type ChatProgressStage =
 export type ChatProgress = { stage: ChatProgressStage; tool_name?: string; tool_use_id?: string };
 
 export type ChatSocketHandlers = {
+	onAnalysisUpdated?: (payload: {
+		conversation_id: number;
+		analysis_id: number;
+		status: string;
+	}) => void;
 	onAssistantProgress?: (payload: ChatProgress & { conversation_id: number }) => void;
 	onDisconnect?: () => void;
 	onAssistantDelta?: (payload: { conversation_id: number; text: string }) => void;
@@ -300,6 +305,7 @@ export class ChatSocketClient {
 			reconnectionAttempts: 3
 		});
 
+		this.socket.on('analysis_updated', (p) => this.handlers.onAnalysisUpdated?.(p));
 		this.socket.on('assistant_progress', (p) => this.handlers.onAssistantProgress?.(p));
 		this.socket.on('disconnect', () => this.handlers.onDisconnect?.());
 		this.socket.on('assistant_delta', (p) => this.handlers.onAssistantDelta?.(p));

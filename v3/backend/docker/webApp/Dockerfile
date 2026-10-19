@@ -38,7 +38,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
-    && apt-get install -y --no-install-recommends p7zip-full pgp rsync postgresql-client \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends p7zip-full pgp rsync postgresql-client tshark libseccomp2 \
     && (apt-get purge -y --auto-remove 'imagemagick*' 'libmagickcore-*' 'libmagickwand-*' || true) \
     && rm -rf /var/lib/apt/lists/*
 

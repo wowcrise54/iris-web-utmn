@@ -435,6 +435,11 @@ def iris_alerts_update(args: dict) -> dict:
     if not payload:
         raise MCPError(protocol.INVALID_PARAMS, 'Payload must contain at least one field.')
 
+    # Enforce the advertised mutation boundary before ORM loading or side effects.
+    # The dispatcher does not validate nested payload properties.
+    if any(key not in _ALERT_UPDATE_PROPERTIES for key in payload):
+        raise MCPError(protocol.INVALID_PARAMS, 'Payload contains unsupported alert fields.')
+
     pristine_alert = copy.copy(alert)
 
     # Mirror the REST route's "unassign owner" convention so the LLM

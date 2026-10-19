@@ -59,3 +59,5 @@ from app.blueprints.rest.v2.mcp.tools import profile as _tools_profile
 from app.blueprints.rest.v2.mcp.tools import taxonomies as _tools_taxonomies
 from app.blueprints.rest.v2.mcp.tools import war_rooms as _tools_war_rooms
 from app.blueprints.rest.v2.mcp.tools import sandbox as _tools_sandbox
+
+from app.blueprints.rest.v2.mcp.tools import evidence_analysis as _tools_evidence_analysis
