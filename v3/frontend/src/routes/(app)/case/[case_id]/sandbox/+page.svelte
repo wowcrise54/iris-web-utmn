@@ -5,7 +5,7 @@
 	import { EvidenceAnalysisService } from '$lib/services/evidence-analysis.service';
 	import { useLocale } from '$lib/i18n/context';
 	import { Button } from '$lib/components/ui/button';
-	import { SandboxService, type SandboxScan, type SandboxLog, type LogPage } from '$lib/services/sandbox.service';
+	import { SandboxService, isSandboxCapture, type SandboxScan, type SandboxLog, type LogPage } from '$lib/services/sandbox.service';
 	import { CaseDatastoreService, type PaginatedFiles } from '$lib/services/case-datastore.service';
 	import type { DataStoreFile } from '$lib/types/resources/datastore';
 	import { WarRoomsService, type WarRoomCaseSummary } from '$lib/services/war-rooms.service';
@@ -102,6 +102,15 @@
 		if (res.ok && res.data && typeof res.data !== 'string') { logPage = res.data; currentLogId = log.id; }
 		else error = res.error?.message ?? t('Доступно скачивание оригинала', 'Download the original log');
 	}
+	async function analyzeCapture(log: SandboxLog) {
+		if (!selected || busy || !isSandboxCapture(log)) return;
+		busy = true; error = '';
+		try {
+			const res = await EvidenceAnalysisService.start(caseId, { kind: 'pcap', scan_id: selected.id, log_id: log.id });
+			if (res.ok && res.data && typeof res.data !== 'string') await goto(`/case/${caseId}/analysis?analysis=${res.data.id}`);
+			else error = res.error?.message ?? t('Не удалось запустить анализ', 'Could not start analysis');
+		} finally { busy = false; }
+	}
 	async function download(log: SandboxLog) {
 		try { await SandboxService.download(caseId, selected!.id, log); }
 		catch { error = t('Не удалось скачать лог', 'Unable to download log'); }
@@ -174,7 +183,7 @@
 				{#if ['failed', 'partial'].includes(selected.status) && selected.scan_id && access.canEdit()}<Button variant="outline" onclick={async () => { await SandboxService.resume(caseId, selected!.id); await refresh(); }}>{t('Возобновить получение результата', 'Resume fetching existing result')}</Button>{/if}
 				{#each selected.logs ?? [] as log (log.id)}
 					<div id={`sandbox-log-${log.id}`} class="flex flex-wrap items-center gap-2 border-t pt-2 text-sm"><span class="min-w-0 flex-1 break-all">#{log.id} · {log.name} · {log.kind} · {log.size ?? '?'} B</span>
-						{#if log.error}<span class="text-destructive">{log.error}</span>{:else}<Button size="sm" variant="outline" onclick={() => read(log)}>{t('Просмотр', 'View')}</Button>{#if !/\.mp4$/i.test(log.name)}<a class="text-xs underline" href={`/case/${caseId}/analysis?scan=${selected.id}&log=${log.id}`}>{t('PCAP · граф', 'PCAP · graph')}</a>{/if}<Button size="sm" variant="outline" onclick={() => download(log)}>{t('Скачать оригинал', 'Download original')}</Button>{/if}
+						{#if log.error}<span class="text-destructive">{log.error}</span>{:else}<Button size="sm" variant="outline" onclick={() => read(log)}>{t('Просмотр', 'View')}</Button>{#if isSandboxCapture(log)}<Button size="sm" variant="outline" disabled={busy} onclick={() => analyzeCapture(log)}>{t('PCAP · граф', 'PCAP · graph')}</Button>{/if}<Button size="sm" variant="outline" onclick={() => download(log)}>{t('Скачать оригинал', 'Download original')}</Button>{/if}
 					</div>
 				{/each}
 				{#if selected.report}<details><summary class="cursor-pointer text-sm">{t('Полный JSON отчёта', 'Full JSON report')}</summary><pre class="max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(selected.report, null, 2)}</pre></details>{/if}
@@ -182,7 +191,7 @@
 				{#if logPage}<div class="space-y-2"><p class="text-xs">{t('Смещение', 'Offset')}: {logPage.offset} {logPage.truncated ? t('· Показан ограниченный фрагмент; оригинал доступен для скачивания', '· Bounded preview; download the original for full data') : ''}</p><pre class="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{logPage.text}</pre>
 					{#if logPage.next_offset !== null}<Button variant="outline" onclick={() => read(selected!.logs!.find(log => log.id === currentLogId)!, logPage!.next_offset!)}>{t('Следующий фрагмент', 'Next page')}</Button>{/if}
 				</div>{/if}
-				{#if selected.report && chat}<div class="space-y-2 border-t pt-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={aiConsent} />{t('Разрешаю передать отчёт и текстовые логи настроенному провайдеру Yuki', 'Send this report and textual logs to the configured Yuki provider')}</label><Button disabled={!aiConsent || busy} onclick={analyze}>{t('Проанализировать с Yuki', 'Analyze with Yuki')}</Button></div>{/if}
+				{#if selected.report && chat}<div class="space-y-2 border-t pt-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={aiConsent} />{t('Разрешаю передать отчёт и текстовые логи настроенному провайдеру Yuki', 'Send this report and textual logs to the configured Yuki provider')}</label><p class="text-sm text-muted-foreground">{t('Текстовые логи обрабатываются последовательно. Большие логи могут потребовать тысячи запросов к провайдеру; действуют дневные лимиты токенов.', 'Text logs are processed sequentially. Large logs may require thousands of provider requests; daily token budgets apply.')}</p><Button disabled={!aiConsent || busy} onclick={analyze}>{t('Проанализировать с Yuki', 'Analyze with Yuki')}</Button></div>{/if}
 			</section>
 		{/if}
 	</div>

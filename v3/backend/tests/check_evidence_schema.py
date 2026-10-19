@@ -99,9 +99,12 @@ def main():
             broken = [False]
             def provider_stream(**kwargs):
                 calls.append(kwargs)
-                assert kwargs['max_tokens'] in (1024,2048)
-                yield base.TextDelta('partial findings' if broken[0] else 'Derived findings sandbox:1:log:9 offset 0')
-                if broken[0]:
+                assert kwargs['max_tokens'] in (1024,2048,4096,8192)
+                if broken[0] == 'budget' and kwargs['max_tokens'] == 1024:
+                    yield base.MessageEnd('max_tokens', prompt_tokens=10, completion_tokens=1024)
+                    return
+                yield base.TextDelta('partial findings' if broken[0] is True else 'Derived findings sandbox:1:log:9 offset 0')
+                if broken[0] is True:
                     yield base.Error('HTTP 502', provider_code='http_502', http_status=502)
                 else:
                     yield base.MessageEnd('end_turn', prompt_tokens=10, completion_tokens=10)
@@ -133,7 +136,14 @@ def main():
             sys.modules['app.iris_engine.evidence.tasks']=task_module
             scope['BusinessProcessingError']=ValueError
             retry=extract(SOURCE / 'app/business/evidence_analysis.py','retry_job',scope)
-            scope['evidence_pages']=lambda job:([{'source':'sandbox:1:log:9','offset':0,'end_offset':20,'text':'raw evidence 10.1.2.3'}],[])
+            class PreparedPages(list):
+                def coverage(self, progress): return []
+                def references(self, notes): return []
+            def evidence_pages(job):
+                job.result = {**job.result, 'source_signature':'fixture'}
+                return PreparedPages([{'source':'sandbox:1:log:9','offset':0,'end_offset':20,'text':'raw evidence 10.1.2.3'}]), []
+            scope['evidence_pages']=evidence_pages
+            scope['clear_cache']=lambda _:None
             job=Job(case_id=1,requested_by=2,conversation_id=3,kind='sandbox',source_key='sandbox:1',source={'scan_id':1},result={})
             session.add(job);session.commit()
             broken[0]=True
@@ -149,6 +159,31 @@ def main():
             assert all('raw evidence' not in json.dumps(m.content) for m in session.query(Message))
             assert '10.1.2.3' not in json.dumps([c['messages'][0].content for c in calls])
             assert all('raw evidence' not in json.dumps(a.get('request_snapshot')) for a in audits)
+            # An empty length-limited notes response requeues the same page and checkpoint.
+            job.status='queued';job.progress=0;job.result={};session.commit();broken[0]='budget'
+            old=len(calls)
+            process(job.id);session.refresh(job)
+            assert job.status=='queued' and job.progress==0 and job.result['summary_token_budget']==4096
+            assert len(calls)==old+1, 'Retry must execute in another task'
+            process(job.id);session.refresh(job)
+            assert job.progress==1 and 'summary_token_budget' not in job.result
+            process(job.id);session.refresh(job)
+            assert job.status=='completed' and calls[-1]['max_tokens']==2048
+            # Separate source notes survive subsequent logs and are combined only for the final report.
+            def two_sources(job):
+                job.result = {**job.result, 'source_signature':'fixture-two'}
+                return PreparedPages([{'source':label,'offset':0,'end_offset':20,'text':'raw evidence 10.1.2.3'}
+                                      for label in ('sandbox:1:log:9','sandbox:1:log:10')]), []
+            scope['evidence_pages']=two_sources
+            broken[0]=False;job.status='queued';job.progress=0;job.result={};session.commit()
+            process(job.id);session.refresh(job)
+            assert set(job.result['_source_summaries'])=={'sandbox:1:log:9'}
+            process(job.id);session.refresh(job)
+            assert set(job.result['_source_summaries'])=={'sandbox:1:log:9','sandbox:1:log:10'}
+            process(job.id);session.refresh(job)
+            assert job.status=='completed' and job.progress==2
+            final_input=json.dumps(calls[-1]['messages'][0].content)
+            assert 'sandbox:1:log:9' in final_input and 'sandbox:1:log:10' in final_input
             # Revoked access prevents another provider call.
             job.status='queued';session.get(User,2).active=False;session.commit();old=len(calls)
             process(job.id);session.refresh(job)

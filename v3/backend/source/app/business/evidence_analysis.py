@@ -19,10 +19,12 @@ def get_job(case_id, identifier, user_id):
 
 
 def projection(job, *, graph=True):
-    result = dict(job.result or {})
+    result = {key: value for key, value in (job.result or {}).items() if not key.startswith('_')}
     if not graph:
         # The LLM gets metadata and selected flows, never the complete graph or packets.
         result.pop('nodes', None)
+        if result.get('sources'):
+            result['sources'] = result['sources'][-20:]
         flows = result.pop('edges', [])
         if flows:
             result['flows'] = flows[:12]

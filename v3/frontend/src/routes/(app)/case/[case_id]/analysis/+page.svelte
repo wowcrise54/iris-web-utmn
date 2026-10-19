@@ -8,7 +8,12 @@
 		type AnalysisJob
 	} from '$lib/services/evidence-analysis.service';
 	import { CaseDatastoreService, type PaginatedFiles } from '$lib/services/case-datastore.service';
-	import { SandboxService } from '$lib/services/sandbox.service';
+	import {
+		SandboxService,
+		isSandboxCapture,
+		type SandboxScan,
+		type SandboxLog
+	} from '$lib/services/sandbox.service';
 	import type { DataStoreFile } from '$lib/types/resources/datastore';
 	import { CHAT_PANEL_CTX, type ChatPanelContext } from '$lib/contexts/chat-panel.context.svelte';
 	import VisNetwork from '$lib/components/common/VisNetwork/VisNetwork.svelte';
@@ -22,6 +27,13 @@
 	let selected = $state<AnalysisJob | null>(null);
 	let files = $state<DataStoreFile[]>([]);
 	let fileId = $state('');
+	let scanId = $state('');
+	let logId = $state('');
+	let scans = $state<SandboxScan[]>([]);
+	let logs = $state<SandboxLog[]>([]);
+	let scansBefore = $state<number | undefined>();
+	let moreScans = $state(false);
+	let logEpoch = 0;
 	let error = $state('');
 	let busy = $state(false);
 	let nextPage = $state<number | null>(1);
@@ -86,20 +98,56 @@
 				? (body as PaginatedFiles)
 				: (body.data as PaginatedFiles | undefined);
 			if (data) {
-				files = [...files, ...data.data];
+				files = [
+					...files,
+					...data.data.filter((f) =>
+						isSandboxCapture({ name: f.file_original_name, kind: '', error: null })
+					)
+				];
 				nextPage = data.next_page;
 			}
 		}
 	}
+	async function loadScans(append = false) {
+		const cid = caseId;
+		const result = await SandboxService.list(cid, append ? scansBefore : undefined);
+		if (!alive || cid !== caseId) return;
+		if (result.ok && result.data && typeof result.data !== 'string') {
+			const checks = result.data.checks;
+			const current = scans.find((s) => s.id === Number(scanId));
+			scans = append ? [...scans, ...checks] : checks;
+			if (current && !scans.some((s) => s.id === current.id)) scans = [current, ...scans];
+			scansBefore = checks.at(-1)?.id;
+			moreScans = checks.length === 50;
+		} else error = result.error?.message ?? 'Could not load Sandbox checks';
+	}
+	async function loadLogs(id: string, preferred = '') {
+		const epoch = ++logEpoch;
+		const cid = caseId;
+		logs = [];
+		logId = '';
+		if (!id) return;
+		const result = await SandboxService.get(cid, Number(id));
+		if (!alive || cid !== caseId || epoch !== logEpoch) return;
+		if (result.ok && result.data && typeof result.data !== 'string') {
+			const scan = result.data;
+			if (!scans.some((s) => s.id === scan.id)) scans = [scan, ...scans];
+			logs = (scan.logs ?? []).filter(isSandboxCapture);
+			logId = preferred
+				? logs.some((l) => String(l.id) === preferred)
+					? preferred
+					: ''
+				: String(logs[0]?.id ?? '');
+		} else error = result.error?.message ?? 'Could not load Sandbox checks';
+	}
 	async function start() {
+		if (!fileId && !(scanId && logId)) return;
 		busy = true;
 		error = '';
 		focus = '';
-		const scan = Number(page.url.searchParams.get('scan'));
-		const log = Number(page.url.searchParams.get('log'));
 		const result = await EvidenceAnalysisService.start(caseId, {
 			kind: 'pcap',
-			...(scan && log && !fileId ? { scan_id: scan, log_id: log } : { file_id: Number(fileId) })
+			...(fileId ? { file_id: Number(fileId) } : { scan_id: Number(scanId), log_id: Number(logId) })
 		});
 		if (result.ok && result.data && typeof result.data !== 'string') selected = result.data;
 		else error = result.error?.message ?? 'Could not start analysis';
@@ -162,11 +210,29 @@
 			jobs = [];
 			files = [];
 			fileId = '';
+			scanId = '';
+			logId = '';
+			scans = [];
+			logs = [];
+			logEpoch++;
 			focus = '';
 			error = '';
 			nextPage = 1;
 			void refresh();
 			void loadFiles();
+			void loadScans();
+		});
+	});
+	$effect(() => {
+		const scan = page.url.searchParams.get('scan') ?? '';
+		const log = page.url.searchParams.get('log') ?? '';
+		caseId;
+		untrack(() => {
+			if (/^[1-9]\d*$/.test(scan) && /^[1-9]\d*$/.test(log)) {
+				fileId = '';
+				scanId = scan;
+				void loadLogs(scan, log);
+			}
 		});
 	});
 	onMount(() => {
@@ -198,12 +264,18 @@
 		{#if error}<p role="alert" class="text-destructive">{irisT(error, $locale)}</p>{/if}
 		<section class="space-y-3 rounded-lg border p-4">
 			<label class="block text-sm" for="pcap-file">{irisT('Case file', $locale)}</label>
-			<select id="pcap-file" class="w-full rounded border bg-background p-2" bind:value={fileId}>
-				<option value=""
-					>{page.url.searchParams.has('log')
-						? `Sandbox #${page.url.searchParams.get('scan')} · log #${page.url.searchParams.get('log')}`
-						: irisT('Select file', $locale)}</option
-				>
+			<select
+				id="pcap-file"
+				class="w-full rounded border bg-background p-2"
+				bind:value={fileId}
+				onchange={() => {
+					scanId = '';
+					logId = '';
+					logs = [];
+					logEpoch++;
+				}}
+			>
+				<option value="">{irisT('Select file', $locale)}</option>
 				{#each files as file (file.file_id)}<option value={String(file.file_id)}
 						>#{file.file_id} · {file.file_original_name}</option
 					>{/each}
@@ -211,7 +283,36 @@
 			{#if nextPage}<Button variant="ghost" onclick={loadFiles}
 					>{irisT('More files', $locale)}</Button
 				>{/if}
-			<Button onclick={start} disabled={busy || (!fileId && !page.url.searchParams.has('log'))}
+			<label class="block text-sm" for="pcap-scan">{irisT('Sandbox check', $locale)}</label>
+			<select
+				id="pcap-scan"
+				class="w-full rounded border bg-background p-2"
+				bind:value={scanId}
+				onchange={() => {
+					fileId = '';
+					void loadLogs(scanId);
+				}}
+			>
+				<option value="">{irisT('Select Sandbox check', $locale)}</option>
+				{#each scans as scan (scan.id)}<option value={String(scan.id)}
+						>#{scan.id} · {scan.file_name}</option
+					>{/each}
+			</select>
+			{#if moreScans}<Button variant="ghost" onclick={() => loadScans(true)}
+					>{irisT('More Sandbox checks', $locale)}</Button
+				>{/if}
+			{#if scanId}
+				<label class="block text-sm" for="pcap-log">{irisT('Sandbox capture', $locale)}</label>
+				<select id="pcap-log" class="w-full rounded border bg-background p-2" bind:value={logId}>
+					<option value="">{irisT('Select PCAP attachment', $locale)}</option>
+					{#each logs as log (log.id)}<option value={String(log.id)}>#{log.id} · {log.name}</option
+						>{/each}
+				</select>
+				{#if !logs.length}<p class="text-sm text-muted-foreground">
+						{irisT('No PCAP attachments in this check', $locale)}
+					</p>{/if}
+			{/if}
+			<Button onclick={start} disabled={busy || (!fileId && !(scanId && logId))}
 				>{irisT('Analyze PCAP locally', $locale)}</Button
 			>
 		</section>
@@ -245,6 +346,33 @@
 				{#if selected.result.partial}<p class="text-sm text-muted-foreground">
 						{irisT('Partial coverage: processing or graph limits were reached.', $locale)}
 					</p>{/if}
+				{#if selected.kind === 'sandbox' && selected.result.coverage?.length}
+					<h3>{irisT('Text log coverage', $locale)}</h3>
+					<p class="text-sm text-muted-foreground">
+						{irisT('Coverage shows processed text, not proof that activity is safe.', $locale)}
+					</p>
+					<ul class="space-y-2 text-sm">
+						{#each selected.result.coverage as item (item.source)}
+							<li>
+								<a class="underline" href={item.source_url}>{item.name}</a> ·
+								{#if item.excluded}{irisT('Excluded non-text attachment', $locale)}
+								{:else}{item.processed_pages}/{item.pages}
+									{irisT('Blocks processed', $locale)} ·
+									{item.processed_characters.toLocaleString()}/{item.characters.toLocaleString()}
+									{irisT('Characters', $locale)} ·
+									{irisT(
+										item.complete
+											? 'Fully processed'
+											: item.truncated || item.error
+												? 'Incomplete coverage'
+												: 'Processing',
+										$locale
+									)}
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if selected.result.summary}<MarkDownPreview markdown={selected.result.summary} />{/if}
 				{#if selected.result.partial_response}<MarkDownPreview
 						markdown={selected.result.partial_response}

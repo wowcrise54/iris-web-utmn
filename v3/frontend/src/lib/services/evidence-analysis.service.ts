@@ -43,6 +43,19 @@ export interface AnalysisJob {
 		edges?: AnalysisFlow[];
 		indicators?: { value: string; frame: number; timestamp: number }[];
 		omissions?: string[];
+		coverage?: {
+			source: string;
+			name: string;
+			source_url: string;
+			characters: number;
+			processed_characters: number;
+			pages: number;
+			processed_pages: number;
+			complete: boolean;
+			excluded?: string | null;
+			truncated: boolean;
+			error?: string | null;
+		}[];
 		sources?: { source: string; offset: number; end_offset: number; source_url?: string }[];
 	};
 }

@@ -1,14 +1,13 @@
 """Case-scoped sandbox operations, secrets and bounded log reading."""
 import copy
 import datetime as dt
-import gzip
 import hashlib
-import io
 from pathlib import Path
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer
 from app.db import db
+from app.iris_engine.evidence.text import text_chunks, BinaryLogError
 from app.models.models import IrisModule
 from app.models.sandbox import SandboxScan, SandboxLog
 from app.models.war_rooms import WarRoomCase
@@ -195,30 +194,28 @@ def read_log(case_id, scan_id, log_id):
     return log
 
 
-def decoded_text_log(log):
+def text_page(log, offset=0, length=12000):
     if log.content is None:
         raise BusinessProcessingError(log.error or 'Log is not available')
-    raw = log.content
-    cap = 16 * 1024 * 1024
-    # Decompress only a bounded prefix; never extract archives to disk.
+    state, parts, position = {}, [], 0
+    wanted = max(0, int(offset))
+    length = min(12000, max(1, int(length)))
+    stream = text_chunks(bytes(log.content), state)
     try:
-        if raw.startswith(b'\x1f\x8b'):
-            with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
-                raw = stream.read(cap + 1)
-        elif raw.startswith(b'\x28\xb5\x2f\xfd'):
-            import zstandard
-            with zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)) as stream:
-                raw = stream.read(cap + 1)
+        for chunk in stream:
+            end = position + len(chunk)
+            if end > wanted:
+                parts.append(chunk[max(0, wanted - position):max(0, wanted + length + 1 - position)])
+            position = end
+            if position > wanted + length:
+                break
+    except BinaryLogError:
+        raise BusinessProcessingError('Binary log: download the original; textual analysis is unavailable') from None
     except Exception:
-        raise BusinessProcessingError('Unable to decode this compressed log; download the original') from None
-    if b'\x00' in raw[:4096] or raw[:4] in (b'\xd4\xc3\xb2\xa1', b'\x0a\x0d\x0d\x0a', b'PK\x03\x04'):
-        raise BusinessProcessingError('Binary log: download the original; textual analysis is unavailable')
-    decoded = raw[:cap].decode('utf-8', errors='replace')
-    return decoded, len(raw) > cap
-
-
-def text_page(log, offset=0, length=12000):
-    decoded, truncated = decoded_text_log(log)
-    return {'log_id': log.id, 'name': log.name, 'offset': offset, 'text': decoded[offset:offset + length],
-            'next_offset': offset + length if offset + length < len(decoded) else None,
-            'truncated': truncated, 'untrusted_data': True}
+        raise BusinessProcessingError('Unable to decode this log; download the original') from None
+    finally:
+        stream.close()
+    text = ''.join(parts)
+    return {'log_id': log.id, 'name': log.name, 'offset': wanted, 'text': text[:length],
+            'next_offset': wanted + length if len(text) > length else None,
+            'truncated': state.get('truncated', False), 'untrusted_data': True}

@@ -14,6 +14,10 @@ export interface SandboxScan {
 export interface SandboxList { enabled: boolean; checks: SandboxScan[]; target_version: string }
 export interface LogPage { text: string; offset: number; next_offset: number | null; truncated: boolean }
 
+export function isSandboxCapture(log: Pick<SandboxLog, 'name' | 'kind' | 'error'>) {
+	return !log.error && /\.(pcap|pcapng)(\.(gz|zst))?$/i.test(log.name);
+}
+
 export class SandboxService {
 	static fileInfo(caseId: number, fileId: number) {
 		return ApiService.get<{ file_name: string; size: number; is_stored_zip: boolean }>(`/cases/${caseId}/sandbox/files/${fileId}/submission-info`);

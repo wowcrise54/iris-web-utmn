@@ -4783,5 +4783,22 @@
   "Provider response exceeded the safe output limit.": "Ответ провайдера превысил безопасный лимит объёма.",
   "Provider returned an invalid stream. You can continue the analysis.": "Провайдер вернул некорректный поток. Можно продолжить анализ.",
   "Provider response could not be processed. You can continue the analysis.": "Не удалось обработать ответ провайдера. Можно продолжить анализ.",
-  "More files": "Ещё файлы"
+  "More files": "Ещё файлы",
+  "Sandbox check": "Проверка Sandbox",
+  "Select Sandbox check": "Выберите проверку Sandbox",
+  "More Sandbox checks": "Ещё проверки Sandbox",
+  "Sandbox capture": "Сетевой захват Sandbox",
+  "Select PCAP attachment": "Выберите вложение PCAP",
+  "No PCAP attachments in this check": "В этой проверке нет вложений PCAP",
+  "Could not load Sandbox checks": "Не удалось загрузить проверки Sandbox",
+  "Provider exhausted the token budget without an answer. Use a non-thinking model or reduce reasoning.": "Модель исчерпала лимит токенов без ответа. Выберите модель без режима рассуждений или уменьшите его бюджет.",
+  "Provider returned an empty answer. Check the configured model.": "Провайдер вернул пустой ответ. Проверьте выбранную модель.",
+  "Text log coverage": "Покрытие текстовых логов",
+  "Coverage shows processed text, not proof that activity is safe.": "Покрытие показывает объём обработанного текста и не доказывает безопасность активности.",
+  "Excluded non-text attachment": "Нетекстовое вложение исключено",
+  "Blocks processed": "блоков обработано",
+  "Characters": "символов",
+  "Fully processed": "Обработан полностью",
+  "Incomplete coverage": "Неполное покрытие",
+  "Processing": "Обработка"
 }

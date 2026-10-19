@@ -264,37 +264,86 @@ def test_adapters_do_not_mark_abrupt_stream_as_completed(events, monkeypatch, na
     assert response.close.called
 
 
-def test_long_log_sampling_includes_tail_and_retains_real_offsets():
-    summary = load(ENGINE / 'summary.py', 'evidence_sampling_test')
-    text = 'x' * 120000 + 'important final events'
-    windows, partial = summary.sampled_pages(text, 'log:123')
-    assert partial and len(windows) == 8
-    assert windows[0]['offset'] == 0
-    assert windows[-1]['text'].endswith('important final events')
-    for window in windows:
-        assert window['text'] == text[window['offset']:window['end_offset']]
-
-
-def test_sandbox_windows_cover_multiple_sources_and_exclude_binary(monkeypatch):
-    summary = load(ENGINE / 'summary.py', 'evidence_windows_test')
-    entries = [SimpleNamespace(id=i,content=b'evidence') for i in (1,2,3)]
+def test_sequential_pages_cover_all_sources_and_exclude_binary(monkeypatch, tmp_path):
+    text = load(ENGINE / 'text.py', 'evidence_text_sequence_test')
+    raw = ('начало\n' + 'event command line\n' * 10000 + 'critical last event').encode()
+    entries = [SimpleNamespace(id=i, name=name, kind=kind, size=len(content), sha256=str(i), error=None, content=content)
+               for i, name, kind, content in [(1, 'events.log.gz', 'EVENT_NORMALIZED', gzip.compress(raw)),
+                                              (2, 'short.log', 'EVENT_CORRELATED', b'important short log'),
+                                              (3, 'video.mp4', 'SCREENSHOT', b'video')]]
     query = Mock()
-    query.options.return_value.filter_by.return_value.order_by.return_value.yield_per.return_value = entries
-    monkeypatch.setitem(sys.modules,'app.models.sandbox',SimpleNamespace(SandboxLog=SimpleNamespace(query=query,content='content',id='id')))
-    def decode(entry):
-        if entry.id == 3: raise RuntimeError('binary video content')
-        return ('x' * 120000 if entry.id == 1 else 'important short log', False)
-    namespace = dict(json=json,sampled_pages=summary.sampled_pages,MAX_PAGES=64,defer=lambda x:x,
-        BusinessProcessingError=RuntimeError,db=SimpleNamespace(session=Mock()),
-        ptsandbox=SimpleNamespace(get_scan=lambda *args:SimpleNamespace(id=7,report={'large':'r'*120000}),decoded_text_log=decode))
-    collect = extract(ENGINE / 'tasks.py','evidence_pages',namespace)
-    chunks, omissions = collect(SimpleNamespace(case_id=2,source={'scan_id':7}))
-    assert chunks[2]['source'] == 'sandbox:7:log:2', 'Long first log must not crowd out later logs'
-    assert all('binary video content' not in chunk['text'] for chunk in chunks)
-    assert any('log:3 binary' in omission for omission in omissions)
-    assert any('not exhaustive' in omission for omission in omissions)
-    assert any(chunk['end_offset']==120000 and chunk['source']=='sandbox:7:log:1' for chunk in chunks)
-    assert 'text_log=2&offset=0' in chunks[2]['source_url']
+    query.options.return_value.filter_by.return_value.order_by.return_value = entries
+    monkeypatch.setitem(sys.modules, 'app.models.sandbox', SimpleNamespace(SandboxLog=SimpleNamespace(query=query, content='content', id='id')))
+    namespace = dict(json=json, hashlib=__import__('hashlib'), defer=lambda x:x,
+        db=SimpleNamespace(session=Mock()), text_chunks=text.text_chunks, write_pages=text.write_pages,
+        TextPages=text.TextPages, cache_folder=lambda _:tmp_path, MAX_CACHE_BYTES=text.MAX_CACHE_BYTES,
+        ptsandbox=SimpleNamespace(get_scan=lambda *args:SimpleNamespace(id=7,report={'large':'r'*120000})))
+    collect = extract(ENGINE / 'tasks.py', 'evidence_pages', namespace)
+    job = SimpleNamespace(id=9, case_id=2, source={'scan_id':7}, progress=0, result={})
+    chunks, omissions = collect(job)
+    assert not omissions and len(chunks)>20
+    selected = [chunks[i] for i in range(len(chunks)) if chunks[i]['source']=='sandbox:7:log:1']
+    assert ''.join(page['text'] for page in selected).encode() == raw
+    assert selected[-1]['text'].endswith('critical last event')
+    assert all(page['end_offset']==selected[i+1]['offset'] for i,page in enumerate(selected[:-1]))
+    assert chunks.coverage(len(chunks))[1]['complete']
+    assert chunks.coverage(1)[1]['processed_pages']==0
+    assert chunks.coverage(len(chunks))[3]['excluded']
+    assert not chunks.references('[sandbox:7:log:1@999999999]')
+    assert chunks.references('[sandbox:7:log:1@0]')[0]['text'].startswith('начало')
+    # Cached pages are reused, without rerunning the decoder.
+    namespace['text_chunks'] = Mock(side_effect=AssertionError('must reuse cache'))
+    again, _ = collect(job)
+    assert len(again)==len(chunks)
+    # Rebuild a lost cache without losing a sequential checkpoint.
+    namespace['text_chunks'] = text.text_chunks
+    (tmp_path/'1.idx').unlink()
+    job.progress = 5
+    rebuilt, _ = collect(job)
+    assert job.progress == 5 and len(rebuilt) == len(chunks)
+    assert rebuilt[5] == chunks[5]
+    # Old sampled checkpoints must restart, not mix with a full-pass report.
+    job.result.pop('text_analysis_version')
+    job.result['summary'] = 'legacy sampled notes'
+    collect(job)
+    assert job.progress == 0 and 'summary' not in job.result
+    assert job.result['legacy_checkpoint_restarted']
+    entries[0].sha256='changed'
+    with pytest.raises(ValueError, match='Source evidence changed'):
+        collect(job)
+
+
+def test_text_cache_reaches_beyond_old_prefix_limit_and_keeps_exact_offsets(tmp_path):
+    text = load(ENGINE / 'text.py', 'evidence_text_large_test')
+    raw = (b'log event\n' * 1800000) + 'финальное событие'.encode()
+    state = {}
+    info = text.write_pages(tmp_path, 0, text.text_chunks(gzip.compress(raw), state))
+    assert info['characters']>16*1024*1024 and not state['truncated'] and not info['error']
+    last = text.read_page(tmp_path, 0, info['pages']-1)
+    assert last.endswith('финальное событие')
+    assert len(text.read_page(tmp_path, 0, 1400))==text.PAGE_CHARS
+
+
+def test_text_decoding_and_cache_limits_are_explicit(tmp_path):
+    text = load(ENGINE / 'text.py', 'evidence_text_limits_test')
+    state = {}
+    info = text.write_pages(tmp_path, 0, text.text_chunks(gzip.compress(b'x'*30000), state, limit=20000))
+    assert state['truncated'] and info['characters']==20000
+    info = text.write_pages(tmp_path, 1, iter(['x'*30000]), budget=12000)
+    assert info['truncated'] and info['characters']==12000
+    broken = gzip.compress(b'x'*100000)[:-8]
+    info = text.write_pages(tmp_path, 2, text.text_chunks(broken, {}))
+    assert info['error']=='EOFError' and info['characters']>0
+    info = text.write_pages(tmp_path, 3, text.text_chunks(b'\x00binary', {}))
+    assert info['error']=='BinaryLogError' and info['pages']==0
+
+
+def test_private_cache_details_never_leave_job_projection():
+    project = extract(SOURCE / 'app/business/evidence_analysis.py', 'projection', {})
+    job = SimpleNamespace(id=1,case_id=2,kind='sandbox',status='running',progress=1,total=2,error=None,conversation_id=3,
+                          result={'_text_manifest':[{'private':'cache'}], '_source_summaries':{'private':'notes'}, 'coverage':[]})
+    assert '_text_manifest' not in project(job)['result']
+    assert '_source_summaries' not in project(job,graph=False)['result']
 
 
 @pytest.mark.skipif(sys.platform != 'linux', reason='Linux process launcher')
@@ -322,7 +371,8 @@ def test_initial_provider_timeout_is_distinct_from_connection_failure(events, mo
 
 
 @pytest.mark.parametrize('live_level', [20, 40])
-def test_background_summary_preserves_pinned_chat_policy(events, live_level):
+@pytest.mark.parametrize('response', ['text', 'text_limit', 'empty_limit', 'empty_stop', 'interrupted', 'empty_final_limit', 'empty_retry_exhausted'])
+def test_background_summary_preserves_pinned_chat_policy(events, live_level, response):
     base, diagnostics = events
     conv_type, policy_type = object(), object()
     pinned = SimpleNamespace(id=11)
@@ -334,8 +384,10 @@ def test_background_summary_preserves_pinned_chat_policy(events, live_level):
                           daily_token_budget_per_user=0, daily_token_budget_org=0)
     configure = Mock(return_value=cfg)
     def stream(**kwargs):
-        yield base.TextDelta('summary')
-        yield base.MessageEnd('end_turn', prompt_tokens=1, completion_tokens=1)
+        if response in ('text', 'text_limit'):
+            yield base.TextDelta('summary')
+        if response != 'interrupted':
+            yield base.MessageEnd('end_turn' if response in ('text', 'empty_stop') else 'max_tokens', prompt_tokens=1, completion_tokens=1024)
     provider = SimpleNamespace(name='test', stream_completion=stream)
     summary = load(ENGINE / 'summary.py', 'evidence_policy_summary_test')
     namespace = dict(db=SimpleNamespace(session=session), CaseChatConversation=conv_type, ChatbotPolicy=policy_type,
@@ -344,12 +396,68 @@ def test_background_summary_preserves_pinned_chat_policy(events, live_level):
         case_chat=SimpleNamespace(sum_tokens_today=lambda **kw: 0, record_egress=Mock(return_value=SimpleNamespace(id=9)), finalise_egress=Mock()),
         summary_messages=summary.summary_messages, redact_text=lambda value, **kwargs: value,
         provider_events=diagnostics.provider_events, FINAL_TOKENS=2048, SUMMARY_TOKENS=1024,
-        TextDelta=base.TextDelta, MessageEnd=base.MessageEnd, Error=base.Error)
+        TextDelta=base.TextDelta, MessageEnd=base.MessageEnd, Error=base.Error, log=Mock())
     fn=extract(ENGINE / 'tasks.py', 'summarize', namespace)
     job=SimpleNamespace(id=4, case_id=3, conversation_id=1, progress=0, result={})
     if live_level > 30:
         with pytest.raises(ValueError, match='policy changed'): fn(job, SimpleNamespace(id=2), '', None)
         configure.assert_not_called()
     else:
-        assert fn(job, SimpleNamespace(id=2), 'notes', None)=='summary'
+        if response == 'empty_retry_exhausted':
+            job.result = {'summary_token_budget': 8192}
+        page = {'text': 'untrusted data'} if response in ('text_limit', 'empty_limit', 'empty_retry_exhausted') else None
+        if response in ('text', 'text_limit'):
+            assert fn(job, SimpleNamespace(id=2), 'notes', page) == 'summary'
+            if response == 'text_limit':
+                assert job.result['notes_limited'] == 1
+        elif response == 'empty_limit':
+            assert fn(job, SimpleNamespace(id=2), 'notes', page) is None
+            assert job.result['summary_token_budget'] == 4096
+        else:
+            message = {'empty_stop': 'empty answer', 'interrupted': 'stream ended',
+                       'empty_final_limit': 'token budget', 'empty_retry_exhausted': 'token budget'}[response]
+            with pytest.raises(ValueError, match=message):
+                fn(job, SimpleNamespace(id=2), 'notes', page)
         configure.assert_called_once_with(policy=pinned)
+
+
+def test_cache_expiry_and_cleanup_only_touch_private_job_files(monkeypatch, tmp_path):
+    text = load(ENGINE / 'text.py', 'evidence_text_cleanup_test')
+    monkeypatch.setitem(sys.modules, 'app', SimpleNamespace(app=SimpleNamespace(config={'DATASTORE_PATH': str(tmp_path/'datastore')})))
+    folder = text.cache_folder(77)
+    text.write_pages(folder, 0, iter(['evidence']))
+    text.clear_cache(77)
+    assert not folder.exists()
+    folder = text.cache_folder(78)
+    text.write_pages(folder, 0, iter(['expired evidence']))
+    past = __import__('time').time() - 73*3600
+    os.utime(folder, (past,past))
+    active = text.cache_folder(79)
+    text.prune_caches()
+    assert not folder.exists() and active.exists()
+
+
+
+def test_zstd_log_with_multimegabyte_window_is_read_to_end(tmp_path):
+    zstd = pytest.importorskip('zstandard')
+    text = load(ENGINE / 'text.py', 'evidence_zstd_window_test')
+    raw = b'event metadata\n' * 200000 + b'last event'
+    params = zstd.ZstdCompressionParameters.from_level(3, window_log=21, write_content_size=0)
+    compressed = zstd.ZstdCompressor(compression_params=params).compress(raw)
+    assert zstd.get_frame_parameters(compressed).window_size >= 2*1024*1024
+    state = {}
+    info = text.write_pages(tmp_path, 0, text.text_chunks(compressed, state))
+    assert not info['error'] and not state['truncated']
+    assert text.read_page(tmp_path, 0, info['pages']-1).endswith('last event')
+
+
+def test_zstd_truncation_and_concatenated_frames_are_not_silently_accepted(tmp_path):
+    zstd = pytest.importorskip('zstandard')
+    text = load(ENGINE / 'text.py', 'evidence_zstd_eof_test')
+    raw = b'first event\n' * 20000
+    compressed = zstd.ZstdCompressor().compress(raw)
+    info = text.write_pages(tmp_path, 0, text.text_chunks(compressed[:-3], {}))
+    assert info['error'] == 'EOFError'
+    joined = compressed + zstd.ZstdCompressor().compress(b'last event')
+    info = text.write_pages(tmp_path, 1, text.text_chunks(joined, {}))
+    assert not info['error'] and text.read_page(tmp_path, 1, info['pages']-1).endswith('last event')

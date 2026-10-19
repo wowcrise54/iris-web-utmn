@@ -33,14 +33,39 @@ A host/domain appearing in a capture is an observable, not proof of maliciousnes
 
 ## Sandbox summaries
 
-Instead of replaying raw pages through the interactive chat history, the worker
-reads up to 64 pages of 12,000 characters across the report and available text
-logs. For large sources, up to eight windows are sampled across the beginning,
-middle and end. Windows are interleaved across sources, and sampling is explicitly
-reported as non-exhaustive. Every step folds one page into a rolling factual summary of at most 1,024
-tokens; the final answer is limited to 2,048 tokens. Log IDs, character offsets,
-coverage and skipped binary/video/unavailable logs are retained. The existing
-16 MiB decoded text limit still applies. Only derived summaries enter the chat.
+The worker reads the report and every available text log sequentially, in blocks
+of 12,000 characters. There is no eight-window sampling or 64-page ceiling.
+Gzip and zstd are decoded as bounded streams. Each source has its own rolling
+notes and exact character offsets; the final report combines all source notes
+and checks up to four cited full-page excerpts against the original cached text.
+It must give a qualified verdict, confidence, a chronology, supporting evidence,
+benign alternatives and limitations. Processing all available text does not prove
+that all activity was observable or that the system was safe.
+
+Limits are explicit: 100 MiB compressed per log, 256 MiB decoded per log and
+512 MiB of decoded UTF-8 cache per job. A corrupt, unavailable or capped text
+source makes coverage incomplete and the completed job partial. Truncated intermediate notes also make the result partial, even when all input blocks were delivered to the model. Binary/graph/video
+attachments are excluded and separately labelled, without pretending to analyse
+them as text. The UI shows processed blocks and characters per source. Source
+links can read past the old 16 MiB prefix. At most 200 recent page links are
+returned; source IDs and exact offsets remain valid for older citations.
+
+The private cache is next to DATASTORE_PATH under evidence-analysis/<job-id>,
+with directory/file modes 0700/0600. Only the worker reads it; it is not a public
+file endpoint. Original evidence stays unchanged. Cache/index metadata and
+per-source notes are excluded from public job projections. Successful jobs remove
+the cache; caches unused for 72 hours are pruned. Failed jobs retain checkpoints;
+a missing cache is rebuilt from unchanged source metadata on continuation.
+Legacy sampled checkpoints restart from block zero instead of claiming full
+coverage. New state fits the existing job JSON; no database migration is needed.
+
+A complete pass can require thousands of provider calls, unlike the earlier
+sampled pass. The Sandbox launch form states this beside the existing explicit
+provider consent. Existing user/organisation daily token budgets apply to every
+block and retry. A budget failure preserves progress for explicit continuation.
+Only derived summaries enter chat history. The ordinary notes budget is 1,024
+tokens, with bounded empty-answer retries described below; final output remains
+limited to 2,048 tokens.
 
 Every provider call rechecks user/case access, keeps the conversation pinned policy,
 rejects a stricter live case policy, and applies redaction
@@ -85,3 +110,20 @@ identify the selected Compose project and its four files, verify records/mounts,
 and take a fresh pg_dump before recreating or migrating the selected application.
 Do not reset/replace existing volumes. The verification image/container names
 used during development must not replace the selected production stack.
+
+## Empty responses and Sandbox attachments
+
+Intermediate notes normally request 1,024 output tokens. If a model ends with
+`max_tokens` and no visible answer, the worker requeues the same page with 4,096,
+then at most 8,192 tokens. Each attempt has its own egress accounting and rechecks
+case access, the pinned policy and daily budgets. Progress advances only after a
+visible answer. Final responses keep the 2,048-token limit. Exhaustion, empty
+completed responses and broken streams have distinct errors; hidden reasoning is
+never displayed or substituted for evidence findings.
+
+The analysis page selects either a case datastore file or a Sandbox check and its
+PCAP/PCAPNG attachment (including gzip/zstd wrappers). Sandbox sources are read
+through their existing case-scoped log storage. The report's PCAP action starts
+a job directly using `scan_id` and `log_id`; no copying into datastore is required.
+Text logs, proprietary `graph.bin` files and MP4 are not offered as captures.
+Capture magic validation remains authoritative on the backend.

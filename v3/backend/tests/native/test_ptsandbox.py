@@ -134,8 +134,12 @@ def load_without_app_imports(relative_path, namespace):
 
 @pytest.fixture
 def business(client_module):
+    spec = importlib.util.spec_from_file_location('sandbox_text_helpers_test', SOURCE / 'app/iris_engine/evidence/text.py')
+    helpers = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helpers)
     return load_without_app_imports('app/business/ptsandbox.py', {
         'BusinessProcessingError': RuntimeError, 'SandboxError': client_module.SandboxError,
+        'text_chunks': helpers.text_chunks, 'BinaryLogError': helpers.BinaryLogError,
         'SandboxClient': client_module.SandboxClient, 'validate_url': client_module.validate_url,
         'report_summary': client_module.report_summary,
         'parse_verify_tls': client_module.parse_verify_tls,
@@ -270,3 +274,13 @@ def test_different_product_version_blocks_upload(worker):
     worker.ns['process_scan'](1)
     assert worker.scan.status == 'failed'
     worker.client.upload.assert_not_called()
+
+
+def test_text_source_citations_work_past_sixteen_mib(business):
+    raw = b'event\n' * 3000000 + 'последнее событие'.encode()
+    decoded = raw.decode()
+    offset = len(decoded)-len('последнее событие')
+    log = SimpleNamespace(id=4, name='large.log.gz', content=gzip.compress(raw))
+    page = business.text_page(log, offset=offset)
+    assert offset>16*1024*1024
+    assert page['text']=='последнее событие' and page['next_offset'] is None
