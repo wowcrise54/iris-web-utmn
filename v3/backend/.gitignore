@@ -4,12 +4,10 @@ dev
 node_modules
 source/app/database.db
 source/app/build
-yarn.lock
 yarn-error.log
 *.psd
 env/
 venv/
-test/
 source/app/config.priv.ini
 source/app/config.test.ini
 .idea/
@@ -18,6 +16,10 @@ orcparser/
 venv1/
 .DS_Store
 .env*
+!.env.example
+!.env.test
+!.env.*.example
+!.env.*.sample
 .venv/
 .vscode/
 *.code-workspace
