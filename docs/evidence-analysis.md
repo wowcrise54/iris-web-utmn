@@ -63,8 +63,8 @@ A complete pass can require thousands of provider calls, unlike the earlier
 sampled pass. The Sandbox launch form states this beside the existing explicit
 provider consent. Existing user/organisation daily token budgets apply to every
 block and retry. A budget failure preserves progress for explicit continuation.
-Only derived summaries enter chat history. The ordinary notes budget is 1,024
-tokens, with bounded empty-answer retries described below; final output remains
+Only derived summaries enter chat history. The ordinary notes formatting target is 1,024
+tokens, with bounded empty-answer retries for small finite budgets described below; final output remains
 limited to 2,048 tokens by default; the Yuki output setting can change or disable that cap (see yuki-limits.md).
 
 Every provider call rechecks user/case access, keeps the conversation pinned policy,
@@ -113,9 +113,12 @@ used during development must not replace the selected production stack.
 
 ## Empty responses and Sandbox attachments
 
-Intermediate notes normally request 1,024 output tokens. If a model ends with
-`max_tokens` and no visible answer, the worker requeues the same page with 4,096,
-then at most 8,192 tokens. Each attempt has its own egress accounting and rechecks
+Intermediate notes have a soft 1,024-token formatting goal. The provider request
+honours a configured unlimited output setting or a positive limit above 8,192.
+For small finite notes budgets only, if a model ends with
+`max_tokens` and no visible answer, the worker requeues the same page with a larger budget, capped at 8,192
+unless a higher output limit is configured. An unlimited setting is never reduced
+to that retry ceiling. Each attempt has its own egress accounting and rechecks
 case access, the pinned policy and daily budgets. Progress advances only after a
 visible answer. Final responses use the configured Yuki output setting (default 2,048; zero delegates to the provider). Exhaustion, empty
 completed responses and broken streams have distinct errors; hidden reasoning is

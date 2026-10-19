@@ -363,7 +363,9 @@
 									{irisT(
 										item.complete
 											? 'Fully processed'
-											: item.truncated || item.error
+											: item.truncated ||
+												  item.error ||
+												  !['queued', 'running'].includes(selected.status)
 												? 'Incomplete coverage'
 												: 'Processing',
 										$locale

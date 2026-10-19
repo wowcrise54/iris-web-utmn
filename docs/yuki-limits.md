@@ -12,8 +12,14 @@ existing defaults remain unchanged.
 | Daily tokens for the organisation | No Yuki daily quota | 10,000,000 |
 | Output tokens per answer | No Yuki output token cap; provider rules below apply | 2,048 |
 
-The same output setting applies to the final Sandbox analysis report. Internal
-rolling notes stay compact. A customer policy's zero is an explicit override,
+The same output setting applies to all Sandbox analysis requests, including
+intermediate pages and retries. Zero removes the request token cap even when an
+older failed job saved summary_token_budget=8192. A positive configured limit
+above 8192 is respected instead of being reduced to that old ceiling. Internal
+rolling notes are still requested to be compact in the prompt; this is a soft
+format goal, not a hidden request limit. Existing bounded retries apply to small
+finite notes budgets only. An unlimited request returning length with no text
+reports a provider-side limit and is not automatically retried indefinitely. A customer policy's zero is an explicit override,
 not a fallback to the server default. Existing retention_days=0 continues to
 disable automatic transcript deletion.
 

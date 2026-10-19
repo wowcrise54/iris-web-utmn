@@ -237,3 +237,39 @@ it('shows processed coverage without equating it with a safe verdict', async () 
 	);
 	expect(screen.queryByText('Fully processed')).toBeNull();
 });
+
+it('does not label a failed text analysis as still processing', async () => {
+	vi.mocked(EvidenceAnalysisService.get).mockResolvedValue(
+		reply({
+			...job,
+			kind: 'sandbox',
+			status: 'failed',
+			error: 'Provider exhausted the token budget without an answer.',
+			result: {
+				coverage: [
+					{
+						source: 'sandbox:3:report',
+						name: 'Report',
+						source_url: '/case/1/sandbox?scan=3',
+						characters: 7018,
+						processed_characters: 0,
+						pages: 1,
+						processed_pages: 0,
+						complete: false,
+						truncated: false,
+						error: null
+					}
+				]
+			}
+		})
+	);
+	render(AnalysisPage);
+	await waitFor(() =>
+		expect(screen.getByRole('link', { name: 'Report' }).closest('li')?.textContent).toContain(
+			'Incomplete coverage'
+		)
+	);
+	expect(screen.getByRole('link', { name: 'Report' }).closest('li')?.textContent).not.toContain(
+		'Processing'
+	);
+});

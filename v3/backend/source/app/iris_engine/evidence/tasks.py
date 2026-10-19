@@ -153,10 +153,16 @@ def summarize(job, user, previous, page):
     flags = {'redact_ips': cfg.redact_ips, 'redact_emails': cfg.redact_emails, 'redact_hashes': cfg.redact_hashes}
     raw = messages[0].content[0]['text']
     messages[0].content[0]['text'] = redact_text(raw, **flags)
+    # Zero must reach the provider on every stage, including resumed notes tasks.
+    if page is None or output_limit == 0:
+        token_budget = output_limit
+    else:
+        token_budget = max(output_limit, min(8192, max(SUMMARY_TOKENS, int(job.result.get('summary_token_budget', SUMMARY_TOKENS)))))
     audit = case_chat.record_egress(conversation=conv, user=user, provider=provider.name, model=cfg.model,
                                   request_bytes=len(messages[0].content[0]['text'].encode('utf-8')),
-                                  redacted=any(flags.values()), request_snapshot={'analysis_id': job.id, 'page': job.progress})
-    token_budget = output_limit if page is None else min(8192, max(SUMMARY_TOKENS, int(job.result.get('summary_token_budget', SUMMARY_TOKENS))))
+                                  redacted=any(flags.values()), request_snapshot={'analysis_id': job.id, 'page': job.progress,
+                                      'phase': 'final' if page is None else 'notes', 'max_output_tokens': token_budget or None})
+
     text, end, failure = [], None, None
     try:
         for event in provider_events(provider, correlation_id=f'analysis-{job.id}-{job.progress}', model=cfg.model,
@@ -174,14 +180,14 @@ def summarize(job, user, previous, page):
             prompt_tokens=end.prompt_tokens if end else None, completion_tokens=end.completion_tokens if end else None)
     output = ''.join(text).strip()
     if not failure and end is not None and not output:
-        log.warning('analysis_empty_response analysis_id=%s stop_reason=%s completion_tokens=%s token_budget=%s',
-                    job.id, end.stop_reason, end.completion_tokens, token_budget)
+        log.warning('analysis_empty_response analysis_id=%s provider=%s model=%r stop_reason=%s completion_tokens=%s token_budget=%s',
+                    job.id, provider.name, cfg.model, end.stop_reason, end.completion_tokens, token_budget)
         # Reasoning models may spend the entire small notes budget before emitting an answer.
         # Retry in a separate task, so access, policy and daily budgets are checked again.
-        if end.stop_reason == 'max_tokens' and page is not None and token_budget < 8192:
+        if end.stop_reason == 'max_tokens' and page is not None and 0 < token_budget < 8192:
             job.result = {**job.result, 'summary_token_budget': min(8192, token_budget * 4)}
             return None
-        if end.stop_reason == 'max_tokens' and page is None and output_limit == 0:
+        if end.stop_reason == 'max_tokens' and token_budget == 0:
             raise ValueError('Provider reached its own output limit without an answer. Check the model settings.')
         raise ValueError('Provider exhausted the token budget without an answer. Use a non-thinking model or reduce reasoning.'
                          if end.stop_reason == 'max_tokens' else 'Provider returned an empty answer. Check the configured model.')
