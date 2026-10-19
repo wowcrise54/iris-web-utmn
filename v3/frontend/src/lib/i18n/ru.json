@@ -4800,5 +4800,15 @@
   "Characters": "символов",
   "Fully processed": "Обработан полностью",
   "Incomplete coverage": "Неполное покрытие",
-  "Processing": "Обработка"
+  "Processing": "Обработка",
+  "Unlimited": "Без ограничения",
+  "Max output tokens / answer": "Максимум токенов в ответе",
+  "Limits must be whole numbers from 0 to 2147483647. Choose Unlimited to remove a limit.": "Укажите целое число от 0 до 2147483647. Чтобы снять лимит, выберите «Без ограничения».",
+  "Zero disables a Yuki limit. Provider context, output and rate limits still apply. Anthropic requires a discoverable model maximum or an explicit output limit.": "Ноль отключает лимит Yuki. Ограничения провайдера по контексту, длине ответа и частоте запросов сохраняются. Для Anthropic нужен доступный максимум модели либо явно заданный лимит ответа.",
+  "Provider requires an explicit output token limit; model maximum is unavailable.": "Не удалось получить максимум токенов модели. Этот провайдер требует явно задать лимит ответа.",
+  "Conversation is archived.": "Разговор архивирован.",
+  "Conversation is no longer available.": "Разговор больше недоступен.",
+  "Case access is no longer available.": "Доступ к кейсу больше недоступен.",
+  "War-room access is no longer available.": "Доступ к оперативной комнате больше недоступен.",
+  "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели."
 }

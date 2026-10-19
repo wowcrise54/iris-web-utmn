@@ -110,6 +110,7 @@ _CHATBOT_TRACKED_FIELDS = (
     'chatbot_api_key',
     'chatbot_model',
     'chatbot_base_url',
+    'chatbot_max_output_tokens',
     'chatbot_max_turns_per_conversation',
     'chatbot_max_tool_calls_per_turn',
     'chatbot_auto_execute_read_tools',

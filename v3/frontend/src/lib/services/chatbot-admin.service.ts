@@ -21,6 +21,7 @@ export interface ChatbotPolicy {
 	base_url: string;
 	auto_execute_read_tools: boolean;
 	auto_approve_write_tools: boolean;
+	max_output_tokens: number;
 	max_turns_per_conversation: number;
 	max_tool_calls_per_turn: number;
 	daily_token_budget_per_user: number;
@@ -55,6 +56,7 @@ export interface ChatbotPolicyBody {
 	base_url?: string;
 	auto_execute_read_tools?: boolean;
 	auto_approve_write_tools?: boolean;
+	max_output_tokens?: number;
 	max_turns_per_conversation?: number;
 	max_tool_calls_per_turn?: number;
 	daily_token_budget_per_user?: number;

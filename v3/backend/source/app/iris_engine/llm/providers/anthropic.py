@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Any, Iterator
+from urllib.parse import quote
 
 import requests
 
@@ -64,6 +65,7 @@ class AnthropicProvider(LLMProvider):
             raise ValueError('AnthropicProvider requires an api_key')
         self._api_key = api_key
         self._base_url = base_url.rstrip('/') if base_url else _ANTHROPIC_BASE
+        self._model_limits: dict[str, int] = {}
 
     # -----------------------------------------------------------------
 
@@ -74,8 +76,14 @@ class AnthropicProvider(LLMProvider):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int = 4096,
+        max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
+        if not max_tokens:
+            maximum = self._model_output_limit(model)
+            if isinstance(maximum, Error):
+                yield maximum
+                return
+            max_tokens = maximum
         body = self._build_body(model, system, messages, tools, max_tokens)
         headers = {
             'x-api-key': self._api_key,
@@ -215,13 +223,34 @@ class AnthropicProvider(LLMProvider):
 
     # -----------------------------------------------------------------
 
+    def _model_output_limit(self, model: str) -> int | Error:
+        if model in self._model_limits:
+            return self._model_limits[model]
+        response = None
+        try:
+            response = requests.get(f'{self._base_url}/v1/models/{quote(model, safe="")}',
+                headers={'x-api-key': self._api_key, 'anthropic-version': _ANTHROPIC_VERSION}, timeout=(10, 30), allow_redirects=False)
+            if response.status_code == 200:
+                maximum = response.json().get('max_tokens')
+                if type(maximum) is int and 0 < maximum <= 2_147_483_647:
+                    self._model_limits[model] = maximum
+                    return maximum
+        except (requests.RequestException, ValueError, TypeError, AttributeError):
+            pass
+        finally:
+            if response is not None:
+                response.close()
+        # /messages requires max_tokens; never pretend an arbitrary fallback is unlimited.
+        return Error('Provider requires an explicit output token limit; model maximum is unavailable.',
+                     provider_code='model_limits_unavailable')
+
     @staticmethod
     def _build_body(
         model: str,
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int,
+        max_tokens: int | None,
     ) -> dict[str, Any]:
         return {
             'model': model,

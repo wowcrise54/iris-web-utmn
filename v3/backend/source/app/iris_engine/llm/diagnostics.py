@@ -9,10 +9,11 @@ from app.iris_engine.llm.providers.base import Error, TextDelta, ToolUseDelta, T
 log = logging.getLogger('iris.chatbot.provider')
 
 
-def provider_events(provider, *, correlation_id, **kwargs):
+def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwargs):
     started, received = time.monotonic(), 0
     stream = provider.stream_completion(**kwargs)
     streamed_tools = set()
+    tool_bytes = 0
     try:
         for event in stream:
             chunk_bytes = 0
@@ -21,10 +22,12 @@ def provider_events(provider, *, correlation_id, **kwargs):
             elif isinstance(event, ToolUseDelta):
                 streamed_tools.add(event.tool_use_id)
                 chunk_bytes = len(event.partial_json.encode('utf-8'))
+                tool_bytes += chunk_bytes
             elif isinstance(event, ToolUseEnd) and event.tool_use_id not in streamed_tools:
                 chunk_bytes = len(json.dumps(event.arguments).encode('utf-8'))
+                tool_bytes += chunk_bytes
             received += chunk_bytes
-            if received > 48000:
+            if (max_response_bytes is not None and received > max_response_bytes) or tool_bytes > 48000:
                 yield Error('Provider response exceeded the safe output limit.', provider_code='output_limit')
                 return
             if isinstance(event, Error):

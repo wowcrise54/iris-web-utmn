@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+from itertools import count
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -45,6 +46,7 @@ from app.blueprints.rest.v2.mcp.dispatch import (
 )
 from app.blueprints.rest.v2.mcp.registry import TOOL_REGISTRY
 from app.business import case_chat as case_chat_biz
+from app.db import db
 from app.iris_engine.llm.client import (
     ChatbotConfig,
     ChatbotDisabledError,
@@ -66,7 +68,7 @@ from app.iris_engine.llm.redaction import redact_content_blocks
 from app.iris_engine.llm.diagnostics import provider_events
 from app.iris_engine.llm.system_prompt import system_prompt
 from app.iris_engine.utils.tracker import track_activity
-from app.models.authorization import CaseAccessLevel, WarRoomAccessLevel
+from app.models.authorization import CaseAccessLevel, WarRoomAccessLevel, User
 from app.models.case_chat import (
     ROLE_ASSISTANT,
     ROLE_TOOL,
@@ -107,88 +109,103 @@ def run_one_iteration(
     `for event in provider.stream_completion(...)` yields cooperatively
     between tokens, so a long stream never blocks the worker.
     """
-    # Re-resolve the policy on every send() so a war-room case attach
-    # that raised the ceiling since the conversation was created is
-    # caught HERE — the loop refuses to run against a weaker provider
-    # than the current scope requires. The war-room hook also archives
-    # the conversation up front, so this is a belt-and-braces check.
-    live = resolve_for_conversation(conversation)
-    stamped_level = int(conversation.resolved_restriction_level or 0)
-    if live.restriction_level > stamped_level:
-        # Something changed — a case was attached whose customer has a
-        # stricter policy than this conversation. Archive and tell the
-        # user to open a new chat under the new ceiling.
-        case_chat_biz.archive_conversation(conversation)
-        emit(ChatEvent('error', {
-            'message': (
-                'This conversation\'s customer policy has become '
-                'stricter since it was started. It has been archived — '
-                'please open a new chat to continue under the updated '
-                'policy.'
-            ),
-        }))
-        return
-
-    # Load the stamped policy, if any, and hand it to load_config.
-    stamped_policy: ChatbotPolicy | None = None
-    if conversation.resolved_policy_id is not None:
-        stamped_policy = (
-            ChatbotPolicy.query
-            .filter_by(id=conversation.resolved_policy_id)
-            .first()
-        )
-
-    try:
-        cfg = load_config(policy=stamped_policy)
-    except Exception as exc:
-        logger.exception('failed to load chatbot config')
-        emit(ChatEvent('error', {
-            'message': f'Chatbot configuration error: {exc}',
-        }))
-        return
-
-    if not cfg.enabled:
-        emit(ChatEvent('error', {
-            'message': 'Chatbot is disabled on this server.',
-        }))
-        return
-
-    user = iris_current_user._get_current_object()  # type: ignore[attr-defined]
-
-    # Budget check — refuse before spending an LLM token.
-    if cfg.daily_token_budget_per_user > 0:
-        spent_user = case_chat_biz.sum_tokens_today(user_id=user.id)
-        if spent_user >= cfg.daily_token_budget_per_user:
-            emit(ChatEvent('error', {
-                'message': (
-                    f'Daily per-user chatbot budget exhausted '
-                    f'({spent_user}/{cfg.daily_token_budget_per_user} tokens). '
-                    'Try again tomorrow or ask an admin to raise the cap.'
-                ),
-            }))
+    # Zero disables Yuki's iteration cap. Each request still rechecks live access and budgets.
+    for turn in count():
+        db.session.expire_all()
+        if conversation.archived_at is not None:
+            emit(ChatEvent('error', {'message': 'Conversation is archived.'}))
             return
-    if cfg.daily_token_budget_org > 0:
-        spent_org = case_chat_biz.sum_tokens_today()
-        if spent_org >= cfg.daily_token_budget_org:
+        # Re-resolve the policy before every provider request so a war-room case attach
+        # that raised the ceiling since the conversation was created is
+        # caught HERE — the loop refuses to run against a weaker provider
+        # than the current scope requires. The war-room hook also archives
+        # the conversation up front, so this is a belt-and-braces check.
+        live = resolve_for_conversation(conversation)
+        stamped_level = int(conversation.resolved_restriction_level or 0)
+        if live.restriction_level > stamped_level:
+            # Something changed — a case was attached whose customer has a
+            # stricter policy than this conversation. Archive and tell the
+            # user to open a new chat under the new ceiling.
+            case_chat_biz.archive_conversation(conversation)
             emit(ChatEvent('error', {
                 'message': (
-                    f'Daily org-wide chatbot budget exhausted '
-                    f'({spent_org}/{cfg.daily_token_budget_org} tokens).'
+                    'This conversation\'s customer policy has become '
+                    'stricter since it was started. It has been archived — '
+                    'please open a new chat to continue under the updated '
+                    'policy.'
                 ),
             }))
             return
 
-    try:
-        provider = get_llm_provider(cfg)
-    except ChatbotDisabledError as exc:
-        emit(ChatEvent('error', {'message': str(exc)}))
-        return
+        # Load the stamped policy, if any, and hand it to load_config.
+        stamped_policy: ChatbotPolicy | None = None
+        if conversation.resolved_policy_id is not None:
+            stamped_policy = (
+                ChatbotPolicy.query
+                .filter_by(id=conversation.resolved_policy_id)
+                .first()
+            )
 
-    # Iterate until we either hit stop_reason=='end_turn' (done) or a
-    # write tool_use pauses us (return). Auto-executed reads loop back
-    # here without a per-iteration user event.
-    max_iterations = max(1, cfg.max_tool_calls_per_turn)
-    for _turn in range(max_iterations):
+        try:
+            cfg = load_config(policy=stamped_policy)
+        except Exception as exc:
+            logger.exception('failed to load chatbot config')
+            emit(ChatEvent('error', {
+                'message': f'Chatbot configuration error: {exc}',
+            }))
+            return
+
+        if not cfg.enabled:
+            emit(ChatEvent('error', {
+                'message': 'Chatbot is disabled on this server.',
+            }))
+            return
+
+        token_user = iris_current_user._get_current_object()  # type: ignore[attr-defined]
+        user = db.session.get(User, token_user.id)
+        if user is None or not user.active or conversation.user_id != user.id:
+            emit(ChatEvent('error', {'message': 'Conversation is no longer available.'}))
+            return
+
+        # Budget check — refuse before spending an LLM token.
+        if cfg.daily_token_budget_per_user > 0:
+            spent_user = case_chat_biz.sum_tokens_today(user_id=user.id)
+            if spent_user >= cfg.daily_token_budget_per_user:
+                emit(ChatEvent('error', {
+                    'message': (
+                        f'Daily per-user chatbot budget exhausted '
+                        f'({spent_user}/{cfg.daily_token_budget_per_user} tokens). '
+                        'Try again tomorrow or ask an admin to raise the cap.'
+                    ),
+                }))
+                return
+        if cfg.daily_token_budget_org > 0:
+            spent_org = case_chat_biz.sum_tokens_today()
+            if spent_org >= cfg.daily_token_budget_org:
+                emit(ChatEvent('error', {
+                    'message': (
+                        f'Daily org-wide chatbot budget exhausted '
+                        f'({spent_org}/{cfg.daily_token_budget_org} tokens).'
+                    ),
+                }))
+                return
+
+        try:
+            provider = get_llm_provider(cfg)
+        except ChatbotDisabledError as exc:
+            emit(ChatEvent('error', {'message': str(exc)}))
+            return
+        if conversation.case_id is not None and not ac_fast_check_current_user_has_case_access(
+                conversation.case_id, [CaseAccessLevel.read_only, CaseAccessLevel.full_access]):
+            emit(ChatEvent('error', {'message': 'Case access is no longer available.'}))
+            return
+        if conversation.war_room_id is not None and not ac_fast_check_current_user_has_war_room_access(
+                conversation.war_room_id, [WarRoomAccessLevel.read_only, WarRoomAccessLevel.full_access]):
+            emit(ChatEvent('error', {'message': 'War-room access is no longer available.'}))
+            return
+        if cfg.max_tool_calls_per_turn != 0 and turn >= max(1, cfg.max_tool_calls_per_turn):
+            emit(ChatEvent('error', {'message': 'Tool iteration limit reached. Send a new message to continue.'}))
+            return
         history = _load_history(conversation, cfg)
         read_only_scope = _scope_is_read_only(conversation)
         tools = _prepare_tools(conversation, read_only_scope=read_only_scope)
@@ -222,6 +239,7 @@ def run_one_iteration(
             conversation=conversation,
             audit_row=audit_row,
             emit=emit,
+            max_tokens=cfg.max_output_tokens,
         )
 
         if turn_result.terminated:
@@ -229,11 +247,6 @@ def run_one_iteration(
         if turn_result.paused_on_write:
             return
         # All-reads turn → loop back and let the model see the results.
-
-    emit(ChatEvent('error', {
-        'message': 'Tool iteration limit reached. Send a new message to continue.',
-    }))
-
 
 # ---- Internals -----------------------------------------------------
 
@@ -282,7 +295,7 @@ def _load_history(
     # `2 * max_turns` messages (user + assistant pair per turn) plus
     # any interleaved tool messages.
     keep = max(2, cfg.max_turns_per_conversation) * 4
-    trimmed = rows[-keep:]
+    trimmed = rows if cfg.max_turns_per_conversation == 0 else rows[-keep:]
     out: list[ChatMessage] = []
     for row in trimmed:
         content: list[dict[str, Any]] = row.content or []
@@ -486,6 +499,7 @@ def _consume_stream(
     conversation: CaseChatConversation,
     audit_row,
     emit: Emitter,
+    max_tokens: int = 2048,
 ) -> _TurnResult:
     """Iterate one provider stream. On write tool_use, persist pending
     row(s) and return early with paused_on_write=True. On end_turn,
@@ -500,7 +514,8 @@ def _consume_stream(
 
     request_id = f'chat-{conversation.id}-{getattr(audit_row, "id", 0)}'
     for event in provider_events(provider, correlation_id=request_id,
-        model=model, system=system, messages=history, tools=tools, max_tokens=2048,
+        model=model, system=system, messages=history, tools=tools, max_tokens=max_tokens or None,
+        max_response_bytes=max(48000, max_tokens * 16) if max_tokens else None,
     ):
         response_bytes += _event_bytes(event)
         if isinstance(event, TextDelta):

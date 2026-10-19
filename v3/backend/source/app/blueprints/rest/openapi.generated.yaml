@@ -19613,6 +19613,8 @@ components:
           type: boolean
         auto_approve_write_tools:
           type: boolean
+        max_output_tokens:
+          type: integer
         max_turns_per_conversation:
           type: integer
         max_tool_calls_per_turn:
@@ -21192,6 +21194,8 @@ components:
           type:
           - string
           - 'null'
+        chatbot_max_output_tokens:
+          type: integer
         chatbot_max_turns_per_conversation:
           type: integer
         chatbot_max_tool_calls_per_turn:
@@ -21373,6 +21377,8 @@ components:
           type:
           - string
           - 'null'
+        chatbot_max_output_tokens:
+          type: integer
         chatbot_max_turns_per_conversation:
           type: integer
         chatbot_max_tool_calls_per_turn:

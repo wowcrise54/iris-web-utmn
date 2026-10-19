@@ -120,6 +120,6 @@ class LLMProvider(Protocol):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int = 4096,
+        max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
         ...

@@ -171,7 +171,11 @@ def list_policies():
     tags=['ManageCaseChat'], summary='Create a chatbot policy',
 )
 def create_policy():
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return response_api_error('Invalid policy payload: expected an object')
     plaintext_key = body.pop('api_key', None)
     try:
         policy = _policy_schema.load(body, session=db.session)
@@ -202,17 +206,21 @@ def update_policy(policy_id: int):
     policy = ChatbotPolicy.query.filter_by(id=policy_id).first()
     if policy is None:
         return response_api_not_found()
-    body = request.get_json(silent=True) or {}
+    body = request.get_json(silent=True)
+    if body is None:
+        body = {}
+    if not isinstance(body, dict):
+        return response_api_error('Invalid policy payload: expected an object')
     plaintext_key = body.pop('api_key', ...)  # sentinel — distinguish unset
-    # Apply the partial patch field-by-field so we don't overwrite
-    # unspecified fields with schema defaults (marshmallow's load with
-    # partial=True is the intended tool here, but the auto-schema
-    # doesn't cleanly support partial-loading of a mapped instance
-    # without a fresh row; hand-patch is simpler and safer).
+    # Validate before mutating the mapped row; avoid integer overflows at commit.
+    try:
+        body = ChatbotPolicySchema(load_instance=False).load(body, partial=True)
+    except Exception as exc:
+        return response_api_error(f'Invalid policy payload: {exc}')
     _mutable_fields = {
         'name', 'description', 'restriction_level', 'provider', 'model',
         'base_url', 'auto_execute_read_tools', 'auto_approve_write_tools',
-        'max_turns_per_conversation', 'max_tool_calls_per_turn',
+        'max_output_tokens', 'max_turns_per_conversation', 'max_tool_calls_per_turn',
         'daily_token_budget_per_user', 'daily_token_budget_org',
         'redact_ips', 'redact_emails', 'redact_hashes', 'retention_days',
     }

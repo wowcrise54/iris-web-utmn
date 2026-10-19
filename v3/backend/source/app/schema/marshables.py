@@ -36,6 +36,7 @@ from marshmallow import validates_schema
 from marshmallow.exceptions import ValidationError
 from marshmallow.validate import Length
 from marshmallow.validate import OneOf
+from marshmallow.validate import Range
 from marshmallow_sqlalchemy import auto_field
 from pathlib import Path
 from sqlalchemy import func
@@ -1641,18 +1642,20 @@ class ServerSettingsSchema(ma.SQLAlchemyAutoSchema):
         required=False, allow_none=True)
     chatbot_base_url: Optional[str] = fields.String(
         required=False, allow_none=True)
+    chatbot_max_output_tokens: Optional[int] = fields.Integer(
+        required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_max_turns_per_conversation: Optional[int] = fields.Integer(
-        required=False, validate=lambda v: 1 <= v <= 200)
+        required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_max_tool_calls_per_turn: Optional[int] = fields.Integer(
-        required=False, validate=lambda v: 1 <= v <= 64)
+        required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_auto_execute_read_tools: Optional[bool] = fields.Boolean(
         required=False)
     chatbot_auto_approve_write_tools: Optional[bool] = fields.Boolean(
         required=False)
     chatbot_daily_token_budget_per_user: Optional[int] = fields.Integer(
-        required=False, validate=lambda v: 0 <= v <= 100_000_000)
+        required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_daily_token_budget_org: Optional[int] = fields.Integer(
-        required=False, validate=lambda v: 0 <= v <= 1_000_000_000)
+        required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_redact_ips: Optional[bool] = fields.Boolean(required=False)
     chatbot_redact_emails: Optional[bool] = fields.Boolean(required=False)
     chatbot_redact_hashes: Optional[bool] = fields.Boolean(required=False)
@@ -1695,14 +1698,15 @@ class ChatbotPolicySchema(ma.SQLAlchemyAutoSchema):
         'auto_execute_read_tools', required=False)
     auto_approve_write_tools: bool = auto_field(
         'auto_approve_write_tools', required=False)
+    max_output_tokens: int = auto_field('max_output_tokens', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     max_turns_per_conversation: int = auto_field(
-        'max_turns_per_conversation', required=False)
+        'max_turns_per_conversation', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     max_tool_calls_per_turn: int = auto_field(
-        'max_tool_calls_per_turn', required=False)
+        'max_tool_calls_per_turn', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     daily_token_budget_per_user: int = auto_field(
-        'daily_token_budget_per_user', required=False)
+        'daily_token_budget_per_user', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     daily_token_budget_org: int = auto_field(
-        'daily_token_budget_org', required=False)
+        'daily_token_budget_org', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     redact_ips: bool = auto_field('redact_ips', required=False)
     redact_emails: bool = auto_field('redact_emails', required=False)
     redact_hashes: bool = auto_field('redact_hashes', required=False)

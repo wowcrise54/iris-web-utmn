@@ -65,7 +65,7 @@ provider consent. Existing user/organisation daily token budgets apply to every
 block and retry. A budget failure preserves progress for explicit continuation.
 Only derived summaries enter chat history. The ordinary notes budget is 1,024
 tokens, with bounded empty-answer retries described below; final output remains
-limited to 2,048 tokens.
+limited to 2,048 tokens by default; the Yuki output setting can change or disable that cap (see yuki-limits.md).
 
 Every provider call rechecks user/case access, keeps the conversation pinned policy,
 rejects a stricter live case policy, and applies redaction
@@ -117,7 +117,7 @@ Intermediate notes normally request 1,024 output tokens. If a model ends with
 `max_tokens` and no visible answer, the worker requeues the same page with 4,096,
 then at most 8,192 tokens. Each attempt has its own egress accounting and rechecks
 case access, the pinned policy and daily budgets. Progress advances only after a
-visible answer. Final responses keep the 2,048-token limit. Exhaustion, empty
+visible answer. Final responses use the configured Yuki output setting (default 2,048; zero delegates to the provider). Exhaustion, empty
 completed responses and broken streams have distinct errors; hidden reasoning is
 never displayed or substituted for evidence findings.
 

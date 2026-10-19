@@ -100,6 +100,7 @@ export interface ServerSettings {
 	chatbot_api_key_set?: boolean;
 	chatbot_model: string | null;
 	chatbot_base_url: string | null;
+	chatbot_max_output_tokens: number;
 	chatbot_max_turns_per_conversation: number;
 	chatbot_max_tool_calls_per_turn: number;
 	chatbot_auto_execute_read_tools: boolean;

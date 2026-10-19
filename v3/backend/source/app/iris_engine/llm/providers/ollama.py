@@ -61,7 +61,7 @@ class OllamaProvider(LLMProvider):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int = 4096,
+        max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
         body = self._build_body(model, system, messages, tools, max_tokens)
         headers: dict[str, str] = {'content-type': 'application/json'}
@@ -161,7 +161,7 @@ class OllamaProvider(LLMProvider):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int,
+        max_tokens: int | None,
     ) -> dict[str, Any]:
         wire_messages: list[dict[str, Any]] = [
             {'role': 'system', 'content': system}]
@@ -171,7 +171,7 @@ class OllamaProvider(LLMProvider):
             'model': model,
             'messages': wire_messages,
             'stream': True,
-            'options': {'num_predict': max_tokens},
+            'options': {'num_predict': max_tokens if max_tokens else -1},
         }
         if tools:
             body['tools'] = [_serialize_tool(t) for t in tools]

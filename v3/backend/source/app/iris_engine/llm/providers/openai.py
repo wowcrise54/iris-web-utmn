@@ -81,7 +81,7 @@ class OpenAIProvider(LLMProvider):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int = 4096,
+        max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
         body = self._build_body(model, system, messages, tools, max_tokens)
         headers = {
@@ -211,7 +211,7 @@ class OpenAIProvider(LLMProvider):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int,
+        max_tokens: int | None,
     ) -> dict[str, Any]:
         wire_messages: list[dict[str, Any]] = [
             {'role': 'system', 'content': system}]
@@ -220,12 +220,13 @@ class OpenAIProvider(LLMProvider):
         body: dict[str, Any] = {
             'model': model,
             'messages': wire_messages,
-            'max_tokens': max_tokens,
             'stream': True,
             # `stream_options.include_usage=true` makes OpenAI emit a
             # final chunk with prompt/completion token counts.
             'stream_options': {'include_usage': True},
         }
+        if max_tokens is not None and max_tokens > 0:
+            body['max_tokens'] = max_tokens
         if tools:
             body['tools'] = [_serialize_tool(t) for t in tools]
             body['tool_choice'] = 'auto'

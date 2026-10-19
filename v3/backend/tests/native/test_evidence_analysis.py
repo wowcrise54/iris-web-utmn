@@ -372,7 +372,8 @@ def test_initial_provider_timeout_is_distinct_from_connection_failure(events, mo
 
 @pytest.mark.parametrize('live_level', [20, 40])
 @pytest.mark.parametrize('response', ['text', 'text_limit', 'empty_limit', 'empty_stop', 'interrupted', 'empty_final_limit', 'empty_retry_exhausted'])
-def test_background_summary_preserves_pinned_chat_policy(events, live_level, response):
+@pytest.mark.parametrize('output_limit', [0, 2048])
+def test_background_summary_preserves_pinned_chat_policy(events, live_level, response, output_limit):
     base, diagnostics = events
     conv_type, policy_type = object(), object()
     pinned = SimpleNamespace(id=11)
@@ -380,7 +381,7 @@ def test_background_summary_preserves_pinned_chat_policy(events, live_level, res
                            resolved_policy_id=11, resolved_restriction_level=30)
     session = Mock()
     session.get.side_effect = lambda kind, identifier: conv if kind is conv_type else pinned
-    cfg = SimpleNamespace(enabled=True, model='model', redact_ips=False, redact_emails=False, redact_hashes=False,
+    cfg = SimpleNamespace(enabled=True, model='model', max_output_tokens=output_limit, redact_ips=False, redact_emails=False, redact_hashes=False,
                           daily_token_budget_per_user=0, daily_token_budget_org=0)
     configure = Mock(return_value=cfg)
     def stream(**kwargs):
@@ -415,7 +416,7 @@ def test_background_summary_preserves_pinned_chat_policy(events, live_level, res
             assert job.result['summary_token_budget'] == 4096
         else:
             message = {'empty_stop': 'empty answer', 'interrupted': 'stream ended',
-                       'empty_final_limit': 'token budget', 'empty_retry_exhausted': 'token budget'}[response]
+                       'empty_final_limit': 'token budget' if output_limit else 'output limit', 'empty_retry_exhausted': 'token budget'}[response]
             with pytest.raises(ValueError, match=message):
                 fn(job, SimpleNamespace(id=2), 'notes', page)
         configure.assert_called_once_with(policy=pinned)
