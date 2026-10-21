@@ -70,40 +70,45 @@ class MaxPatrolTests(unittest.TestCase):
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
         client = Mock()
         client.incidents.return_value = [{'id': 'one'}, {'id': 'two'}]
-        client.detail.side_effect = [m.SIEMError('unavailable'), {'name': 'Two'}, {'name': 'One'}]
         client.events.return_value = []
         processed = set()
         store = Mock()
         store.active.return_value = True
         store.seen.side_effect = lambda incident_id: incident_id in processed
         store.needs_event_refresh.return_value = False
-        store.create.side_effect = lambda incident_id, _payload: processed.add(incident_id)
+        failed_once = set()
+
+        def create(incident_id, _payload):
+            if incident_id == 'one' and incident_id not in failed_once:
+                failed_once.add(incident_id)
+                raise RuntimeError('temporary database failure')
+            processed.add(incident_id)
+
+        store.create.side_effect = create
         now = datetime(2026, 10, 20, tzinfo=timezone.utc)
         self.assertEqual(m.collect(c, client, store, now=now), 1)
         self.assertEqual(processed, {'two'})
         self.assertEqual(m.collect(c, client, store, now=now), 1)
         self.assertEqual(processed, {'one', 'two'})
-        self.assertEqual(store.create.call_count, 2)
+        self.assertEqual(store.create.call_count, 3)
 
     def test_events_failure_still_creates_alert_and_disable_stops_work(self):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
         client, store = Mock(), Mock()
         client.incidents.return_value = [{'id': 'one'}, {'id': 'two'}]
-        client.detail.return_value = {'name': 'One'}
         client.events.side_effect = m.SIEMError('events unavailable')
         store.active.side_effect = [True, False]
         store.seen.return_value = False
         self.assertEqual(m.collect(c, client, store), 1)
         self.assertEqual(store.create.call_args.args[1]['alert_source_content']['events'], [])
-        self.assertEqual(client.detail.call_count, 1)
+        self.assertEqual(client.events.call_count, 1)
 
     def test_create_failure_is_not_success_and_does_not_stop_other_incidents(self):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
         client, store = Mock(), Mock()
         client.incidents.return_value = [{'id': 'one'}, {'id': 'two'}]
-        client.detail.return_value = {'name': 'Incident'}
         client.events.return_value = []
         store.active.return_value = True
         store.seen.return_value = False
@@ -116,7 +121,6 @@ class MaxPatrolTests(unittest.TestCase):
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
         client, store = Mock(), Mock()
         client.incidents.return_value = [{'id': 'one'}]
-        client.detail.return_value = {'name': 'One'}
         client.events.return_value = []
         store.active.return_value = True
         store.seen.side_effect = [False, True, True]
@@ -134,13 +138,13 @@ class MaxPatrolTests(unittest.TestCase):
         session.request.return_value.text = 'private server response'
         client = m.Client(c, session)
         with self.assertRaisesRegex(m.SIEMError, '^MaxPatrol HTTP 302$'):
-            client.detail('a/b')
+            client.request('POST', '/api/events/v3/events/')
         kwargs = session.request.call_args.kwargs
         self.assertTrue(kwargs['verify'])
         self.assertFalse(kwargs['allow_redirects'])
         self.assertEqual(kwargs['timeout'], 60)
         self.assertFalse(session.trust_env)
-        self.assertTrue(session.request.call_args.args[1].endswith('/a%2Fb'))
+        self.assertTrue(session.request.call_args.args[1].endswith('/api/events/v3/events/'))
 
     def test_repeating_full_pages_and_invalid_responses_fail(self):
         m = self.core()
@@ -159,11 +163,11 @@ class MaxPatrolTests(unittest.TestCase):
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'private-token'})
         client, store = Mock(), Mock()
         client.incidents.return_value = [{'id': 'old'}, {'id': 'new'}, {'id': 'bad'}, {}]
-        client.detail.side_effect = [{'name': 'private-title'}, m.SIEMError('private response')]
         client.events.return_value = [{'body': 'private-body'}]
         store.active.return_value = True
         store.seen.side_effect = lambda incident_id: incident_id == 'old'
         store.needs_event_refresh.return_value = False
+        store.create.side_effect = [None, RuntimeError('private response')]
         with self.assertLogs(m.log, level='INFO') as captured:
             self.assertEqual(m.collect(c, client, store), 1)
         output = '\n'.join(captured.output)
@@ -206,7 +210,7 @@ class MaxPatrolTests(unittest.TestCase):
             session = Mock()
             session.request.side_effect = error('private-token in underlying error')
             with self.subTest(expected=expected), self.assertRaises(m.SIEMError) as result:
-                m.Client(c, session).detail('one')
+                m.Client(c, session).request('POST', '/api/events/v3/events/')
             self.assertEqual(result.exception.code, expected)
             self.assertNotIn('private-token', str(result.exception))
 

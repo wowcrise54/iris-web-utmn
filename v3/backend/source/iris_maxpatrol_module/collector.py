@@ -15,7 +15,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
-REQUEST_REVISION = 'mp10-v3-only-335-1'
+REQUEST_REVISION = 'mp10-list-v2-events-v3-335-1'
 
 
 class SIEMError(ValueError):
@@ -139,9 +139,10 @@ class Client:
                         method, path, diagnostic.get('status', '-'), error_reason(exc), (perf_counter() - started) * 1000,
                         query_details + ' ' if query_details else '', diagnostic.get('response_excerpt', ''))
             raise
+        rows = data.get('events', data.get('incidents'))
         log.info('MaxPatrol HTTP completed: method=%s endpoint=%s status=%s duration_ms=%.1f rows=%s',
                  method, path, status, (perf_counter() - started) * 1000,
-                 len(data['events']) if isinstance(data.get('events'), list) else '-')
+                 len(rows) if isinstance(rows, list) else '-')
         return data
 
     def _request(self, method, path, *, body=None, params=None):
@@ -183,16 +184,17 @@ class Client:
             raise SIEMError('MaxPatrol response must be an object')
         return data, response.status_code
 
-    def incidents(self, start, end):
+    def incidents(self, start, _end):
         offset = 0
         previous = None
         while True:
-            data = self.request('POST', '/api/v2/incidents', body={
+            data = self.request('POST', '/api/v2/incidents/', body={
                 'offset': offset, 'limit': 50, 'groups': {'filterType': 'no_filter'},
-                'timeFrom': timestamp(start), 'timeTo': timestamp(end), 'filterTimeType': 'creation',
-                'filter': {'select': INCIDENT_SELECT_FIELDS, 'where': '', 'orderby': [
-                    {'field': 'created', 'sortOrder': 'ascending'},
-                    {'field': 'key', 'sortOrder': 'ascending'}]},
+                'timeFrom': timestamp(start), 'timeTo': None, 'filterTimeType': 'creation',
+                'filter': {'select': INCIDENT_SELECT_FIELDS, 'where': 'status != "Closed"', 'orderby': [
+                    {'field': 'created', 'sortOrder': 'descending'},
+                    {'field': 'status', 'sortOrder': 'ascending'},
+                    {'field': 'severity', 'sortOrder': 'descending'}]},
                 'queryIds': ['all_incidents']})
             page = data.get('incidents')
             if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
@@ -204,9 +206,6 @@ class Client:
             if len(page) < 50:
                 return
             previous, offset = page, offset + len(page)
-
-    def detail(self, incident_id):
-        return self.request('GET', '/api/incidentsReadModel/incidents/' + quote(incident_id, safe=''))
 
     def events(self, incident_id, start, end):
         events, offset, previous, token = [], 0, None, None
@@ -353,6 +352,7 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
     start = end - timedelta(hours=config.lookback_hours)
     successes = received = already_imported = failed = invalid = events_failed = refreshed = 0
     incomplete_incidents = 0
+    closed_skipped = 0
     complete = False
     processed_incidents = set()
     log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
@@ -379,18 +379,16 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                         already_imported += 1
                         continue
                     log.info('MaxPatrol incident import started: incident=%r', incident_id)
-                    incident_refresh_error = None
-                    try:
-                        detail = client.detail(incident_id)
-                    except SIEMError as exc:
-                        if not existing or exc.code not in ('http_500', 'http_502', 'http_503', 'http_504'):
-                            raise
-                        detail = store.stored_incident(incident_id)
-                        if not isinstance(detail, dict) or detail.get('id') != incident_id:
-                            raise
-                        incident_refresh_error = error_details(exc)
-                        log.warning('MaxPatrol incident detail refresh failed: incident=%r reason=%s; '
-                                    'using saved card to refresh events', incident_id, error_reason(exc))
+                    stored = store.stored_incident(incident_id) if existing else None
+                    # List rows are authoritative for current selected fields. Keep
+                    # previously collected extra fields when refreshing an alert.
+                    detail = {**(stored if isinstance(stored, dict) else {}), **incident}
+                    incident_source = 'incidents_list_v2' if not existing or len(incident) > 1 else 'saved_import'
+                    if detail.get('status') == 'Closed':
+                        closed_skipped += 1
+                        log.info('MaxPatrol closed incident skipped: incident=%r', incident_id)
+                        continue
+                    log.info('MaxPatrol incident data loaded: source=%s fields=%s', incident_source, len(detail))
                     try:
                         event_start, event_end = incident_event_window(detail, start, end)
                         events = client.events(incident_id, event_start, event_end)
@@ -402,11 +400,13 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                         events = []
                         materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
                             'errors': [error_details(exc)], 'collected_at': timestamp(end)}}
-                    materials['incident_refresh_error'] = incident_refresh_error
+                    materials['incident'] = detail
+                    materials['incident_source'] = incident_source
+                    materials['incident_refresh_error'] = None  # Clear obsolete card-GET failures.
                     event_state = materials['event_collection']
                     if not event_state['complete']:
                         incomplete_incidents += 1
-                    log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
+                    log.info('MaxPatrol incident events received: incident=%r events=%s', incident_id, len(events))
                     if existing:
                         if store.refresh_events(incident_id, materials):
                             refreshed += 1
@@ -435,9 +435,9 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
             complete = True
     finally:
         log.info('MaxPatrol collection summary: received=%s created=%s already_imported=%s failed=%s invalid=%s '
-                 'events_failed=%s complete=%s refreshed=%s incomplete_incidents=%s duration_ms=%.1f',
+                 'events_failed=%s complete=%s refreshed=%s incomplete_incidents=%s closed_skipped=%s duration_ms=%.1f',
                  received, successes, already_imported, failed, invalid, events_failed, complete, refreshed,
-                 incomplete_incidents, (perf_counter() - started) * 1000)
+                 incomplete_incidents, closed_skipped, (perf_counter() - started) * 1000)
     return successes
 
 

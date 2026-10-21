@@ -28,7 +28,6 @@ class V3OnlyTests(unittest.TestCase):
         session.request.side_effect = respond
         client = self.m.Client(config, session)
         client.incidents = Mock(return_value=[{'id': 'incident'}])
-        client.detail = Mock(return_value={'name': 'Incident'})
         store = Mock()
         store.active.return_value = True
         store.seen.return_value = False

@@ -33,8 +33,8 @@ class LoggingTests(unittest.TestCase):
             warnings.simplefilter('always')
             before = list(warnings.filters)
             with self.assertLogs(self.m.log, level='INFO') as output:
-                client.detail('one')
-                client.detail('two')
+                client.request('POST', '/api/events/v3/events/')
+                client.request('POST', '/api/events/v3/events/')
             self.assertEqual(warnings.filters, before)
         self.assertEqual(captured, [])
         text = '\n'.join(output.output)
@@ -53,7 +53,7 @@ class LoggingTests(unittest.TestCase):
         session.request.side_effect = emit_warning
         with warnings.catch_warnings(record=True) as captured:
             warnings.simplefilter('always')
-            client.detail('one')
+            client.request('POST', '/api/events/v3/events/')
         self.assertEqual(len(captured), 1)
         self.assertIn('other.local', str(captured[0].message))
 
@@ -64,7 +64,7 @@ class LoggingTests(unittest.TestCase):
         with self.assertLogs(self.m.log, level='INFO') as output:
             with self.m.logging_context(module=7, poll='poll-one', incident='incident-one'):
                 with self.assertRaises(self.m.SIEMError):
-                    client.detail('one')
+                    client.request('POST', '/api/events/v3/events/')
             self.m.log.info('outside scope')
         text = '\n'.join(output.output)
         self.assertIn('module=7', text)
@@ -88,7 +88,7 @@ class LoggingTests(unittest.TestCase):
         session.request.side_effect = emit_warning
         with warnings.catch_warnings(record=True) as captured:
             warnings.simplefilter('always')
-            client.detail('one')
+            client.request('POST', '/api/events/v3/events/')
         self.assertEqual(len(captured), 1)
         self.assertTrue(session.request.call_args.kwargs['verify'])
 
