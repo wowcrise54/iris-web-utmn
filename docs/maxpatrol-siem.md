@@ -95,3 +95,48 @@ push-подписки в предоставленном примере нет.
 открытия сессии/удаления оповещения. SQL-тесты используют SQLite и изолированные
 замены границ приложения; они не доказывают работу PostgreSQL advisory lock,
 настоящих Celery задач, UI или совместимость с конкретной версией MaxPatrol SIEM.
+
+## Диагностика на уровне INFO
+
+DEBUG не требуется. Логи находятся в stdout/stderr worker, отдельного файла модуля нет.
+Уровень INFO обычно включает также сообщения WARNING и ERROR.
+Пример успешного цикла (числа приведены для иллюстрации):
+
+```text
+INFO MaxPatrol poll started: module=7 interval=30
+INFO MaxPatrol collection started: customer=1 time_from=... time_to=...
+INFO MaxPatrol incidents page received: offset=0 count=10
+INFO MaxPatrol incident import started: incident='new-incident-id'
+INFO MaxPatrol events page received: incident='new-incident-id' offset=0 count=3
+INFO MaxPatrol incident details received: incident='new-incident-id' events=3
+INFO MaxPatrol incident imported: incident='new-incident-id'
+INFO MaxPatrol collection summary: received=10 created=1 already_imported=9 failed=0 invalid=0 events_failed=0 complete=True
+INFO MaxPatrol poll completed: module=7 alerts_created=1
+```
+
+- `incidents page received ... count=0` и `complete=True`: SIEM ответил корректным пустым списком.
+- `received`: число инцидентов, просмотренных коллектором; `created`: записанные оповещения.
+- `already_imported`: пропущены по сохранённым отметкам; это не ошибка.
+- `failed`: ошибки импорта; `invalid`: записи без корректного ID.
+- `events_failed`: не удалось получить события, импорт мог продолжиться без них.
+- `complete=True` означает, что обход списка завершился; при этом нужно проверять `failed` и `events_failed`.
+- `complete=False`: обход был прерван ошибкой, отключением модуля или изменением настроек.
+  После ошибки списка итог может быть нулевым: это не подтверждает отсутствие инцидентов в SIEM.
+
+При ошибке worker выводит `MaxPatrol poll failed: module=… stage=… reason=…`.
+`stage=configuration` — разбор настроек, `source_lock` — блокировка источника,
+`poll_state` — чтение/запись состояния в БД, `collection` — запросы и импорт.
+Коды `reason`: `http_401`/`http_403` — отказ авторизации/доступа,
+`tls_error` — ошибка TLS, `timeout` — превышен таймаут,
+`connection_error` — ошибка соединения (в том числе DNS), `invalid_json` — некорректный JSON.
+Для прочих ошибок выводится тип исключения без его содержимого.
+
+Чтобы увидеть историю и продолжать просмотр в PowerShell из корня репозитория:
+
+```powershell
+docker compose -p iris-upgrade-2-4-29-fastapi -f docker-compose.upgrade-validation.yml -f docker-compose.saved-data.yml -f docker-compose.v3.yml -f docker-compose.v3-live.yml logs --tail 300 -f worker | Select-String -Pattern 'maxpatrol'
+```
+
+Эти сообщения появятся после установки обновлённых исходников в worker.
+Токен, HTTP-заголовки, тела ответов и содержимое инцидентов в логи не выводятся;
+ID инцидентов выводятся в экранированном виде для сопоставления с SIEM.

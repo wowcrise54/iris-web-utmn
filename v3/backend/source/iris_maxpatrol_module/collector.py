@@ -13,6 +13,15 @@ log = logging.getLogger(__name__)
 class SIEMError(ValueError):
     """A bounded error that never contains a response body or credentials."""
 
+    def __init__(self, message, *, code='siem_error'):
+        super().__init__(message)
+        self.code = code
+
+
+def error_reason(error):
+    # Exception bodies may contain tokens, URLs, SQL parameters or SIEM content.
+    return error.code if isinstance(error, SIEMError) else type(error).__name__
+
 
 def positive_int(value, name, maximum=2147483647):
     if isinstance(value, bool) or not str(value).isdigit() or not 1 <= int(value) <= maximum:
@@ -95,12 +104,21 @@ class Client:
                 json=body, params=params, timeout=self.config.timeout,
                 verify=self.config.verify_tls, allow_redirects=False)
             if not 200 <= response.status_code < 300:
-                raise SIEMError(f'MaxPatrol HTTP {response.status_code}')
+                raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}')
             data = response.json()
+        except requests.exceptions.SSLError:
+            raise SIEMError('MaxPatrol TLS request failed', code='tls_error') from None
+        except requests.exceptions.Timeout:
+            raise SIEMError('MaxPatrol request timed out', code='timeout') from None
+        except requests.exceptions.ConnectionError:
+            raise SIEMError('MaxPatrol connection failed', code='connection_error') from None
+        except requests.exceptions.JSONDecodeError:
+            raise SIEMError('MaxPatrol returned invalid JSON', code='invalid_json') from None
         except (requests.RequestException, ValueError) as exc:
             if isinstance(exc, SIEMError):
                 raise
-            raise SIEMError('MaxPatrol request failed or returned invalid JSON') from None
+            code = 'request_error' if isinstance(exc, requests.RequestException) else 'invalid_json'
+            raise SIEMError('MaxPatrol request failed or returned invalid JSON', code=code) from None
         if not isinstance(data, dict):
             raise SIEMError('MaxPatrol response must be an object')
         return data
@@ -121,6 +139,7 @@ class Client:
                 raise SIEMError('MaxPatrol incidents must be an array of objects')
             if page and page == previous:
                 raise SIEMError('MaxPatrol did not advance the incident page')
+            log.info('MaxPatrol incidents page received: offset=%s count=%s', offset, len(page))
             yield from page
             if len(page) < 50:
                 return
@@ -143,6 +162,8 @@ class Client:
                 raise SIEMError('MaxPatrol events must be an array of objects')
             if page and page == previous:
                 raise SIEMError('MaxPatrol did not advance the event page')
+            log.info('MaxPatrol events page received: incident=%r offset=%s count=%s',
+                     incident_id, offset, len(page))
             events.extend(item for value in page if (item := strip_nulls(value)))
             if len(page) < 250:
                 return events
@@ -173,33 +194,54 @@ def alert_payload(config, incident_id, detail, events, now):
 def collect(config, client, store, *, now=None):
     end = now or datetime.now(timezone.utc)
     start = end - timedelta(hours=config.lookback_hours)
-    successes = 0
-    for incident in client.incidents(start, end):
-        if not store.active():
-            break
-        incident_id = str(incident.get('id') or '').strip()
-        if not incident_id or len(incident_id) > 512:
-            log.warning('MaxPatrol incident without a valid id skipped')
-            continue
-        try:
-            if store.seen(incident_id):
+    successes = received = already_imported = failed = invalid = events_failed = 0
+    complete = False
+    log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
+             config.customer_id, timestamp(start), timestamp(end))
+    try:
+        for incident in client.incidents(start, end):
+            received += 1
+            if not store.active():
+                log.info('MaxPatrol collection stopped: module disabled or configuration changed')
+                break
+            incident_id = str(incident.get('id') or '').strip()
+            if not incident_id or len(incident_id) > 512:
+                invalid += 1
+                log.warning('MaxPatrol incident without a valid id skipped')
                 continue
-            detail = client.detail(incident_id)
             try:
-                events = client.events(incident_id, start, end)
-            except SIEMError:
-                log.warning('MaxPatrol event retrieval failed; importing incident without events')
-                events = []
-            store.create(incident_id, alert_payload(config, incident_id, detail, events, end))
-            successes += 1
-        except Exception:
-            store.rollback()
-            if store.seen(incident_id):
+                if store.seen(incident_id):
+                    already_imported += 1
+                    continue
+                log.info('MaxPatrol incident import started: incident=%r', incident_id)
+                detail = client.detail(incident_id)
+                try:
+                    events = client.events(incident_id, start, end)
+                except SIEMError as exc:
+                    events_failed += 1
+                    log.warning('MaxPatrol event retrieval failed: incident=%r reason=%s; importing without events',
+                                incident_id, error_reason(exc))
+                    events = []
+                log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
+                store.create(incident_id, alert_payload(config, incident_id, detail, events, end))
                 successes += 1
-                log.warning('MaxPatrol alert committed; a post-commit action failed')
-                continue
-            # Exception text and response bodies can contain appliance secrets.
-            log.warning('MaxPatrol incident import failed; it will be retried within the lookback window')
+                log.info('MaxPatrol incident imported: incident=%r', incident_id)
+            except Exception as exc:
+                store.rollback()
+                if store.seen(incident_id):
+                    successes += 1
+                    log.warning('MaxPatrol alert committed; a post-commit action failed: incident=%r reason=%s',
+                                incident_id, error_reason(exc))
+                    continue
+                failed += 1
+                log.warning('MaxPatrol incident import failed: incident=%r reason=%s; retry within lookback window',
+                            incident_id, error_reason(exc))
+        else:
+            complete = True
+    finally:
+        log.info('MaxPatrol collection summary: received=%s created=%s already_imported=%s failed=%s invalid=%s '
+                 'events_failed=%s complete=%s', received, successes, already_imported, failed, invalid,
+                 events_failed, complete)
     return successes
 
 

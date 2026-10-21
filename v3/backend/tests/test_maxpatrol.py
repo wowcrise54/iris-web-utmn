@@ -152,6 +152,61 @@ class MaxPatrolTests(unittest.TestCase):
         with self.assertRaises(m.SIEMError):
             list(client.incidents(now, now))
 
+    def test_info_logs_distinguish_received_imported_duplicates_and_errors(self):
+        m = self.core()
+        c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'private-token'})
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'old'}, {'id': 'new'}, {'id': 'bad'}, {}]
+        client.detail.side_effect = [{'name': 'private-title'}, m.SIEMError('private response')]
+        client.events.return_value = [{'body': 'private-body'}]
+        store.active.return_value = True
+        store.seen.side_effect = lambda incident_id: incident_id == 'old'
+        with self.assertLogs(m.log, level='INFO') as captured:
+            self.assertEqual(m.collect(c, client, store), 1)
+        output = '\n'.join(captured.output)
+        self.assertIn('MaxPatrol collection started:', output)
+        self.assertIn('MaxPatrol incident imported:', output)
+        self.assertIn('received=4 created=1 already_imported=1 failed=1 invalid=1', output)
+        self.assertIn('complete=True', output)
+        for secret in ('private-token', 'private-title', 'private-body', 'private response'):
+            self.assertNotIn(secret, output)
+
+    def test_empty_response_is_visible_at_info(self):
+        m = self.core()
+        c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
+        client = m.Client(c)
+        client.request = Mock(return_value={'incidents': []})
+        with self.assertLogs(m.log, level='INFO') as captured:
+            self.assertEqual(m.collect(c, client, Mock()), 0)
+        output = '\n'.join(captured.output)
+        self.assertIn('MaxPatrol incidents page received: offset=0 count=0', output)
+        self.assertIn('received=0 created=0 already_imported=0 failed=0 invalid=0', output)
+        self.assertIn('complete=True', output)
+
+    def test_list_failure_has_incomplete_summary_and_safe_reason(self):
+        m = self.core()
+        c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
+        session = Mock()
+        session.request.return_value.status_code = 401
+        client = m.Client(c, session)
+        with self.assertLogs(m.log, level='INFO') as captured, self.assertRaises(m.SIEMError) as error:
+            m.collect(c, client, Mock())
+        self.assertEqual(error.exception.code, 'http_401')
+        self.assertIn('complete=False', '\n'.join(captured.output))
+
+    def test_transport_errors_have_safe_diagnostic_codes(self):
+        m = self.core()
+        c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'private-token'})
+        for error, expected in ((m.requests.exceptions.SSLError, 'tls_error'),
+                                (m.requests.exceptions.Timeout, 'timeout'),
+                                (m.requests.exceptions.ConnectionError, 'connection_error')):
+            session = Mock()
+            session.request.side_effect = error('private-token in underlying error')
+            with self.subTest(expected=expected), self.assertRaises(m.SIEMError) as result:
+                m.Client(c, session).detail('one')
+            self.assertEqual(result.exception.code, expected)
+            self.assertNotIn('private-token', str(result.exception))
+
 
 if __name__ == '__main__':
     unittest.main()

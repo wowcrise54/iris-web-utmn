@@ -9,7 +9,7 @@ from app.db import db
 from app.business.maxpatrol import MODULE, configuration, IrisStore
 from app.models.models import IrisModule
 from app.models.maxpatrol import MaxPatrolPollState
-from iris_maxpatrol_module.collector import Client, collect
+from iris_maxpatrol_module.collector import Client, collect, error_reason
 
 log = logging.getLogger(__name__)
 
@@ -40,12 +40,15 @@ def poll(module_id):
     if not row or not row.is_active or row.module_name != MODULE:
         return
     client = None
+    stage = 'configuration'
     try:
         config = configuration(row)
+        stage = 'source_lock'
         with source_lock(config.source_key) as acquired:
             if not acquired:
                 return
             now = datetime.now(timezone.utc).replace(tzinfo=None)
+            stage = 'poll_state'
             state = db.session.get(MaxPatrolPollState, config.source_key)
             if state and (now - state.last_poll).total_seconds() < config.interval:
                 return
@@ -54,12 +57,14 @@ def poll(module_id):
                 db.session.add(state)
             state.last_poll = now
             db.session.commit()
+            stage = 'collection'
+            log.info('MaxPatrol poll started: module=%s interval=%s', module_id, config.interval)
             client = Client(config)
             count = collect(config, client, IrisStore(module_id, config))
             log.info('MaxPatrol poll completed: module=%s alerts_created=%s', module_id, count)
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
-        log.warning('MaxPatrol poll failed: module=%s; check settings, connectivity and database migration', module_id)
+        log.warning('MaxPatrol poll failed: module=%s stage=%s reason=%s', module_id, stage, error_reason(exc))
     finally:
         if client:
             client.close()
