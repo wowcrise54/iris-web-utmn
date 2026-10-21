@@ -56,7 +56,7 @@ class MaxPatrolTests(unittest.TestCase):
         now = datetime(2026, 10, 20, tzinfo=timezone.utc)
         events = client.events('a/b', now, now)
         self.assertEqual(len(events), 251)
-        self.assertEqual(events[-1], {'body': 'event'})
+        self.assertEqual(events[-1], {'body': 'event', 'empty': None})
         self.assertEqual(client.request.call_args_list[1].kwargs['params']['offset'], 250)
         payload = m.alert_payload(c, 'a/b', {'name': 'Test', 'created': '2026-10-19T10:00:00Z'}, events, now)
         self.assertEqual(payload['alert_source_ref'], 'a/b')

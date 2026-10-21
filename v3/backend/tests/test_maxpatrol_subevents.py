@@ -103,7 +103,7 @@ class SubeventTests(unittest.TestCase):
         client.incidents.return_value = [{'id': 'incident'}]
         client.detail.return_value = {'name': 'Incident'}
         client.events.return_value = [event(A, [B])]
-        client.event_details.side_effect = [event(A, [B]), event(B, body='raw child')]
+        client.event_details.side_effect = [event(B, body='raw child')]
         client.subevents.return_value = [event(B)]
         store.active.return_value = True
         store.seen.return_value = True
@@ -158,13 +158,9 @@ class SubeventTests(unittest.TestCase):
     def test_client_contract_to_alert_keeps_old_child_raw_and_normalized_fields(self):
         self.client.incidents = Mock(return_value=[{'id': 'incident'}])
         self.client.detail = Mock(return_value={'name': 'Incident'})
-        self.client.request = Mock(side_effect=[
-            {'events': [{'_meta': {'id': A, 'time': T}}]},
-            {'event': {'Data': [event(A, [B], **{'subevents.time': [T]})]}},
-            {'events': [{'uuid': B, 'time': T}]},
-            {'event': {'Data': [event(B, body='<Event>original</Event>', mime='text/xml',
-                                           custom={'process': {'name': 'example'}})]}},
-        ])
+        self.client.request = Mock(return_value={'errors': None, 'events': [
+            event(B, body='<Event>original</Event>', mime='text/xml',
+                  custom={'process': {'name': 'example'}}), event(A, [B])], 'token': 'page-token'})
         store = Mock()
         store.active.return_value = True
         store.seen.return_value = False
@@ -176,6 +172,37 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(child['custom']['process']['name'], 'example')
         self.assertTrue(content['event_collection']['complete'])
         self.assertEqual(self.client.request.call_args_list[0].kwargs['body']['timeFrom'], 0)
+        self.assertEqual(self.client.request.call_count, 1)
+
+    def test_v3_full_response_builds_tree_without_detail_or_subevent_requests(self):
+        rows = [event(B, body='{"Event":{"Data":[]}}', **{'count.subevents': None,
+            '_checkpoint': 123, '_presentation': [], '_whitelisting': None}),
+            event(A, [B], **{'count.subevents': None})]
+        client = Mock()
+        result = self.m.expand_subevents(client, rows, source_complete=True)
+        client.event_details.assert_not_called()
+        client.subevents.assert_not_called()
+        self.assertTrue(result['event_collection']['complete'])
+        self.assertEqual(len(result['event_tree']), 1)
+        self.assertEqual(result['event_tree'][0]['uuid'], A)
+        child = result['event_tree'][0]['subevents'][0]['event']
+        self.assertEqual(child['_presentation'], [])
+        self.assertIsNone(child['_whitelisting'])
+        self.assertEqual(child['body'], rows[0]['body'])
+
+    def test_v3_query_is_pdql_and_carries_token_between_pages(self):
+        self.client.request = Mock(side_effect=[{'errors': None, 'events': [event(A)] * 250, 'token': 'page-token'},
+                                               {'errors': None, 'events': []}])
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        self.client.events('incident', now, now)
+        first, second = self.client.request.call_args_list
+        self.assertEqual(first.args, ('POST', '/api/events/v3/events/'))
+        self.assertIsInstance(first.kwargs['body']['filter'], str)
+        self.assertIn('_checkpoint,', first.kwargs['body']['filter'])
+        self.assertIn('object.process.system_id', first.kwargs['body']['filter'])
+        self.assertEqual(first.kwargs['params']['incidentId'], 'incident')
+        self.assertEqual(second.kwargs['params']['token'], 'page-token')
 
 
 if __name__ == '__main__':

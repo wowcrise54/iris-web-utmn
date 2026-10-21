@@ -160,14 +160,14 @@ class Client:
         return self.request('GET', '/api/incidentsReadModel/incidents/' + quote(incident_id, safe=''))
 
     def events(self, incident_id, start, end):
-        events, offset, previous = [], 0, None
+        events, offset, previous, token = [], 0, None, None
         while True:
-            data = self.request('POST', '/api/events/v2/events/',
-                params={'incidentId': incident_id, 'offset': offset, 'limit': 250, 'noCount': 'true'},
-                body={'filter': {'aggregateBy': [], 'aliases': None, 'distributeBy': [], 'groupBy': [],
-                    'orderBy': [{'field': 'time', 'sortOrder': 'descending'}],
-                    'select': EVENT_SELECT_FIELDS, 'top': None, 'where': ''},
-                    'groupValues': [], 'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())})
+            params = {'incidentId': incident_id, 'offset': offset, 'limit': 250, 'noCount': 'true'}
+            if token:
+                params['token'] = token
+            data = self.request('POST', '/api/events/v3/events/', params=params,
+                body={'filter': 'select(' + ', '.join(EVENT_SELECT_FIELDS) + ') | sort(time desc)',
+                      'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())})
             page = data.get('events')
             if data.get('errors') or not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
                 raise SIEMError('MaxPatrol events must be an array of objects')
@@ -175,10 +175,10 @@ class Client:
                 raise SIEMError('MaxPatrol did not advance the event page')
             log.info('MaxPatrol events page received: incident=%r offset=%s count=%s',
                      incident_id, offset, len(page))
-            events.extend(item for value in page if (item := strip_nulls(value)))
+            events.extend(page)
             if len(page) < 250:
                 return events
-            previous, offset = page, offset + len(page)
+            previous, offset, token = page, offset + len(page), data.get('token')
 
     def event_details(self, event_id, event_time):
         uid = str(UUID(event_id))
@@ -247,11 +247,12 @@ def event_date(event):
         return None
 
 
-def expand_subevents(client, roots, *, max_events=10000, is_active=None):
+def expand_subevents(client, roots, *, max_events=10000, is_active=None, source_complete=False):
     """Load full events once per UUID and retain a cycle-safe nested view."""
     events, edges, errors, missing, visited = {}, {}, [], set(), set()
     queue = list(roots)
     root_ids = [event_uuid(event) for event in roots]
+    preloaded = {uid for uid in root_ids if uid} if source_complete else set()
     limit_reached = False
     index = 0
     while index < len(queue):
@@ -274,12 +275,13 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None):
                 events[uid] = candidate
             continue
         events[uid] = candidate
-        try:
-            full = client.event_details(uid, date)
-            events[uid] = {**candidate, **full}
-        except SIEMError as exc:
-            errors.append({'uuid': uid, 'reason': error_reason(exc)})
-            log.warning('MaxPatrol event details failed: uuid=%r reason=%s', uid, error_reason(exc))
+        if uid not in preloaded:
+            try:
+                full = client.event_details(uid, date)
+                events[uid] = {**candidate, **full}
+            except SIEMError as exc:
+                errors.append({'uuid': uid, 'reason': error_reason(exc)})
+                log.warning('MaxPatrol event details failed: uuid=%r reason=%s', uid, error_reason(exc))
         full = events[uid]
         expected = full.get('subevents') or []
         if not isinstance(expected, list):
@@ -298,6 +300,9 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None):
             errors.append({'uuid': uid, 'reason': 'subevents_reference_invalid'})
         if not expected_ids and not count:
             edges[uid] = []
+            continue
+        if expected_ids and set(expected_ids) <= preloaded and len(set(expected_ids)) >= count:
+            edges[uid] = list(dict.fromkeys(expected_ids))
             continue
         try:
             children = client.subevents(uid, event_date(full) or date,
@@ -322,11 +327,15 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None):
                'root_count': len(roots), 'event_count': len(events),
                'missing_uuids': sorted(missing), 'errors': errors, 'limit_reached': limit_reached,
                'collected_at': timestamp(datetime.now(timezone.utc))}
+    # A v3 incident response can include parents and their children together,
+    # in any order. Render top-level parents before shared child references.
+    children_ids = {child for children in edges.values() for child in children}
+    tree_roots = [uid for uid in root_ids if uid not in children_ids] or root_ids
     log.info('MaxPatrol subevents summary: roots=%s events=%s missing=%s errors=%s complete=%s',
              len(roots), len(events), len(missing), len(errors), summary['complete'])
     # Keep unidentified source rows too; they cannot be traversed, but are evidence.
     return {'events': [*events.values(), *(row for row in roots if not event_uuid(row))],
-            'event_tree': render_event_tree(root_ids, events, edges),
+            'event_tree': render_event_tree(tree_roots, events, edges),
             'event_links': edges, 'event_collection': summary}
 
 
@@ -400,7 +409,7 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                 try:
                     # Incident creation lookback must not discard older linked events.
                     events = client.events(incident_id, datetime.fromtimestamp(0, timezone.utc), end)
-                    materials = expand_subevents(client, events, is_active=store.active)
+                    materials = expand_subevents(client, events, is_active=store.active, source_complete=True)
                 except SIEMError as exc:
                     events_failed += 1
                     log.warning('MaxPatrol event retrieval failed: incident=%r reason=%s; importing without events',
@@ -439,8 +448,19 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
 
 INCIDENT_SELECT_FIELDS = ['key', 'name', 'category', 'type', 'status', 'created', 'assigned']
 EVENT_SELECT_FIELDS = [
+    '_checkpoint',
+    '_meta',
+    '_presentation',
+    '_whitelisting',
     'action',
+    'agent_id',
+    'aggregation_name',
     'alert.context',
+    'alert.ioc_description',
+    'alert.ioc_importance',
+    'alert.ioc_provider',
+    'alert.ioc_type',
+    'alert.ioc_value',
     'alert.key',
     'alert.regex_match',
     'asset_ids',
@@ -450,6 +470,15 @@ EVENT_SELECT_FIELDS = [
     'assigned_src_host',
     'assigned_src_ip',
     'assigned_src_port',
+    'bad.clustering.cluster_id',
+    'bad.clustering.cluster_size',
+    'bad.clustering.reduction_coef',
+    'bad.hack_tracker.is_hacker',
+    'bad.hack_tracker.root_process',
+    'bad.risk_score',
+    'bad.risk_score_raw',
+    'bad.triggered_models',
+    'bad.triggered_rule_score_raw',
     'body',
     'category.generic',
     'category.high',
@@ -466,14 +495,6 @@ EVENT_SELECT_FIELDS = [
     'count.packets_out',
     'count.subevents',
     'datafield1',
-    'datafield2',
-    'datafield3',
-    'datafield4',
-    'datafield5',
-    'datafield6',
-    'datafield7',
-    'datafield8',
-    'datafield9',
     'datafield10',
     'datafield11',
     'datafield12',
@@ -484,7 +505,15 @@ EVENT_SELECT_FIELDS = [
     'datafield17',
     'datafield18',
     'datafield19',
+    'datafield2',
     'datafield20',
+    'datafield3',
+    'datafield4',
+    'datafield5',
+    'datafield6',
+    'datafield7',
+    'datafield8',
+    'datafield9',
     'detect',
     'direction',
     'dst.asset',
@@ -558,6 +587,9 @@ EVENT_SELECT_FIELDS = [
     'logon_type',
     'mime',
     'msgid',
+    'nas_fqdn',
+    'nas_ip',
+    'normalized',
     'numfield1',
     'numfield2',
     'numfield3',
@@ -626,7 +658,9 @@ EVENT_SELECT_FIELDS = [
     'object.process.parent.id',
     'object.process.parent.name',
     'object.process.parent.path',
+    'object.process.parent.system_id',
     'object.process.path',
+    'object.process.system_id',
     'object.process.version',
     'object.property',
     'object.query',
@@ -683,8 +717,6 @@ EVENT_SELECT_FIELDS = [
     'storage_app_name',
     'subevents',
     'subevents.missed',
-    'subevents.time',
-    'normalized',
     'subject',
     'subject.account.company',
     'subject.account.contact',
@@ -738,7 +770,9 @@ EVENT_SELECT_FIELDS = [
     'subject.process.parent.id',
     'subject.process.parent.name',
     'subject.process.parent.path',
+    'subject.process.parent.system_id',
     'subject.process.path',
+    'subject.process.system_id',
     'subject.process.version',
     'subject.state',
     'subject.type',
