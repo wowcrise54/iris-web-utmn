@@ -239,6 +239,76 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(start.year, 2019)
         self.assertEqual(end.year, 2020)
 
+    def test_http_400_records_request_context_and_redacts_server_excerpt(self):
+        from datetime import datetime, timezone
+        session = Mock()
+        session.request.return_value.status_code = 400
+        session.request.return_value.text = ('Unknown field; Authorization: Bearer secret '
+                                             'another=pat_EXAMPLE_NOT_A_REAL_TOKEN')
+        client = self.m.Client(self.config, session)
+        with self.assertRaises(self.m.SIEMError) as caught:
+            client.events(A, datetime.fromtimestamp(1792486213, timezone.utc),
+                          datetime.fromtimestamp(1792486218, timezone.utc))
+        details = caught.exception.diagnostic
+        self.assertEqual(details['endpoint'], '/api/events/v3/events/')
+        self.assertEqual(details['method'], 'POST')
+        self.assertEqual(details['request_revision'], self.m.REQUEST_REVISION)
+        self.assertEqual(details['time_from'], 1792486213)
+        self.assertEqual(details['time_to'], 1792486218)
+        self.assertIn('Unknown field', details['response_excerpt'])
+        self.assertNotIn('secret', str(details))
+        self.assertNotIn('pat_EXAMPLE_NOT_A_REAL_TOKEN', str(details))
+        self.assertNotIn('headers', details)
+        self.assertLessEqual(len(details['response_excerpt']), 1024)
+
+    def test_event_failure_diagnostic_is_saved_in_alert_source(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'incident'}]
+        client.detail.return_value = {'name': 'Incident'}
+        client.events.side_effect = self.m.SIEMError('HTTP 400', code='http_400',
+            diagnostic={'endpoint': '/api/events/v3/events/', 'response_excerpt': 'Unknown field'})
+        store.active.return_value = True
+        store.seen.return_value = False
+        self.m.collect(self.config, client, store)
+        errors = store.create.call_args.args[1]['alert_source_content']['event_collection']['errors']
+        self.assertEqual(errors[0]['reason'], 'http_400')
+        self.assertEqual(errors[0]['endpoint'], '/api/events/v3/events/')
+        self.assertEqual(errors[0]['response_excerpt'], 'Unknown field')
+
+    def test_existing_alert_events_refresh_uses_saved_card_after_detail_500(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'old'}]
+        client.detail.side_effect = self.m.SIEMError('HTTP 500', code='http_500',
+            diagnostic={'endpoint': '/api/incidentsReadModel/incidents/old', 'response_excerpt': 'upstream failure'})
+        client.events.return_value = []
+        store.active.return_value = True
+        store.seen.return_value = True
+        store.needs_event_refresh.return_value = True
+        store.stored_incident.return_value = {'id': 'old', 'name': 'Saved card', 'created': T}
+        self.assertEqual(self.m.collect(self.config, client, store), 0)
+        client.events.assert_called_once()
+        store.create.assert_not_called()
+        materials = store.refresh_events.call_args.args[1]
+        self.assertEqual(materials['incident_refresh_error']['reason'], 'http_500')
+        self.assertTrue(materials['event_collection']['complete'])
+        client.detail.side_effect = None
+        client.detail.return_value = {'id': 'old', 'name': 'Recovered card', 'created': T}
+        self.m.collect(self.config, client, store)
+        self.assertIsNone(store.refresh_events.call_args.args[1]['incident_refresh_error'])
+
+    def test_card_permission_error_and_new_card_failure_do_not_use_fallback(self):
+        for existing, code in ((True, 'http_403'), (True, 'http_401'), (False, 'http_500')):
+            client, store = Mock(), Mock()
+            client.incidents.return_value = [{'id': 'incident'}]
+            client.detail.side_effect = self.m.SIEMError('failed', code=code)
+            store.active.return_value = True
+            store.seen.return_value = existing
+            store.needs_event_refresh.return_value = True
+            self.m.collect(self.config, client, store)
+            store.stored_incident.assert_not_called()
+            client.events.assert_not_called()
+            store.create.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

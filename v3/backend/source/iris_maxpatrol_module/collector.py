@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
+import re
 from itertools import chain
 from uuid import UUID
 from urllib.parse import quote, urlsplit
@@ -10,28 +11,57 @@ from urllib.parse import quote, urlsplit
 import requests
 
 log = logging.getLogger(__name__)
+REQUEST_REVISION = 'mp10-v3-335-bounded-1'
 
 
 class SIEMError(ValueError):
     """A bounded error that never contains a response body or credentials."""
 
-    def __init__(self, message, *, code='siem_error'):
+    def __init__(self, message, *, code='siem_error', diagnostic=None):
         super().__init__(message)
         self.code = code
+        self.diagnostic = diagnostic or {}
 
 
 class EventBatch(list):
     """Available rows plus an explicit reason for interrupted pagination."""
 
-    def __init__(self, rows=(), *, reason=None):
+    def __init__(self, rows=(), *, reason=None, diagnostic=None):
         super().__init__(rows)
         self.reason = reason
         self.complete = reason is None
+        self.diagnostic = diagnostic or {}
 
 
 def error_reason(error):
     # Exception bodies may contain tokens, URLs, SQL parameters or SIEM content.
     return error.code if isinstance(error, SIEMError) else type(error).__name__
+
+
+def error_details(error):
+    return {'reason': error_reason(error), **(error.diagnostic if isinstance(error, SIEMError) else {})}
+
+
+def request_diagnostic(method, path, body, response_text, token):
+    # Retain no headers or full request/response. Redact before truncation so
+    # the prefix of a long token cannot survive at the excerpt boundary.
+    text = response_text if isinstance(response_text, str) else ''
+    text = text.replace(token, '[REDACTED]') if token else text
+    text = re.sub(r'(?i)\bpat_[a-z0-9_-]+', '[REDACTED]', text)
+    text = re.sub(r'(?i)\bBearer\s+[^\s"<>]+', 'Bearer [REDACTED]', text)
+    result = {'request_revision': REQUEST_REVISION, 'method': method, 'endpoint': path,
+              'response_excerpt': ' '.join(text.split())[:1024]}
+    if isinstance(body, dict):
+        for source, target in (('timeFrom', 'time_from'), ('timeTo', 'time_to')):
+            value = body.get(source)
+            if isinstance(value, (int, float)):
+                result[target] = value
+        query_filter = body.get('filter')
+        if isinstance(query_filter, str):
+            result['filter_sha256'] = hashlib.sha256(query_filter.encode()).hexdigest()
+            if query_filter.startswith('select('):
+                result['fields_count'] = query_filter.split(')', 1)[0].count(',') + 1
+    return result
 
 
 def positive_int(value, name, maximum=2147483647):
@@ -117,7 +147,8 @@ class Client:
             if not 200 <= response.status_code < 300:
                 log.warning('MaxPatrol HTTP request failed: method=%s endpoint=%s status=%s',
                             method, path, response.status_code)
-                raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}')
+                raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}',
+                    diagnostic=request_diagnostic(method, path, body, response.text, self.config.token))
             data = response.json()
         except requests.exceptions.SSLError:
             raise SIEMError('MaxPatrol TLS request failed', code='tls_error') from None
@@ -224,7 +255,7 @@ class Client:
                     raise SIEMError('MaxPatrol did not advance the subevent page', code='subevents_page_repeated')
             except SIEMError as exc:
                 if result:
-                    return EventBatch(result, reason=error_reason(exc))
+                    return EventBatch(result, reason=error_reason(exc), diagnostic=exc.diagnostic)
                 raise
             log.info('MaxPatrol subevents page received: parent=%r offset=%s count=%s', uid, offset, len(page))
             result.extend(page[:remaining])
@@ -284,7 +315,7 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None, source_
                 full = client.event_details(uid, date)
                 events[uid] = {**candidate, **full}
             except SIEMError as exc:
-                errors.append({'uuid': uid, 'reason': error_reason(exc)})
+                errors.append({'uuid': uid, **error_details(exc)})
                 log.warning('MaxPatrol event details failed: uuid=%r reason=%s', uid, error_reason(exc))
         full = events[uid]
         expected = full.get('subevents') or []
@@ -312,7 +343,7 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None, source_
             children = client.subevents(uid, event_date(full) or date,
                                         max_events=max_events - len(visited), is_active=is_active)
             if isinstance(children, EventBatch) and not children.complete:
-                errors.append({'uuid': uid, 'reason': children.reason})
+                errors.append({'uuid': uid, 'reason': children.reason, **children.diagnostic})
                 limit_reached |= children.reason == 'event_limit'
             child_ids = [event_uuid(child) for child in children]
             edges[uid] = list(dict.fromkeys([*expected_ids, *(value for value in child_ids if value)]))
@@ -323,7 +354,7 @@ def expand_subevents(client, roots, *, max_events=10000, is_active=None, source_
         except SIEMError as exc:
             edges[uid] = expected_ids
             missing.update(expected_ids)
-            errors.append({'uuid': uid, 'reason': error_reason(exc)})
+            errors.append({'uuid': uid, **error_details(exc)})
             log.warning('MaxPatrol subevents failed: uuid=%r reason=%s', uid, error_reason(exc))
     missing.update({value for values in edges.values() for value in values} - events.keys())
     missing.difference_update(events.keys())
@@ -422,7 +453,18 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                     already_imported += 1
                     continue
                 log.info('MaxPatrol incident import started: incident=%r', incident_id)
-                detail = client.detail(incident_id)
+                incident_refresh_error = None
+                try:
+                    detail = client.detail(incident_id)
+                except SIEMError as exc:
+                    if not existing or exc.code not in ('http_500', 'http_502', 'http_503', 'http_504'):
+                        raise
+                    detail = store.stored_incident(incident_id)
+                    if not isinstance(detail, dict) or detail.get('id') != incident_id:
+                        raise
+                    incident_refresh_error = error_details(exc)
+                    log.warning('MaxPatrol incident detail refresh failed: incident=%r reason=%s; '
+                                'using saved card to refresh events', incident_id, error_reason(exc))
                 try:
                     event_start, event_end = incident_event_window(detail, start, end)
                     events = client.events(incident_id, event_start, event_end)
@@ -433,7 +475,8 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                                 incident_id, error_reason(exc))
                     events = []
                     materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
-                        'errors': [{'reason': error_reason(exc)}], 'collected_at': timestamp(end)}}
+                        'errors': [error_details(exc)], 'collected_at': timestamp(end)}}
+                materials['incident_refresh_error'] = incident_refresh_error
                 log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
                 if existing:
                     if store.refresh_events(incident_id, materials):

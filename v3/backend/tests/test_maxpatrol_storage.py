@@ -102,7 +102,12 @@ class StorageTests(unittest.TestCase):
             uid = '00000006-050d-0642-f000-0000255d3663'
             h.store.create('one', {'alert_title': 'Analyst title', 'alert_customer_id': 1,
                 'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
-                'alert_source_content': {'custom': 'preserved', 'events': [{'uuid': uid, 'body': 'raw'}]}})
+                'alert_source_content': {'custom': 'preserved', 'incident': {'id': 'one', 'name': 'Saved card'},
+                                         'events': [{'uuid': uid, 'body': 'raw'}]}})
+            saved = h.store.stored_incident('one')
+            self.assertEqual(saved['name'], 'Saved card')
+            saved['name'] = 'Changed outside storage'
+            self.assertEqual(h.store.stored_incident('one')['name'], 'Saved card')
             self.assertTrue(h.store.needs_event_refresh('one'))
             self.assertEqual(h.store.refresh_candidates(), ['one'])
             incoming = {'events': [{'uuid': uid, 'text': 'normalized'}], 'event_tree': [{'uuid': uid}],

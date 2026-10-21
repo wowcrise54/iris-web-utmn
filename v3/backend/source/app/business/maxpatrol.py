@@ -75,6 +75,14 @@ class IrisStore:
             return False
         return self._event_refresh_due(alert)
 
+    def stored_incident(self, incident_id):
+        alert = self._imported_alert(incident_id)
+        content = alert.alert_source_content if alert and isinstance(alert.alert_source_content, dict) else {}
+        incident = content.get('incident')
+        if isinstance(incident, dict) and incident.get('id') == incident_id:
+            return copy.deepcopy(incident)
+        return None
+
     def refresh_candidates(self):
         from app.models.alerts import Alert
         rows = db.session.query(MaxPatrolReceipt, Alert).join(Alert,
