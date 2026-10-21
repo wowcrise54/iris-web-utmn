@@ -41,6 +41,10 @@ def harness():
         id = Column(Integer, primary_key=True)
         alert_uuid = Column(Uuid, unique=True)
         alert_title = Column(String)
+        alert_customer_id = Column(Integer)
+        alert_source = Column(String)
+        alert_source_ref = Column(String)
+        alert_source_content = Column(JSON)
 
     engine = create_engine('sqlite://')
     session = sessionmaker(bind=engine)()
@@ -87,6 +91,49 @@ def harness():
 
 
 class StorageTests(unittest.TestCase):
+    def test_refresh_updates_only_source_materials_and_preserves_previous_events(self):
+        with harness() as h:
+            from iris_maxpatrol_module.collector import timestamp
+
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            uid = '00000006-050d-0642-f000-0000255d3663'
+            h.store.create('one', {'alert_title': 'Analyst title', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
+                'alert_source_content': {'custom': 'preserved', 'events': [{'uuid': uid, 'body': 'raw'}]}})
+            self.assertTrue(h.store.needs_event_refresh('one'))
+            self.assertEqual(h.store.refresh_candidates(), ['one'])
+            incoming = {'events': [{'uuid': uid, 'text': 'normalized'}], 'event_tree': [{'uuid': uid}],
+                        'event_collection': {'version': 2, 'complete': True,
+                            'collected_at': timestamp(datetime.now(timezone.utc))}}
+            self.assertTrue(h.store.refresh_events('one', incoming))
+            row = h.db.session.query(h.Alert).one()
+            self.assertEqual(row.alert_title, 'Analyst title')
+            self.assertEqual(row.alert_source_content['custom'], 'preserved')
+            self.assertEqual(row.alert_source_content['events'][0]['body'], 'raw')
+            self.assertEqual(row.alert_source_content['events'][0]['text'], 'normalized')
+            self.assertFalse(h.store.needs_event_refresh('one'))
+            self.assertEqual(h.store.refresh_candidates(), [])
+            child = '00000006-050d-0642-f000-0000255d3664'
+            grandchild = '00000006-050d-0642-f000-0000255d3665'
+            h.store.refresh_events('one', {'events': [{'uuid': child}, {'uuid': grandchild}],
+                'event_links': {uid: [child], child: [grandchild], grandchild: []},
+                'event_tree': [{'uuid': uid}],
+                'event_collection': {'version': 2, 'complete': True,
+                    'collected_at': timestamp(datetime.now(timezone.utc))}})
+            h.store.refresh_events('one', {'events': [{'uuid': uid}, {'uuid': child}],
+                'event_links': {uid: [child], child: []}, 'event_tree': [{'uuid': uid}],
+                'event_collection': {'version': 2, 'complete': False}})
+            row = h.db.session.query(h.Alert).one()
+            self.assertEqual(row.alert_source_content['event_links'][child], [grandchild])
+            tree = row.alert_source_content['event_tree'][0]
+            self.assertEqual(tree['subevents'][0]['subevents'][0]['uuid'], grandchild)
+            h.db.session.delete(row)
+            h.db.session.commit()
+            self.assertFalse(h.store.needs_event_refresh('one'))
+
     def test_receipt_atomic_with_alert_and_survives_restart_and_deletion(self):
         with harness() as h:
             def create(alert, **kwargs):

@@ -76,6 +76,7 @@ class MaxPatrolTests(unittest.TestCase):
         store = Mock()
         store.active.return_value = True
         store.seen.side_effect = lambda incident_id: incident_id in processed
+        store.needs_event_refresh.return_value = False
         store.create.side_effect = lambda incident_id, _payload: processed.add(incident_id)
         now = datetime(2026, 10, 20, tzinfo=timezone.utc)
         self.assertEqual(m.collect(c, client, store, now=now), 1)
@@ -119,6 +120,7 @@ class MaxPatrolTests(unittest.TestCase):
         client.events.return_value = []
         store.active.return_value = True
         store.seen.side_effect = [False, True, True]
+        store.needs_event_refresh.return_value = False
         store.create.side_effect = RuntimeError('hook failed after commit')
         self.assertEqual(m.collect(c, client, store), 1)
         self.assertEqual(m.collect(c, client, store), 0)
@@ -161,6 +163,7 @@ class MaxPatrolTests(unittest.TestCase):
         client.events.return_value = [{'body': 'private-body'}]
         store.active.return_value = True
         store.seen.side_effect = lambda incident_id: incident_id == 'old'
+        store.needs_event_refresh.return_value = False
         with self.assertLogs(m.log, level='INFO') as captured:
             self.assertEqual(m.collect(c, client, store), 1)
         output = '\n'.join(captured.output)

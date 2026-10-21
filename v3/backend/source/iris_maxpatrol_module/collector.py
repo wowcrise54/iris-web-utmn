@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
+from itertools import chain
+from uuid import UUID
 from urllib.parse import quote, urlsplit
 
 import requests
@@ -16,6 +18,15 @@ class SIEMError(ValueError):
     def __init__(self, message, *, code='siem_error'):
         super().__init__(message)
         self.code = code
+
+
+class EventBatch(list):
+    """Available rows plus an explicit reason for interrupted pagination."""
+
+    def __init__(self, rows=(), *, reason=None):
+        super().__init__(rows)
+        self.reason = reason
+        self.complete = reason is None
 
 
 def error_reason(error):
@@ -158,7 +169,7 @@ class Client:
                     'select': EVENT_SELECT_FIELDS, 'top': None, 'where': ''},
                     'groupValues': [], 'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())})
             page = data.get('events')
-            if not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
+            if data.get('errors') or not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
                 raise SIEMError('MaxPatrol events must be an array of objects')
             if page and page == previous:
                 raise SIEMError('MaxPatrol did not advance the event page')
@@ -169,8 +180,173 @@ class Client:
                 return events
             previous, offset = page, offset + len(page)
 
+    def event_details(self, event_id, event_time):
+        uid = str(UUID(event_id))
+        response = self.request('GET', f'/api/events/v2/events/{uid}/normalized', params={'time': event_time})
+        event = response.get('event')
+        if response.get('errors') or not isinstance(event, dict):
+            raise SIEMError('MaxPatrol normalized event is unavailable', code='event_details_error')
+        if 'Data' in event:
+            rows = event['Data']
+            if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+                raise SIEMError('MaxPatrol normalized event is unavailable', code='event_details_error')
+            event = rows[0]
+        if event_uuid(event) != uid:
+            raise SIEMError('MaxPatrol returned a different event', code='event_identity_mismatch')
+        return event
 
-def alert_payload(config, incident_id, detail, events, now):
+    def subevents(self, event_id, event_time, *, max_events=10000, is_active=None):
+        uid = str(UUID(event_id))
+        result, offset, previous, token = [], 0, None, None
+        while True:
+            if is_active and not is_active():
+                return EventBatch(result, reason='module_inactive')
+            remaining = max_events - len(result)
+            if remaining <= 0:
+                return EventBatch(result, reason='event_limit')
+            page_size = min(250, remaining)
+            params = {'field': 'subevents', 'time': event_time, 'limit': page_size, 'offset': offset}
+            if token:
+                params['token'] = token
+            try:
+                response = self.request('POST', f'/api/events/v2/subevents/{uid}', params=params,
+                    body={'filter': {'select': EVENT_SELECT_FIELDS, 'where': '', 'groupBy': [],
+                                     'orderBy': [{'field': 'time', 'sortOrder': 'ascending'}]},
+                          'timeFrom': 0, 'timeTo': int(datetime.now(timezone.utc).timestamp()) + 1})
+                page = response.get('events')
+                if response.get('errors') or not isinstance(page, list) or any(not isinstance(e, dict) for e in page):
+                    raise SIEMError('Invalid MaxPatrol subevents response', code='subevents_response_error')
+                if page and page == previous:
+                    raise SIEMError('MaxPatrol did not advance the subevent page', code='subevents_page_repeated')
+            except SIEMError as exc:
+                if result:
+                    return EventBatch(result, reason=error_reason(exc))
+                raise
+            log.info('MaxPatrol subevents page received: parent=%r offset=%s count=%s', uid, offset, len(page))
+            result.extend(page[:remaining])
+            if len(page) < page_size:
+                return EventBatch(result)
+            previous, offset, token = page, offset + len(page), response.get('token')
+
+
+def event_uuid(event):
+    meta = event.get('_meta') if isinstance(event.get('_meta'), dict) else {}
+    try:
+        return str(UUID(str(event.get('uuid') or meta.get('id'))))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def event_date(event):
+    meta = event.get('_meta') if isinstance(event.get('_meta'), dict) else {}
+    value = event.get('time') or meta.get('time')
+    try:
+        datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return value
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def expand_subevents(client, roots, *, max_events=10000, is_active=None):
+    """Load full events once per UUID and retain a cycle-safe nested view."""
+    events, edges, errors, missing, visited = {}, {}, [], set(), set()
+    queue = list(roots)
+    root_ids = [event_uuid(event) for event in roots]
+    limit_reached = False
+    index = 0
+    while index < len(queue):
+        if is_active and not is_active():
+            errors.append({'reason': 'module_inactive'})
+            break
+        candidate = queue[index]
+        index += 1
+        uid = event_uuid(candidate)
+        if uid in visited:
+            continue
+        if len(visited) >= max_events:
+            limit_reached = True
+            break
+        visited.add(uid)
+        date = event_date(candidate)
+        if not uid or not date:
+            errors.append({'uuid': uid, 'reason': 'event_reference_invalid'})
+            if uid:
+                events[uid] = candidate
+            continue
+        events[uid] = candidate
+        try:
+            full = client.event_details(uid, date)
+            events[uid] = {**candidate, **full}
+        except SIEMError as exc:
+            errors.append({'uuid': uid, 'reason': error_reason(exc)})
+            log.warning('MaxPatrol event details failed: uuid=%r reason=%s', uid, error_reason(exc))
+        full = events[uid]
+        expected = full.get('subevents') or []
+        if not isinstance(expected, list):
+            expected = []
+            errors.append({'uuid': uid, 'reason': 'subevents_field_invalid'})
+        expected_ids = [event_uuid({'uuid': value}) for value in expected]
+        expected_ids = [value for value in expected_ids if value]
+        for value in full.get('subevents.missed') or []:
+            if child_id := event_uuid({'uuid': value}):
+                missing.add(child_id)
+        count = full.get('count.subevents') or 0
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            errors.append({'uuid': uid, 'reason': 'subevents_count_invalid'})
+            count = len(expected_ids)
+        if len(expected_ids) != len(expected):
+            errors.append({'uuid': uid, 'reason': 'subevents_reference_invalid'})
+        if not expected_ids and not count:
+            edges[uid] = []
+            continue
+        try:
+            children = client.subevents(uid, event_date(full) or date,
+                                        max_events=max_events - len(visited), is_active=is_active)
+            if isinstance(children, EventBatch) and not children.complete:
+                errors.append({'uuid': uid, 'reason': children.reason})
+                limit_reached |= children.reason == 'event_limit'
+            child_ids = [event_uuid(child) for child in children]
+            edges[uid] = list(dict.fromkeys([*expected_ids, *(value for value in child_ids if value)]))
+            missing.update(set(expected_ids) - set(child_ids))
+            if len({value for value in child_ids if value}) < count:
+                errors.append({'uuid': uid, 'reason': 'subevents_count_mismatch'})
+            queue.extend(children)
+        except SIEMError as exc:
+            edges[uid] = expected_ids
+            missing.update(expected_ids)
+            errors.append({'uuid': uid, 'reason': error_reason(exc)})
+            log.warning('MaxPatrol subevents failed: uuid=%r reason=%s', uid, error_reason(exc))
+    missing.update({value for values in edges.values() for value in values} - events.keys())
+    missing.difference_update(events.keys())
+    summary = {'version': 2, 'complete': not (errors or missing or limit_reached),
+               'root_count': len(roots), 'event_count': len(events),
+               'missing_uuids': sorted(missing), 'errors': errors, 'limit_reached': limit_reached,
+               'collected_at': timestamp(datetime.now(timezone.utc))}
+    log.info('MaxPatrol subevents summary: roots=%s events=%s missing=%s errors=%s complete=%s',
+             len(roots), len(events), len(missing), len(errors), summary['complete'])
+    # Keep unidentified source rows too; they cannot be traversed, but are evidence.
+    return {'events': [*events.values(), *(row for row in roots if not event_uuid(row))],
+            'event_tree': render_event_tree(root_ids, events, edges),
+            'event_links': edges, 'event_collection': summary}
+
+
+def render_event_tree(root_ids, events, edges):
+    rendered = set()
+
+    def branch(uid, depth=0):
+        node = {'uuid': uid}
+        if uid not in events:
+            return {**node, 'missing': True}
+        if uid in rendered or depth >= 64:
+            return {**node, 'reference': True}
+        rendered.add(uid)
+        return {**node, 'event': events[uid],
+                'subevents': [branch(child, depth + 1) for child in edges.get(uid, [])]}
+
+    return [branch(uid) for uid in dict.fromkeys(root_ids) if uid]
+
+
+def alert_payload(config, incident_id, detail, events, now, *, event_materials=None):
     event_time = now
     if isinstance(detail.get('created'), str):
         try:
@@ -187,48 +363,64 @@ def alert_payload(config, incident_id, detail, events, now):
         'alert_severity_id': config.severity_id, 'alert_status_id': config.status_id,
         'alert_tags': 'siem', 'alert_customer_id': config.customer_id,
         'alert_source_event_time': event_time.astimezone(timezone.utc).replace(tzinfo=None),
-        'alert_source_content': {'incident': detail, 'events': events},
+        'alert_source_content': {'incident': detail, 'events': events, **(event_materials or {})},
     }
 
 
-def collect(config, client, store, *, now=None):
+def collect(config, client, store, *, now=None, extra_incidents=()):
     end = now or datetime.now(timezone.utc)
     start = end - timedelta(hours=config.lookback_hours)
-    successes = received = already_imported = failed = invalid = events_failed = 0
+    successes = received = already_imported = failed = invalid = events_failed = refreshed = 0
     complete = False
+    processed_incidents = set()
     log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
              config.customer_id, timestamp(start), timestamp(end))
     try:
-        for incident in client.incidents(start, end):
+        for incident in chain(client.incidents(start, end), ({'id': uid} for uid in extra_incidents)):
+            incident_id = str(incident.get('id') or '').strip()
+            if incident_id and incident_id in processed_incidents:
+                continue
+            processed_incidents.add(incident_id)
             received += 1
             if not store.active():
                 log.info('MaxPatrol collection stopped: module disabled or configuration changed')
                 break
-            incident_id = str(incident.get('id') or '').strip()
             if not incident_id or len(incident_id) > 512:
                 invalid += 1
                 log.warning('MaxPatrol incident without a valid id skipped')
                 continue
+            existing = False
             try:
-                if store.seen(incident_id):
+                existing = store.seen(incident_id)
+                if existing and not store.needs_event_refresh(incident_id):
                     already_imported += 1
                     continue
                 log.info('MaxPatrol incident import started: incident=%r', incident_id)
                 detail = client.detail(incident_id)
                 try:
-                    events = client.events(incident_id, start, end)
+                    # Incident creation lookback must not discard older linked events.
+                    events = client.events(incident_id, datetime.fromtimestamp(0, timezone.utc), end)
+                    materials = expand_subevents(client, events, is_active=store.active)
                 except SIEMError as exc:
                     events_failed += 1
                     log.warning('MaxPatrol event retrieval failed: incident=%r reason=%s; importing without events',
                                 incident_id, error_reason(exc))
                     events = []
+                    materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
+                        'errors': [{'reason': error_reason(exc)}], 'collected_at': timestamp(end)}}
                 log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
-                store.create(incident_id, alert_payload(config, incident_id, detail, events, end))
+                if existing:
+                    if store.refresh_events(incident_id, materials):
+                        refreshed += 1
+                        log.info('MaxPatrol incident events refreshed: incident=%r', incident_id)
+                    continue
+                store.create(incident_id, alert_payload(config, incident_id, detail, events, end,
+                                                       event_materials=materials))
                 successes += 1
                 log.info('MaxPatrol incident imported: incident=%r', incident_id)
             except Exception as exc:
                 store.rollback()
-                if store.seen(incident_id):
+                if not existing and store.seen(incident_id):
                     successes += 1
                     log.warning('MaxPatrol alert committed; a post-commit action failed: incident=%r reason=%s',
                                 incident_id, error_reason(exc))
@@ -240,8 +432,8 @@ def collect(config, client, store, *, now=None):
             complete = True
     finally:
         log.info('MaxPatrol collection summary: received=%s created=%s already_imported=%s failed=%s invalid=%s '
-                 'events_failed=%s complete=%s', received, successes, already_imported, failed, invalid,
-                 events_failed, complete)
+                 'events_failed=%s complete=%s refreshed=%s', received, successes, already_imported, failed, invalid,
+                 events_failed, complete, refreshed)
     return successes
 
 
@@ -491,6 +683,8 @@ EVENT_SELECT_FIELDS = [
     'storage_app_name',
     'subevents',
     'subevents.missed',
+    'subevents.time',
+    'normalized',
     'subject',
     'subject.account.company',
     'subject.account.contact',

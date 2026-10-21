@@ -60,7 +60,8 @@ def poll(module_id):
             stage = 'collection'
             log.info('MaxPatrol poll started: module=%s interval=%s', module_id, config.interval)
             client = Client(config)
-            count = collect(config, client, IrisStore(module_id, config))
+            store = IrisStore(module_id, config)
+            count = collect(config, client, store, extra_incidents=store.refresh_candidates())
             log.info('MaxPatrol poll completed: module=%s alerts_created=%s', module_id, count)
     except Exception as exc:
         db.session.rollback()
