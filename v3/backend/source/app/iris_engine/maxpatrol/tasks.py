@@ -1,7 +1,8 @@
 """Short beat ticks dispatch source polls with a database-wide concurrency lock."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import logging
+from time import perf_counter
+from uuid import uuid4
 
 from sqlalchemy import text
 from app import celery
@@ -9,9 +10,10 @@ from app.db import db
 from app.business.maxpatrol import MODULE, configuration, IrisStore
 from app.models.models import IrisModule
 from app.models.maxpatrol import MaxPatrolPollState
-from iris_maxpatrol_module.collector import Client, collect, error_reason
+from iris_maxpatrol_module.collector import Client, collect, error_reason, REQUEST_REVISION
+from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
-log = logging.getLogger(__name__)
+log = context_logger(__name__)
 
 
 @contextmanager
@@ -36,6 +38,12 @@ def source_lock(source_key):
 
 @celery.task(name='iris.maxpatrol.poll')
 def poll(module_id):
+    with logging_context(module=module_id, poll=uuid4().hex[:12]):
+        return _poll(module_id)
+
+
+def _poll(module_id):
+    started = perf_counter()
     row = db.session.get(IrisModule, module_id)
     if not row or not row.is_active or row.module_name != MODULE:
         return
@@ -58,14 +66,17 @@ def poll(module_id):
             state.last_poll = now
             db.session.commit()
             stage = 'collection'
-            log.info('MaxPatrol poll started: module=%s interval=%s', module_id, config.interval)
+            log.info('MaxPatrol poll started: module=%s interval=%s request_revision=%s verify_tls=%s',
+                     module_id, config.interval, REQUEST_REVISION, config.verify_tls)
             client = Client(config)
             store = IrisStore(module_id, config)
             count = collect(config, client, store, extra_incidents=store.refresh_candidates())
-            log.info('MaxPatrol poll completed: module=%s alerts_created=%s', module_id, count)
+            log.info('MaxPatrol poll completed: module=%s alerts_created=%s duration_ms=%.1f',
+                     module_id, count, (perf_counter() - started) * 1000)
     except Exception as exc:
         db.session.rollback()
-        log.warning('MaxPatrol poll failed: module=%s stage=%s reason=%s', module_id, stage, error_reason(exc))
+        log.warning('MaxPatrol poll failed: module=%s stage=%s reason=%s duration_ms=%.1f',
+                    module_id, stage, error_reason(exc), (perf_counter() - started) * 1000)
     finally:
         if client:
             client.close()

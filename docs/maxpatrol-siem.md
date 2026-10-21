@@ -174,6 +174,10 @@ push-подписки в предоставленном примере нет.
 
 DEBUG не требуется. Логи находятся в stdout/stderr worker, отдельного файла модуля нет.
 Уровень INFO обычно включает также сообщения WARNING и ERROR.
+Каждый цикл имеет `poll`, каждая строка обработки инцидента — `incident`,
+также выводится `module`. Контекст изолирован между задачами и сбрасывается
+после обработки. Worker и его обработчики логов должны разрешать INFO
+(например, запуск Celery с `--loglevel=INFO`).
 Пример успешного цикла (числа приведены для иллюстрации):
 
 ```text
@@ -194,6 +198,8 @@ INFO MaxPatrol poll completed: module=7 alerts_created=1
 - `failed`: ошибки импорта; `invalid`: записи без корректного ID.
 - `events_failed`: не удалось получить события, импорт мог продолжиться без них.
 - `refreshed`: число существующих оповещений, в которых обновлены связанные события.
+- `incomplete_incidents`: число обработанных инцидентов с неполной выгрузкой событий.
+- `duration_ms`: длительность запроса или цикла в миллисекундах.
 - `complete=True` означает, что обход списка завершился; при этом нужно проверять `failed` и `events_failed`.
 - `complete=False`: обход был прерван ошибкой, отключением модуля или изменением настроек.
   После ошибки списка итог может быть нулевым: это не подтверждает отсутствие инцидентов в SIEM.
@@ -213,11 +219,14 @@ docker compose -p iris-upgrade-2-4-29-fastapi -f docker-compose.upgrade-validati
 ```
 
 Эти сообщения появятся после установки обновлённых исходников в worker.
-Токен, HTTP-заголовки, тела ответов и содержимое инцидентов в логи не выводятся;
+Токен, HTTP-заголовки, полные тела ответов и содержимое событий в логи не выводятся;
 ID инцидентов выводятся в экранированном виде для сопоставления с SIEM.
 
-При раскрытии вложенности на INFO также видны `MaxPatrol subevents page received`
-и `MaxPatrol subevents summary: roots=… events=… missing=… errors=… complete=…`.
+При раскрытии вложенности на INFO видны `MaxPatrol HTTP completed` с методом,
+endpoint, HTTP-статусом, длительностью и числом строк ответа, а также
+`MaxPatrol subevents summary: roots=… events=… missing=… errors=… complete=…`.
+Детальные `HTTP started` и `subevents page received` относятся к DEBUG;
+для диагностики HTTP 400/500 включать DEBUG не требуется.
 Успешный импорт оповещения не означает полную выгрузку: проверяйте также
 `event_collection.complete` в его сыром содержимом.
 
@@ -225,7 +234,10 @@ ID инцидентов выводятся в экранированном ви�
 с `time_from`, `time_to`, `offset` и количеством полей. При неуспешном HTTP-ответе
 WARNING содержит метод, endpoint и статус: это позволяет отличить отказ
 основного `/v3/events/` от ошибки дополнительного `/v2/subevents/`.
-Тела ошибок сервера и заголовок Authorization в журнал не включаются.
+В `MaxPatrol HTTP request failed` на WARNING теперь сразу виден ограниченный
+очищенный фрагмент пояснения сервера в `response`, а также `status`, `reason`,
+`duration_ms`, контекст цикла/инцидента и параметры времени, если они есть.
+Заголовок Authorization и полное тело ответа в журнал не включаются.
 
 При HTTP-ошибке в `event_collection.errors` сырого содержимого сохраняется
 ограниченная диагностика: `reason`, `request_revision`, `method`, `endpoint`,
@@ -251,3 +263,36 @@ MP10 28.0; его HTTP 500 не является HTTP 400 на `/api/events/v3/e
 Полнота событий при этом отражается независимо в `event_collection.complete`.
 При 401/403 сохранённая карточка не используется для обхода отказа доступа;
 для нового инцидента без сохранённой карточки импорт откладывается до успешного чтения.
+
+### TLS и standalone-контейнер
+
+При явно выбранном `verify_tls=false` модуль пишет одну строку
+`MaxPatrol TLS certificate verification disabled: verify_tls=false` за клиент
+(в worker — за цикл опроса). Повторяющиеся многострочные `InsecureRequestWarning`
+urllib3 подавляются только для HTTP-вызова к настроенному хосту и только для
+этой категории предупреждений. Проверка TLS не меняется, при `verify_tls=true`
+фильтр не применяется. Постоянное глобальное отключение warnings не используется.
+Область предупреждений рассчитана на синхронную Celery-задачу в prefork worker.
+
+Пример нового формата (иллюстрация):
+
+```text
+INFO [module=7 poll="a1b2c3" incident="incident-id"] MaxPatrol HTTP completed: method=POST endpoint=/api/events/v3/events/ status=200 duration_ms=120.4 rows=12
+INFO [module=7 poll="a1b2c3" incident="incident-id"] MaxPatrol incident events refreshed: incident='incident-id' events=12 complete=True missing=0 errors=0
+WARNING [module=7 poll="a1b2c3" incident="incident-id"] MaxPatrol HTTP request failed: method=POST endpoint=/api/events/v3/events/ status=400 reason=http_400 duration_ms=52.1 response='Пояснение сервера'
+```
+
+Для standalone-контейнера Linux замените `IRIS_CONTAINER` на его имя:
+
+```bash
+docker logs --since 15m --timestamps -f IRIS_CONTAINER 2>&1 | grep --line-buffered -F 'MaxPatrol'
+```
+
+Для одного инцидента можно дополнительно отфильтровать контекст:
+
+```bash
+docker logs --since 15m --timestamps -f IRIS_CONTAINER 2>&1 | grep --line-buffered -F 'incident="UUID_ИНЦИДЕНТА"'
+```
+
+Изменения вступают в силу после обновления образа и перезапуска worker;
+старые строки в `docker logs` не переписываются.

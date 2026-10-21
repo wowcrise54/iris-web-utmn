@@ -2,15 +2,19 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
-import logging
 import re
+import warnings
 from itertools import chain
+from time import perf_counter
 from uuid import UUID
 from urllib.parse import quote, urlsplit
 
 import requests
+from urllib3.exceptions import InsecureRequestWarning
 
-log = logging.getLogger(__name__)
+from iris_maxpatrol_module.logging_utils import context_logger, logging_context
+
+log = context_logger(__name__)
 REQUEST_REVISION = 'mp10-v3-335-bounded-1'
 
 
@@ -133,22 +137,52 @@ class Client:
         self.config = config
         self.session = session or requests.Session()
         self.session.trust_env = False
+        self._insecure_notice_logged = False
 
     def close(self):
         self.session.close()
 
     def request(self, method, path, *, body=None, params=None):
+        started = perf_counter()
+        log.debug('MaxPatrol HTTP started: method=%s endpoint=%s offset=%s',
+                  method, path, (params or {}).get('offset'))
         try:
-            response = self.session.request(method, self.config.url + path,
-                headers={'Authorization': f'Bearer {self.config.token}', 'Accept': 'application/json',
-                         'Content-Type': 'application/json'},
-                json=body, params=params, timeout=self.config.timeout,
-                verify=self.config.verify_tls, allow_redirects=False)
+            data, status = self._request(method, path, body=body, params=params)
+        except SIEMError as exc:
+            diagnostic = exc.diagnostic
+            query_details = ' '.join(f'{label}={diagnostic[key]}' for key, label in (
+                ('time_from', 'time_from'), ('time_to', 'time_to'), ('fields_count', 'fields')) if key in diagnostic)
+            log.warning('MaxPatrol HTTP request failed: method=%s endpoint=%s status=%s reason=%s duration_ms=%.1f '
+                        '%sresponse=%r',
+                        method, path, diagnostic.get('status', '-'), error_reason(exc), (perf_counter() - started) * 1000,
+                        query_details + ' ' if query_details else '', diagnostic.get('response_excerpt', ''))
+            raise
+        log.info('MaxPatrol HTTP completed: method=%s endpoint=%s status=%s duration_ms=%.1f rows=%s',
+                 method, path, status, (perf_counter() - started) * 1000,
+                 len(data['events']) if isinstance(data.get('events'), list) else '-')
+        return data
+
+    def _request(self, method, path, *, body=None, params=None):
+        try:
+            with warnings.catch_warnings():
+                if not self.config.verify_tls:
+                    if not self._insecure_notice_logged:
+                        log.warning('MaxPatrol TLS certificate verification disabled: verify_tls=false; '
+                                    'notice=once_per_poll')
+                        self._insecure_notice_logged = True
+                    host = re.escape(repr(urlsplit(self.config.url).hostname))
+                    warnings.filterwarnings('ignore', category=InsecureRequestWarning,
+                        message=r'Unverified HTTPS request is being made to host ' + host + r'\.',
+                        module=r'(?:requests\.packages\.)?urllib3\.connectionpool')
+                response = self.session.request(method, self.config.url + path,
+                    headers={'Authorization': f'Bearer {self.config.token}', 'Accept': 'application/json',
+                             'Content-Type': 'application/json'},
+                    json=body, params=params, timeout=self.config.timeout,
+                    verify=self.config.verify_tls, allow_redirects=False)
             if not 200 <= response.status_code < 300:
-                log.warning('MaxPatrol HTTP request failed: method=%s endpoint=%s status=%s',
-                            method, path, response.status_code)
                 raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}',
-                    diagnostic=request_diagnostic(method, path, body, response.text, self.config.token))
+                    diagnostic={'status': response.status_code,
+                                **request_diagnostic(method, path, body, response.text, self.config.token)})
             data = response.json()
         except requests.exceptions.SSLError:
             raise SIEMError('MaxPatrol TLS request failed', code='tls_error') from None
@@ -165,7 +199,7 @@ class Client:
             raise SIEMError('MaxPatrol request failed or returned invalid JSON', code=code) from None
         if not isinstance(data, dict):
             raise SIEMError('MaxPatrol response must be an object')
-        return data
+        return data, response.status_code
 
     def incidents(self, start, end):
         offset = 0
@@ -257,7 +291,7 @@ class Client:
                 if result:
                     return EventBatch(result, reason=error_reason(exc), diagnostic=exc.diagnostic)
                 raise
-            log.info('MaxPatrol subevents page received: parent=%r offset=%s count=%s', uid, offset, len(page))
+            log.debug('MaxPatrol subevents page received: parent=%r offset=%s count=%s', uid, offset, len(page))
             result.extend(page[:remaining])
             if len(page) < page_size:
                 return EventBatch(result)
@@ -425,9 +459,11 @@ def alert_payload(config, incident_id, detail, events, now, *, event_materials=N
 
 
 def collect(config, client, store, *, now=None, extra_incidents=()):
+    started = perf_counter()
     end = now or datetime.now(timezone.utc)
     start = end - timedelta(hours=config.lookback_hours)
     successes = received = already_imported = failed = invalid = events_failed = refreshed = 0
+    incomplete_incidents = 0
     complete = False
     processed_incidents = set()
     log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
@@ -446,63 +482,73 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                 invalid += 1
                 log.warning('MaxPatrol incident without a valid id skipped')
                 continue
-            existing = False
-            try:
-                existing = store.seen(incident_id)
-                if existing and not store.needs_event_refresh(incident_id):
-                    already_imported += 1
-                    continue
-                log.info('MaxPatrol incident import started: incident=%r', incident_id)
-                incident_refresh_error = None
+            with logging_context(incident=incident_id):
+                existing = False
                 try:
-                    detail = client.detail(incident_id)
-                except SIEMError as exc:
-                    if not existing or exc.code not in ('http_500', 'http_502', 'http_503', 'http_504'):
-                        raise
-                    detail = store.stored_incident(incident_id)
-                    if not isinstance(detail, dict) or detail.get('id') != incident_id:
-                        raise
-                    incident_refresh_error = error_details(exc)
-                    log.warning('MaxPatrol incident detail refresh failed: incident=%r reason=%s; '
-                                'using saved card to refresh events', incident_id, error_reason(exc))
-                try:
-                    event_start, event_end = incident_event_window(detail, start, end)
-                    events = client.events(incident_id, event_start, event_end)
-                    materials = expand_subevents(client, events, is_active=store.active, source_complete=True)
-                except SIEMError as exc:
-                    events_failed += 1
-                    log.warning('MaxPatrol event retrieval failed: incident=%r reason=%s; importing without events',
-                                incident_id, error_reason(exc))
-                    events = []
-                    materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
-                        'errors': [error_details(exc)], 'collected_at': timestamp(end)}}
-                materials['incident_refresh_error'] = incident_refresh_error
-                log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
-                if existing:
-                    if store.refresh_events(incident_id, materials):
-                        refreshed += 1
-                        log.info('MaxPatrol incident events refreshed: incident=%r', incident_id)
-                    continue
-                store.create(incident_id, alert_payload(config, incident_id, detail, events, end,
-                                                       event_materials=materials))
-                successes += 1
-                log.info('MaxPatrol incident imported: incident=%r', incident_id)
-            except Exception as exc:
-                store.rollback()
-                if not existing and store.seen(incident_id):
+                    existing = store.seen(incident_id)
+                    if existing and not store.needs_event_refresh(incident_id):
+                        already_imported += 1
+                        continue
+                    log.info('MaxPatrol incident import started: incident=%r', incident_id)
+                    incident_refresh_error = None
+                    try:
+                        detail = client.detail(incident_id)
+                    except SIEMError as exc:
+                        if not existing or exc.code not in ('http_500', 'http_502', 'http_503', 'http_504'):
+                            raise
+                        detail = store.stored_incident(incident_id)
+                        if not isinstance(detail, dict) or detail.get('id') != incident_id:
+                            raise
+                        incident_refresh_error = error_details(exc)
+                        log.warning('MaxPatrol incident detail refresh failed: incident=%r reason=%s; '
+                                    'using saved card to refresh events', incident_id, error_reason(exc))
+                    try:
+                        event_start, event_end = incident_event_window(detail, start, end)
+                        events = client.events(incident_id, event_start, event_end)
+                        materials = expand_subevents(client, events, is_active=store.active, source_complete=True)
+                    except SIEMError as exc:
+                        events_failed += 1
+                        log.warning('MaxPatrol event retrieval failed: incident=%r reason=%s; importing without events',
+                                    incident_id, error_reason(exc))
+                        events = []
+                        materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
+                            'errors': [error_details(exc)], 'collected_at': timestamp(end)}}
+                    materials['incident_refresh_error'] = incident_refresh_error
+                    event_state = materials['event_collection']
+                    if not event_state['complete']:
+                        incomplete_incidents += 1
+                    log.info('MaxPatrol incident details received: incident=%r events=%s', incident_id, len(events))
+                    if existing:
+                        if store.refresh_events(incident_id, materials):
+                            refreshed += 1
+                            log.info('MaxPatrol incident events refreshed: incident=%r events=%s complete=%s '
+                                     'missing=%s errors=%s', incident_id, len(materials['events']),
+                                     event_state['complete'], len(event_state.get('missing_uuids', [])),
+                                     len(event_state.get('errors', [])))
+                        continue
+                    store.create(incident_id, alert_payload(config, incident_id, detail, events, end,
+                                                           event_materials=materials))
                     successes += 1
-                    log.warning('MaxPatrol alert committed; a post-commit action failed: incident=%r reason=%s',
+                    log.info('MaxPatrol incident imported: incident=%r events=%s complete=%s missing=%s errors=%s',
+                             incident_id, len(materials['events']), event_state['complete'],
+                             len(event_state.get('missing_uuids', [])), len(event_state.get('errors', [])))
+                except Exception as exc:
+                    store.rollback()
+                    if not existing and store.seen(incident_id):
+                        successes += 1
+                        log.warning('MaxPatrol alert committed; a post-commit action failed: incident=%r reason=%s',
+                                    incident_id, error_reason(exc))
+                        continue
+                    failed += 1
+                    log.warning('MaxPatrol incident import failed: incident=%r reason=%s; retry within lookback window',
                                 incident_id, error_reason(exc))
-                    continue
-                failed += 1
-                log.warning('MaxPatrol incident import failed: incident=%r reason=%s; retry within lookback window',
-                            incident_id, error_reason(exc))
         else:
             complete = True
     finally:
         log.info('MaxPatrol collection summary: received=%s created=%s already_imported=%s failed=%s invalid=%s '
-                 'events_failed=%s complete=%s refreshed=%s', received, successes, already_imported, failed, invalid,
-                 events_failed, complete, refreshed)
+                 'events_failed=%s complete=%s refreshed=%s incomplete_incidents=%s duration_ms=%.1f',
+                 received, successes, already_imported, failed, invalid, events_failed, complete, refreshed,
+                 incomplete_incidents, (perf_counter() - started) * 1000)
     return successes
 
 
