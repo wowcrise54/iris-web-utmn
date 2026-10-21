@@ -171,7 +171,9 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(child['body'], '<Event>original</Event>')
         self.assertEqual(child['custom']['process']['name'], 'example')
         self.assertTrue(content['event_collection']['complete'])
-        self.assertEqual(self.client.request.call_args_list[0].kwargs['body']['timeFrom'], 0)
+        body = self.client.request.call_args_list[0].kwargs['body']
+        self.assertGreater(body['timeFrom'], 0)
+        self.assertEqual(body['timeTo'] - body['timeFrom'], 72 * 3600)
         self.assertEqual(self.client.request.call_count, 1)
 
     def test_v3_full_response_builds_tree_without_detail_or_subevent_requests(self):
@@ -203,6 +205,39 @@ class SubeventTests(unittest.TestCase):
         self.assertIn('object.process.system_id', first.kwargs['body']['filter'])
         self.assertEqual(first.kwargs['params']['incidentId'], 'incident')
         self.assertEqual(second.kwargs['params']['token'], 'page-token')
+
+    def test_http_request_matches_supplied_working_postman_contract(self):
+        from datetime import datetime, timezone
+        from pathlib import Path
+        expected = (Path(__file__).parent / 'fixtures/maxpatrol_v3_select.txt').read_text(encoding='utf-8').strip()
+        session = Mock()
+        session.request.return_value.status_code = 200
+        session.request.return_value.json.return_value = {'errors': None, 'events': [], 'token': None}
+        client = self.m.Client(self.config, session)
+        client.events(A, datetime.fromtimestamp(1792486213, timezone.utc),
+                      datetime.fromtimestamp(1792486218, timezone.utc))
+        call = session.request.call_args
+        self.assertEqual(call.args, ('POST', 'https://siem.local/api/events/v3/events/'))
+        self.assertEqual(call.kwargs['params'], {'incidentId': A, 'offset': 0, 'limit': 250, 'noCount': 'true'})
+        self.assertEqual(call.kwargs['headers']['Content-Type'], 'application/json')
+        self.assertEqual(call.kwargs['json'], {'filter': expected, 'timeFrom': 1792486213, 'timeTo': 1792486218})
+
+    def test_old_incident_refresh_uses_bounded_window_around_creation(self):
+        from datetime import datetime, timezone
+        client, store = Mock(), Mock()
+        client.incidents.return_value = []
+        client.detail.return_value = {'created': T}
+        client.events.return_value = []
+        store.active.return_value = True
+        store.seen.return_value = True
+        store.needs_event_refresh.return_value = True
+        self.m.collect(self.config, client, store, now=datetime(2026, 10, 21, tzinfo=timezone.utc),
+                       extra_incidents=['old'])
+        _, start, end = client.events.call_args.args
+        self.assertGreater(start.timestamp(), 0)
+        self.assertLessEqual((end - start).total_seconds(), 2 * 72 * 3600)
+        self.assertEqual(start.year, 2019)
+        self.assertEqual(end.year, 2020)
 
 
 if __name__ == '__main__':

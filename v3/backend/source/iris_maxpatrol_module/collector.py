@@ -111,10 +111,12 @@ class Client:
         try:
             response = self.session.request(method, self.config.url + path,
                 headers={'Authorization': f'Bearer {self.config.token}', 'Accept': 'application/json',
-                         'Content-Type': 'application/json; charset=UTF-8'},
+                         'Content-Type': 'application/json'},
                 json=body, params=params, timeout=self.config.timeout,
                 verify=self.config.verify_tls, allow_redirects=False)
             if not 200 <= response.status_code < 300:
+                log.warning('MaxPatrol HTTP request failed: method=%s endpoint=%s status=%s',
+                            method, path, response.status_code)
                 raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}')
             data = response.json()
         except requests.exceptions.SSLError:
@@ -165,6 +167,8 @@ class Client:
             params = {'incidentId': incident_id, 'offset': offset, 'limit': 250, 'noCount': 'true'}
             if token:
                 params['token'] = token
+            log.info('MaxPatrol events request: api=v3 offset=%s time_from=%s time_to=%s fields=%s',
+                     offset, int(start.timestamp()), int(end.timestamp()), len(EVENT_SELECT_FIELDS))
             data = self.request('POST', '/api/events/v3/events/', params=params,
                 body={'filter': 'select(' + ', '.join(EVENT_SELECT_FIELDS) + ') | sort(time desc)',
                       'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())})
@@ -355,6 +359,19 @@ def render_event_tree(root_ids, events, edges):
     return [branch(uid) for uid in dict.fromkeys(root_ids) if uid]
 
 
+def incident_event_window(detail, start, end):
+    """Bound normal polls; center historical refreshes on incident creation."""
+    try:
+        created = datetime.fromisoformat(detail['created'].replace('Z', '+00:00'))
+        created = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created.astimezone(timezone.utc)
+        if created < start or created > end:
+            span = end - start
+            return created - span, created + span
+    except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
+        pass
+    return start, end
+
+
 def alert_payload(config, incident_id, detail, events, now, *, event_materials=None):
     event_time = now
     if isinstance(detail.get('created'), str):
@@ -407,8 +424,8 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                 log.info('MaxPatrol incident import started: incident=%r', incident_id)
                 detail = client.detail(incident_id)
                 try:
-                    # Incident creation lookback must not discard older linked events.
-                    events = client.events(incident_id, datetime.fromtimestamp(0, timezone.utc), end)
+                    event_start, event_end = incident_event_window(detail, start, end)
+                    events = client.events(incident_id, event_start, event_end)
                     materials = expand_subevents(client, events, is_active=store.active, source_complete=True)
                 except SIEMError as exc:
                     events_failed += 1
@@ -694,10 +711,7 @@ EVENT_SELECT_FIELDS = [
     'scope_id',
     'siem_alias',
     'siem_id',
-    'site_address',
-    'site_alias',
     'site_id',
-    'site_name',
     'src.asset',
     'src.fqdn',
     'src.geo.asn',
