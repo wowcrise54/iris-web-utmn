@@ -36,6 +36,15 @@ def error_details(error):
     return {'reason': error_reason(error), **(error.diagnostic if isinstance(error, SIEMError) else {})}
 
 
+def without_null_fields(value):
+    """Drop null object fields; preserve scalar values, array positions and raw strings."""
+    if isinstance(value, dict):
+        return {key: without_null_fields(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [without_null_fields(item) for item in value]
+    return value
+
+
 def request_diagnostic(method, path, body, response_text, token):
     # Retain no headers or full request/response. Redact before truncation so
     # the prefix of a long token cannot survive at the excerpt boundary.

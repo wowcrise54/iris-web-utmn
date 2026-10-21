@@ -8,7 +8,7 @@ from app.models.errors import BusinessProcessingError
 from app.models.models import IrisModule
 from app.models.maxpatrol import MaxPatrolReceipt
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
-from iris_maxpatrol_module.collector import Config, positive_int, event_uuid, render_event_tree
+from iris_maxpatrol_module.collector import Config, positive_int, event_uuid, render_event_tree, without_null_fields
 
 MODULE = 'iris_maxpatrol_module'
 NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
@@ -134,7 +134,7 @@ class IrisStore:
         content['events'] = [*events.values(), *unidentified]
         content['event_links'] = links
         content['event_tree'] = render_event_tree(roots, events, links)
-        alert.alert_source_content = content
+        alert.alert_source_content = without_null_fields(content)
         db.session.commit()
         return True
 
@@ -143,6 +143,9 @@ class IrisStore:
         from app.models.alerts import Alert
         if not self.active():
             raise ValueError('MaxPatrol module disabled or settings changed')
+        payload = dict(payload)
+        if 'alert_source_content' in payload:
+            payload['alert_source_content'] = without_null_fields(payload['alert_source_content'])
         alert_uuid = uuid5(NAMESPACE, self.config.source_key + ':' + incident_id)
         alert = Alert(alert_uuid=alert_uuid, **payload)
         # alerts_create's first commit persists both rows. Post-commit hook failures
