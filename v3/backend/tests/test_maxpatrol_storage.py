@@ -8,9 +8,9 @@ import types
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
-from sqlalchemy import Boolean, Column, Integer, JSON, String, Uuid, create_engine, select, func
+from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Uuid, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 from sqlalchemy.dialects import postgresql  # noqa: F401  register before temporary sys.modules isolation
 
 SOURCE = Path(__file__).resolve().parents[1] / 'source'
@@ -39,8 +39,15 @@ def harness():
     class Alert(base):
         __tablename__ = 'alerts'
         id = Column(Integer, primary_key=True)
+        alert_id = synonym('id')
         alert_uuid = Column(Uuid, unique=True)
         alert_title = Column(String)
+        alert_description = Column(String)
+        alert_source_link = Column(String)
+        alert_severity_id = Column(Integer)
+        alert_status_id = Column(Integer)
+        alert_tags = Column(String)
+        alert_source_event_time = Column(DateTime)
         alert_customer_id = Column(Integer)
         alert_source = Column(String)
         alert_source_ref = Column(String)
@@ -63,12 +70,14 @@ def harness():
     celery = types.SimpleNamespace(task=lambda **_kwargs: lambda f: f,
                                    conf=types.SimpleNamespace(beat_schedule={}))
     doubles['app'].celery = celery
-    names = ['app.models.maxpatrol', 'app.business.maxpatrol', 'maxpatrol_test_tasks']
+    names = ['app.models.maxpatrol', 'app.business.maxpatrol', 'app.business.maxpatrol_ingestion',
+             'maxpatrol_test_tasks']
     original = {name: sys.modules.get(name) for name in names}
     with patch.dict(sys.modules, doubles):
         try:
             models = load('app.models.maxpatrol', 'app/models/maxpatrol.py')
             business = load('app.business.maxpatrol', 'app/business/maxpatrol.py')
+            ingestion = load('app.business.maxpatrol_ingestion', 'app/business/maxpatrol_ingestion.py')
             tasks = load('maxpatrol_test_tasks', 'app/iris_engine/maxpatrol/tasks.py')
             base.metadata.create_all(engine)
             row = Module(id=1, module_name=business.MODULE, is_active=True, module_config=[
@@ -77,7 +86,7 @@ def harness():
             session.add(row)
             session.commit()
             config = business.configuration(row)
-            yield types.SimpleNamespace(db=db, business=business, models=models, tasks=tasks,
+            yield types.SimpleNamespace(db=db, business=business, ingestion=ingestion, models=models, tasks=tasks,
                 store=business.IrisStore(1, config), config=config, Module=Module, Alert=Alert,
                 alerts=doubles['app.business.alerts'])
         finally:
@@ -146,7 +155,8 @@ class StorageTests(unittest.TestCase):
             self.assertNotIn('new_null', row)
             self.assertEqual(row['body'], 'original')
             self.assertIs(row['flag'], False)
-            self.assertEqual(saved.alert_source_content['event_tree'][0]['event'], row)
+            self.assertEqual(saved.alert_source_content['event_tree'][0]['uuid'], uid)
+            self.assertNotIn('event', saved.alert_source_content['event_tree'][0])
 
     def test_refresh_updates_only_source_materials_and_preserves_previous_events(self):
         with harness() as h:
@@ -307,7 +317,7 @@ class StorageTests(unittest.TestCase):
     def test_due_poll_records_attempt_and_closes_client_on_request_failure(self):
         with harness() as h, patch('maxpatrol_test_tasks.source_lock') as lock, \
                 patch('maxpatrol_test_tasks.Client') as client, \
-                patch('maxpatrol_test_tasks.collect', side_effect=RuntimeError('SIEM unavailable')) as collect:
+                patch('maxpatrol_test_tasks.run_bounded_poll', side_effect=RuntimeError('SIEM unavailable')) as collect:
             lock.return_value.__enter__.return_value = True
             h.tasks.poll(1)
             collect.assert_called_once()

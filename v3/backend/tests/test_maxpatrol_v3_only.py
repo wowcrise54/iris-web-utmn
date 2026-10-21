@@ -1,5 +1,6 @@
 """Event retrieval must use only the user's captured v3 request."""
 import unittest
+import json
 from unittest.mock import Mock
 
 import test_maxpatrol as base_tests
@@ -18,12 +19,11 @@ class V3OnlyTests(unittest.TestCase):
         session = Mock()
 
         def respond(_method, url, **_kwargs):
-            response = Mock()
-            response.status_code = 200 if url.endswith('/api/events/v3/events/') else 404
-            response.text = 'unsupported route'
-            response.json.return_value = {'events': [{'uuid': A, 'time': '2026-10-21T08:00:00Z',
+            if not url.endswith('/api/events/v3/events/'):
+                return base_tests.streaming_response(404, b'unsupported route')
+            payload = {'events': [{'uuid': A, 'time': '2026-10-21T08:00:00Z',
                 'subevents': [B], 'body': 'original'}]}
-            return response
+            return base_tests.streaming_response(200, json.dumps(payload).encode())
 
         session.request.side_effect = respond
         client = self.m.Client(config, session)

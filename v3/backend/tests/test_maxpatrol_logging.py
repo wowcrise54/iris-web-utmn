@@ -11,12 +11,11 @@ class LoggingTests(unittest.TestCase):
     def setUp(self):
         self.m = base_tests.MaxPatrolTests().core()
 
-    def client(self, *, verify_tls=True):
+    def client(self, *, verify_tls=True, status_code=200, body=b'{"ok":true}'):
         config = self.m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'test-secret',
                                            'verify_tls': verify_tls})
         session = Mock()
-        response = Mock(status_code=200)
-        response.json.return_value = {'ok': True}
+        response = base_tests.streaming_response(status_code, body)
         session.request.return_value = response
         return self.m.Client(config, session), session, response
 
@@ -26,7 +25,7 @@ class LoggingTests(unittest.TestCase):
         def emit_warning(*_args, **_kwargs):
             warnings.warn_explicit("Unverified HTTPS request is being made to host 'siem.local'. Adding certificate verification is strongly advised.",
                 InsecureRequestWarning, 'connectionpool.py', 1061, module='urllib3.connectionpool')
-            return response
+            return base_tests.streaming_response()
 
         session.request.side_effect = emit_warning
         with warnings.catch_warnings(record=True) as captured:
@@ -58,9 +57,8 @@ class LoggingTests(unittest.TestCase):
         self.assertIn('other.local', str(captured[0].message))
 
     def test_context_is_carried_into_http_error_and_reset_after_scope(self):
-        client, _, response = self.client()
-        response.status_code = 400
-        response.text = 'Invalid field. Bearer test-secret pat_NOT_A_REAL_CREDENTIAL'
+        client, _, response = self.client(
+            status_code=400, body=b'Invalid field. Bearer test-secret pat_NOT_A_REAL_CREDENTIAL')
         with self.assertLogs(self.m.log, level='INFO') as output:
             with self.m.logging_context(module=7, poll='poll-one', incident='incident-one'):
                 with self.assertRaises(self.m.SIEMError):

@@ -10,6 +10,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 // merged here and `vite.config.ts` now carries dev-server config only.
 export default defineConfig({
 	plugins: [sveltekit()],
+	resolve: { conditions: ['browser'] },
 
 	test: {
 		globals: true,

@@ -4810,5 +4810,9 @@
   "Conversation is no longer available.": "Разговор больше недоступен.",
   "Case access is no longer available.": "Доступ к кейсу больше недоступен.",
   "War-room access is no longer available.": "Доступ к оперативной комнате больше недоступен.",
-  "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели."
+  "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели.",
+  "Show SIEM events": "Показать события SIEM",
+  "Hide SIEM events": "Скрыть события SIEM",
+  "Could not load SIEM events": "Не удалось загрузить события SIEM",
+  "No SIEM events stored yet.": "События SIEM ещё не сохранены."
 }

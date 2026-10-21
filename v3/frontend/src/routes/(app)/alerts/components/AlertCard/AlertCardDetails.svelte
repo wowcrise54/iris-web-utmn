@@ -22,6 +22,8 @@
 	import { current_user } from '$lib/stores/auth.store';
 	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
 	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import SiemEvents from '../SiemEvents.svelte';
+	import { hasMaxPatrolEvents } from '$lib/services/siem-events.service';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
 	import { toast } from '$lib/components/ui/toast';
 	const userCtx = getContext<UserCtx>(USER_CTX);
@@ -282,6 +284,9 @@
 	{/if}
 
 	<!-- Raw Alert -->
+	{#if hasMaxPatrolEvents(alert.alert_source_content)}
+		<SiemEvents alertId={alert.alert_id} />
+	{/if}
 	<div class="rounded-lg border border-border/50 bg-muted/30 p-4">
 		<div class="mb-3 flex items-center justify-between gap-2">
 			<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{irisT("Raw Alert", $irisLocale)}</h4>

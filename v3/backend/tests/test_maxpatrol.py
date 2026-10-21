@@ -1,16 +1,42 @@
 """Offline contract tests; no SIEM, broker, or application boot required."""
 import importlib.util
+import io
 from pathlib import Path
 import sys
 import unittest
 from unittest.mock import Mock
 from datetime import datetime, timezone
+from requests import Response
 
 SOURCE = Path(__file__).resolve().parents[1] / 'source'
 sys.path.insert(0, str(SOURCE))
 
 
+def streaming_response(status_code=200, body=b'{"ok":true}'):
+    """Use requests' real chunk reader against a network-free byte stream."""
+    response = Response()
+    response.status_code = status_code
+    response.raw = io.BytesIO(body)
+    response.raw.release_conn = response.raw.close
+    return response
+
+
 class MaxPatrolTests(unittest.TestCase):
+    def test_compressed_response_is_closed_without_decompression(self):
+        m = self.core()
+        config = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'secret'})
+        response = streaming_response(body=b'compressed bytes never read')
+        response.headers['Content-Encoding'] = 'gzip'
+        session = Mock()
+        session.request.return_value = response
+        client = m.Client(config, session)
+        client.last_response_bytes = 123
+        with self.assertRaises(m.SIEMError) as caught:
+            client.request('POST', '/api/events/v3/events/')
+        self.assertEqual(caught.exception.code, 'response_encoding')
+        self.assertTrue(response.raw.closed)
+        self.assertEqual(client.last_response_bytes, 0)
+
     def core(self):
         path = SOURCE / 'iris_maxpatrol_module' / 'collector.py'
         self.assertTrue(path.exists(), 'MaxPatrol collector is missing')
@@ -134,14 +160,16 @@ class MaxPatrolTests(unittest.TestCase):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'secret'})
         session = Mock()
-        session.request.return_value.status_code = 302
-        session.request.return_value.text = 'private server response'
+        response = streaming_response(302, b'private server response')
+        session.request.return_value = response
         client = m.Client(c, session)
         with self.assertRaisesRegex(m.SIEMError, '^MaxPatrol HTTP 302$'):
             client.request('POST', '/api/events/v3/events/')
         kwargs = session.request.call_args.kwargs
         self.assertTrue(kwargs['verify'])
         self.assertFalse(kwargs['allow_redirects'])
+        self.assertTrue(kwargs['stream'])
+        self.assertTrue(response.raw.closed)
         self.assertEqual(kwargs['timeout'], 60)
         self.assertFalse(session.trust_env)
         self.assertTrue(session.request.call_args.args[1].endswith('/api/events/v3/events/'))
@@ -194,7 +222,7 @@ class MaxPatrolTests(unittest.TestCase):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
         session = Mock()
-        session.request.return_value.status_code = 401
+        session.request.return_value = streaming_response(401, b'private server response')
         client = m.Client(c, session)
         with self.assertLogs(m.log, level='INFO') as captured, self.assertRaises(m.SIEMError) as error:
             m.collect(c, client, Mock())

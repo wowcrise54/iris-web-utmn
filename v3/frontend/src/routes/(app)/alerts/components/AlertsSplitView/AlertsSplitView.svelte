@@ -44,6 +44,8 @@
 	import { defaultAlertRelationshipsFilters } from '../AlertRelatedGraph';
 	import AlertIocEditDialog from '../alert-ioc-edit-dialog.svelte';
 	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import SiemEvents from '../SiemEvents.svelte';
+	import { hasMaxPatrolEvents } from '$lib/services/siem-events.service';
 	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
 	import { current_user } from '$lib/stores/auth.store';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
@@ -1903,6 +1905,9 @@
 						{/if}
 
 						{#if activeTab === 'raw'}
+							{#if hasMaxPatrolEvents(f.alert_source_content)}
+								<SiemEvents alertId={f.alert_id} />
+							{/if}
 							<section class="section">
 								<div class="section-head copy-row">
 									<h3 class="section-title">{irisT("Raw event", $irisLocale)}</h3>
