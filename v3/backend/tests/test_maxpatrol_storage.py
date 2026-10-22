@@ -145,6 +145,77 @@ class StorageTests(unittest.TestCase):
             h.db.session.commit()
             self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
 
+    def test_archived_oversized_incident_is_not_reloaded_into_worker_memory(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            h.store.create('large', {'alert_title': 'Large archive', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'large',
+                'alert_source_content': {'incident': {'id': 'large'},
+                    'event_storage': {'kind': 'maxpatrol', 'archived_only': True},
+                    'event_collection': {'version': 2, 'complete': False, 'refresh_blocked': True}}})
+            self.assertFalse(h.store.needs_event_refresh('large'))
+            self.assertEqual(h.store.refresh_candidates(), [])
+
+    def test_create_removes_null_fields_before_database_commit(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+
+            h.alerts.alerts_create = create
+            raw_body = '{"Original": null}'
+            source = {'incident': {'id': 'one', 'assigned': None},
+                'events': [{'uuid': '00000006-050d-0642-f000-0000255d3663',
+                    'subject.account.domain': None, 'body': raw_body,
+                    'historical': False, 'count': 0, 'text': '',
+                    'nested': {'empty': None, 'present': 'value'},
+                    'items': [{'remove': None, 'keep': False}, None]}],
+                'incident_refresh_error': None}
+            h.store.create('one', {'alert_title': 'One', 'alert_source_content': source})
+            h.db.session.expire_all()
+            saved = h.db.session.query(h.Alert).one().alert_source_content
+            self.assertNotIn('assigned', saved['incident'])
+            self.assertNotIn('incident_refresh_error', saved)
+            row = saved['events'][0]
+            self.assertNotIn('subject.account.domain', row)
+            self.assertEqual(row['nested'], {'present': 'value'})
+            self.assertEqual(row['body'], raw_body)
+            self.assertIs(row['historical'], False)
+            self.assertEqual(row['count'], 0)
+            self.assertEqual(row['text'], '')
+            self.assertEqual(row['items'], [{'keep': False}, None])
+            self.assertIn('subject.account.domain', source['events'][0])
+
+    def test_refresh_removes_old_and_incoming_null_fields_in_flat_and_tree_data(self):
+        with harness() as h:
+            from uuid import uuid4
+            uid = '00000006-050d-0642-f000-0000255d3663'
+            alert_uuid = uuid4()
+            h.db.session.add(h.models.MaxPatrolReceipt(source_key=h.config.source_key,
+                incident_id='one', alert_uuid=alert_uuid,
+                imported_at=datetime.now(timezone.utc).replace(tzinfo=None)))
+            h.db.session.add(h.Alert(alert_uuid=alert_uuid, alert_title='Keep analyst title',
+                alert_customer_id=1, alert_source='MaxPatrol SIEM', alert_source_ref='one',
+                alert_source_content={'custom': {'old_null': None, 'keep': 0},
+                    'events': [{'uuid': uid, 'old_null': None, 'body': 'original'}],
+                    'event_tree': [{'uuid': uid}], 'event_links': {uid: []}}))
+            h.db.session.commit()
+            h.store.refresh_events('one', {'events': [{'uuid': uid, 'new_null': None, 'flag': False}],
+                'event_tree': [{'uuid': uid}], 'event_collection': {'version': 2, 'complete': False}})
+            h.db.session.expire_all()
+            saved = h.db.session.query(h.Alert).one()
+            self.assertEqual(saved.alert_title, 'Keep analyst title')
+            self.assertEqual(saved.alert_source_content['custom'], {'keep': 0})
+            row = saved.alert_source_content['events'][0]
+            self.assertNotIn('old_null', row)
+            self.assertNotIn('new_null', row)
+            self.assertEqual(row['body'], 'original')
+            self.assertIs(row['flag'], False)
+            self.assertEqual(saved.alert_source_content['event_tree'][0]['event'], row)
+
     def test_refresh_updates_only_source_materials_and_preserves_previous_events(self):
         with harness() as h:
             from iris_maxpatrol_module.collector import timestamp
