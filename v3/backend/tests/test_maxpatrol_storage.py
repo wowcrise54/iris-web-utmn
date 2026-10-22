@@ -8,9 +8,9 @@ import types
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
-from sqlalchemy import Boolean, Column, Integer, JSON, String, Uuid, create_engine, select, func
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects import postgresql  # noqa: F401  register before temporary sys.modules isolation
 
 SOURCE = Path(__file__).resolve().parents[1] / 'source'
@@ -29,6 +29,28 @@ def load(name, path):
 def harness():
     base = declarative_base()
 
+    association = Table('alert_iocs', base.metadata,
+        Column('alert_id', ForeignKey('alerts.id')), Column('ioc_id', ForeignKey('ioc.id')))
+
+    class IocType(base):
+        __tablename__ = 'ioc_type'
+        type_id = Column(Integer, primary_key=True)
+        type_name = Column(String)
+
+    class Tlp(base):
+        __tablename__ = 'tlp'
+        tlp_id = Column(Integer, primary_key=True)
+        tlp_name = Column(String)
+
+    class Ioc(base):
+        __tablename__ = 'ioc'
+        id = Column(Integer, primary_key=True)
+        ioc_value = Column(String)
+        ioc_type_id = Column(ForeignKey('ioc_type.type_id'))
+        ioc_tlp_id = Column(ForeignKey('tlp.tlp_id'))
+        ioc_description = Column(String)
+        ioc_type = relationship(IocType)
+
     class Module(base):
         __tablename__ = 'iris_modules'
         id = Column(Integer, primary_key=True)
@@ -45,16 +67,20 @@ def harness():
         alert_source = Column(String)
         alert_source_ref = Column(String)
         alert_source_content = Column(JSON)
+        iocs = relationship(Ioc, secondary=association)
 
     engine = create_engine('sqlite://')
     session = sessionmaker(bind=engine)()
     db = types.SimpleNamespace(Model=base, session=session, engine=engine)
     module_names = ('app', 'app.db', 'app.models', 'app.models.models', 'app.models.errors',
-                    'app.models.alerts', 'app.business', 'app.business.alerts',
+                    'app.models.alerts', 'app.models.iocs', 'app.business', 'app.business.alerts',
                     'app.iris_engine', 'app.iris_engine.mail', 'app.iris_engine.mail.secrets')
     doubles = {name: types.ModuleType(name) for name in module_names}
     doubles['app.db'].db = db
     doubles['app.models.models'].IrisModule = Module
+    doubles['app.models.models'].IocType = IocType
+    doubles['app.models.iocs'].Ioc = Ioc
+    doubles['app.models.iocs'].Tlp = Tlp
     doubles['app.models.errors'].BusinessProcessingError = ValueError
     doubles['app.models.alerts'].Alert = Alert
     doubles['app.business.alerts'].alerts_create = Mock()
@@ -63,14 +89,17 @@ def harness():
     celery = types.SimpleNamespace(task=lambda **_kwargs: lambda f: f,
                                    conf=types.SimpleNamespace(beat_schedule={}))
     doubles['app'].celery = celery
-    names = ['app.models.maxpatrol', 'app.business.maxpatrol', 'maxpatrol_test_tasks']
+    names = ['app.models.maxpatrol', 'app.business.maxpatrol', 'app.business.alert_ioc_extraction', 'maxpatrol_test_tasks']
     original = {name: sys.modules.get(name) for name in names}
     with patch.dict(sys.modules, doubles):
         try:
             models = load('app.models.maxpatrol', 'app/models/maxpatrol.py')
+            extraction = load('app.business.alert_ioc_extraction', 'app/business/alert_ioc_extraction.py')
             business = load('app.business.maxpatrol', 'app/business/maxpatrol.py')
             tasks = load('maxpatrol_test_tasks', 'app/iris_engine/maxpatrol/tasks.py')
             base.metadata.create_all(engine)
+            session.add_all([Tlp(tlp_id=2, tlp_name='amber'),
+                *[IocType(type_name=name) for name in ('ip-src', 'ip-dst', 'domain', 'url', 'md5', 'sha1', 'sha256')]])
             row = Module(id=1, module_name=business.MODULE, is_active=True, module_config=[
                 {'param_name': 'siem_url', 'value': 'https://siem.local'},
                 {'param_name': 'api_token', 'value': 'encrypted:secret'}])
@@ -79,7 +108,7 @@ def harness():
             config = business.configuration(row)
             yield types.SimpleNamespace(db=db, business=business, models=models, tasks=tasks,
                 store=business.IrisStore(1, config), config=config, Module=Module, Alert=Alert,
-                alerts=doubles['app.business.alerts'])
+                alerts=doubles['app.business.alerts'], extraction=extraction)
         finally:
             session.close()
             engine.dispose()
@@ -91,6 +120,31 @@ def harness():
 
 
 class StorageTests(unittest.TestCase):
+    def test_auto_iocs_persist_and_deleted_link_stays_deleted_on_refresh(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                alert.iocs = kwargs['iocs']
+                h.extraction.extract_alert_iocs(alert)
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            h.store.create('ioc', {'alert_title': 'IOC', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'ioc',
+                'alert_source_content': {'events': [{'src.ip': '192.0.2.1'}]}})
+            row = h.db.session.query(h.Alert).one()
+            self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['192.0.2.1'])
+            row.iocs.clear()
+            h.db.session.commit()
+            h.store.refresh_events('ioc', {'events': [{'src.ip': '192.0.2.1', 'dst.fqdn': 'new.example.org'}]})
+            h.db.session.expire_all()
+            self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
+            self.assertIn('dst.fqdn', row.iocs[0].ioc_description)
+            previous = row.alert_source_content
+            row.alert_source_content = {'events': [{'src.ip': '192.0.2.1'}]}
+            h.extraction.extract_alert_iocs(row, previous)
+            h.db.session.commit()
+            self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
+
     def test_refresh_updates_only_source_materials_and_preserves_previous_events(self):
         with harness() as h:
             from iris_maxpatrol_module.collector import timestamp

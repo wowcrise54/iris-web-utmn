@@ -130,11 +130,14 @@ class IrisStore:
         else:
             links = materials.get('event_links') or links
             roots = [node.get('uuid') for node in materials.get('event_tree') or []]
+        previous_content = copy.deepcopy(content)
         content.update(materials)
         content['events'] = [*events.values(), *unidentified]
         content['event_links'] = links
         content['event_tree'] = render_event_tree(roots, events, links)
         alert.alert_source_content = content
+        from app.business.alert_ioc_extraction import extract_alert_iocs
+        extract_alert_iocs(alert, previous_content)
         db.session.commit()
         return True
 
