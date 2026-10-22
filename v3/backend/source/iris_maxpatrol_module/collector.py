@@ -17,7 +17,7 @@ from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 from iris_maxpatrol_module.bounded_http import read_response_bytes, ResponseLimitError
 
 log = context_logger(__name__)
-REQUEST_REVISION = 'mp10-bounded-pages-1'
+REQUEST_REVISION = 'mp10-bounded-pages-2'
 
 
 class SIEMError(ValueError):

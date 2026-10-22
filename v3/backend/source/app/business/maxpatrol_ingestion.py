@@ -151,11 +151,12 @@ def _upsert_event(state, alert, row):
 LEGACY_COPY_SQL = """
 WITH raw_events AS (
 SELECT e, priority FROM alerts a, LATERAL (
-    SELECT value AS e, 0 AS priority FROM jsonb_array_elements(
+    SELECT flat_event.value AS e, 0 AS priority FROM jsonb_array_elements(
         CASE WHEN jsonb_typeof(a.alert_source_content::jsonb->'events') = 'array'
-             THEN a.alert_source_content::jsonb->'events' ELSE '[]'::jsonb END)
+             THEN a.alert_source_content::jsonb->'events' ELSE '[]'::jsonb END) AS flat_event(value)
     UNION ALL
-    SELECT value AS e, 1 AS priority FROM jsonb_path_query(a.alert_source_content::jsonb, '$.event_tree.**.event')
+    SELECT tree_event.value AS e, 1 AS priority
+    FROM jsonb_path_query(a.alert_source_content::jsonb, '$.event_tree.**.event') AS tree_event(value)
 ) legacy
 WHERE a.alert_uuid = CAST(:alert_uuid AS uuid)
 AND jsonb_typeof(e) = 'object'
