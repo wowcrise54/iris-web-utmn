@@ -1,6 +1,7 @@
 """Read-only OpenCTI GraphQL client. Values are variables, never query text."""
 import ipaddress
 import json
+import logging
 import re
 import socket
 from datetime import datetime, timezone
@@ -147,6 +148,22 @@ class OpenCTIClient:
         self.opener = build_opener(ProxyHandler({}), _NoRedirect())
 
     def query(self, document, variables):
+        log = logging.getLogger(__name__)
+        operation = {OBSERVABLE_QUERY: 'observables', INDICATOR_QUERY: 'indicators',
+                     RELATION_QUERY: 'relationships'}.get(document, 'connection')
+        clock = monotonic()
+        log.debug('OpenCTI request_started operation=%s', operation)
+        try:
+            result = self._query(document, variables)
+        except OpenCTIError as error:
+            log.warning('OpenCTI request_failed operation=%s status=%s duration_ms=%.1f',
+                        operation, error.status, (monotonic() - clock) * 1000)
+            raise
+        log.debug('OpenCTI request_completed operation=%s duration_ms=%.1f',
+                  operation, (monotonic() - clock) * 1000)
+        return result
+
+    def _query(self, document, variables):
         if self.is_active is not None and not self.is_active():
             raise OpenCTIError('disabled')
         request = Request(self.url + '/graphql',
@@ -186,10 +203,12 @@ class OpenCTIClient:
 
     def pages(self, query, key, variables):
         after = None
-        for _ in range(10):
+        for page_number in range(1, 11):
             connection = self.query(query, {**variables, 'after': after}).get(key)
             if not isinstance(connection, dict):
                 raise OpenCTIError('invalid_response')
+            logging.getLogger(__name__).debug('OpenCTI page_received connection=%s page=%d items=%d',
+                                               key, page_number, len(nodes(connection)))
             yield connection
             page = connection.get('pageInfo', {})
             if not page.get('hasNextPage'):

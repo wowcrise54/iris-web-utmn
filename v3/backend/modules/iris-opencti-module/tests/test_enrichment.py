@@ -129,3 +129,23 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(len(self.calls), 1)
         self.assertEqual(len(self.store.results), 2)
+
+    def test_logs_results_cache_and_sanitized_failure(self):
+        with self.assertLogs('iris_opencti_module', level='DEBUG') as captured:
+            enrich_iocs([ioc(1), ioc(2)], self.store, self.client)
+            enrich_iocs([ioc(1)], self.store, self.client)
+            self.client.lookup = lambda *args: (_ for _ in ()).throw(OpenCTIError('timeout'))
+            enrich_iocs([ioc(3, 'private.example')], self.store, self.client)
+        output = '\n'.join(captured.output)
+        for expected in ('batch_started', 'batch_completed', 'ioc_id=1', 'cache=batch', 'cache=persistent', 'status=timeout', 'duration_ms='):
+            self.assertIn(expected, output)
+        for private in ('secret', 'example.org', 'private.example', 'https://cti.example'):
+            self.assertNotIn(private, output)
+
+    def test_save_failure_is_logged_and_propagated_without_exception_text(self):
+        self.store.save = lambda *args: (_ for _ in ()).throw(RuntimeError('secret private.example'))
+        with self.assertLogs('iris_opencti_module', level='ERROR') as captured:
+            with self.assertRaises(RuntimeError):
+                enrich_iocs([ioc(1)], self.store, self.client)
+        self.assertIn('ioc_id=1', str(captured.output))
+        self.assertNotIn('private.example', str(captured.output))

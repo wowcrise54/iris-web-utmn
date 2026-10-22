@@ -102,3 +102,25 @@ Primary references:
 - https://docs.dfir-iris.org/3.0.0-beta/development/modules/quick_start/processor/
 - https://docs.opencti.io/latest/reference/api/
 - https://github.com/OpenCTI-Platform/client-python/tree/master/pycti/entities
+
+## Logging
+
+The `iris_opencti_module` Python logger uses the existing IRIS/Celery handlers.
+INFO is the default: registration, hook/batch start and completion, IOC IDs,
+result statuses, match counts and duration in milliseconds. WARNING reports
+provider failures and partial results; ERROR reports registration, processing
+and persistence failures. Exceptions still follow the existing error handling.
+A completed hook means processing finished; inspect IOC statuses for provider errors.
+
+Set `IRIS_OPENCTI_LOG_LEVEL=DEBUG` in the environment of **both app and worker**
+to include cache source (`miss`, `batch`, `persistent`), request stages and page
+counts. In the current live stack this can be added to `.env.v3.live`; recreate
+app and worker following the root AGENTS.md after rebuilding the wheel/image.
+Supported levels: DEBUG, INFO, WARNING, ERROR, CRITICAL; invalid values fall back
+to INFO. Restart is required when changing the environment. Existing handler
+filters still apply. Return to INFO after diagnosis to reduce volume.
+
+Logs omit tokens, credential fingerprints, IOC values, URLs, GraphQL variables,
+response bodies and exception text. Match the numeric `ioc_id` to IRIS records.
+Concurrent worker logs can interleave; request/page DEBUG events describe their
+operation rather than an individual IOC. No separate log files are created.

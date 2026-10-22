@@ -163,6 +163,18 @@ class HTTPContractTests(unittest.TestCase):
             self.assertNotIn('sensitive', str(raised.exception))
             self.assertNotIn('secret', str(raised.exception))
 
+    def test_request_logs_do_not_include_credentials_variables_or_response_body(self):
+        client = OpenCTIClient(f'http://127.0.0.1:{self.server.server_port}', 'secret')
+        with self.assertLogs('iris_opencti_module', level='DEBUG') as captured:
+            client.query('check', {'value': 'private.example'})
+            with self.assertRaises(OpenCTIError):
+                client.query('unauthorized', {'value': 'private.example'})
+        output = '\n'.join(captured.output)
+        for expected in ('request_started', 'request_completed', 'request_failed', 'status=unauthorized', 'duration_ms='):
+            self.assertIn(expected, output)
+        for private in ('secret', 'private.example', 'sensitive-server-body', '127.0.0.1'):
+            self.assertNotIn(private, output)
+
     def test_timeout_is_exposed_as_a_safe_status(self):
         client = OpenCTIClient(f'http://127.0.0.1:{self.server.server_port}', 'secret', timeout=0.005)
         with self.assertRaises(OpenCTIError) as raised:
