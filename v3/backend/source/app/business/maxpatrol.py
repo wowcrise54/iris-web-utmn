@@ -98,6 +98,9 @@ class IrisStore:
         state = content.get('event_collection')
         if not isinstance(state, dict):
             return True
+        if state.get('refresh_blocked') is True:
+            # The migration retained an oversized archive; do not rebuild it in worker RAM.
+            return False
         if state.get('version') != 2 or not state.get('complete'):
             return True
         try:

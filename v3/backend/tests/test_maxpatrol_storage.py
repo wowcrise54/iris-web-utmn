@@ -91,6 +91,20 @@ def harness():
 
 
 class StorageTests(unittest.TestCase):
+    def test_archived_oversized_incident_is_not_reloaded_into_worker_memory(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            h.store.create('large', {'alert_title': 'Large archive', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'large',
+                'alert_source_content': {'incident': {'id': 'large'},
+                    'event_storage': {'kind': 'maxpatrol', 'archived_only': True},
+                    'event_collection': {'version': 2, 'complete': False, 'refresh_blocked': True}}})
+            self.assertFalse(h.store.needs_event_refresh('large'))
+            self.assertEqual(h.store.refresh_candidates(), [])
+
     def test_create_removes_null_fields_before_database_commit(self):
         with harness() as h:
             def create(alert, **kwargs):

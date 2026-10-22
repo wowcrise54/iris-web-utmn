@@ -78,3 +78,39 @@ class InlineMigrationTests(unittest.TestCase):
             {'id': empty}).scalar()['events'], [])
         self.assertEqual(self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
             {'id': inline}).scalar(), original)
+
+    def test_large_archive_is_not_aggregated_into_the_alert_or_deleted(self):
+        uid = self.add_alert({'incident': {'id': 'large'}, 'custom': 'retained',
+                             'event_storage': {'kind': 'maxpatrol'}})
+        self.connection.execute(text("INSERT INTO maxpatrol_event_record "
+            "SELECT :id, n::text, jsonb_build_object('body', repeat('x', 1048576)) "
+            "FROM generate_series(1, 9) n"), {'id': uid})
+        self.upgrade()
+        saved = self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
+            {'id': uid}).scalar()
+        self.assertFalse('events' in saved, 'oversized archive must not be inlined')
+        self.assertEqual(saved['custom'], 'retained')
+        self.assertTrue(saved['event_storage']['archived_only'])
+        self.assertEqual(saved['event_storage']['count'], 9)
+        self.assertTrue(saved['event_collection']['refresh_blocked'])
+        self.assertFalse(saved['event_collection']['complete'])
+        self.assertLess(len(json.dumps(saved)), 4096)
+        self.assertEqual(self.connection.execute(text('SELECT count(*) FROM maxpatrol_event_record')).scalar(), 9)
+        self.upgrade()
+        self.assertEqual(self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
+            {'id': uid}).scalar(), saved)
+
+    def test_archive_over_postgresql_jsonb_container_limit_does_not_block_startup(self):
+        uid = self.add_alert({'event_storage': {'kind': 'maxpatrol'}})
+        # Generated in PostgreSQL: no 256+ MiB fixture or aggregate in the test process.
+        self.connection.execute(text("INSERT INTO maxpatrol_event_record "
+            "SELECT :id, n::text, jsonb_build_object('body', repeat('x', 65536)) "
+            "FROM generate_series(1, 4200) n"), {'id': uid})
+        self.upgrade()
+        saved = self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
+            {'id': uid}).scalar()
+        self.assertGreater(saved['event_storage']['bytes'], 268435455)
+        self.assertEqual(saved['event_storage']['count'], 4200)
+        self.assertTrue(saved['event_collection']['refresh_blocked'])
+        self.assertNotIn('events', saved)
+        self.assertEqual(self.connection.execute(text('SELECT count(*) FROM maxpatrol_event_record')).scalar(), 4200)
