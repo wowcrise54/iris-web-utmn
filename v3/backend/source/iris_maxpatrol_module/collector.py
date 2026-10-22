@@ -15,7 +15,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
-REQUEST_REVISION = 'mp10-inline-clean-json-2'
+REQUEST_REVISION = 'mp10-inline-clean-json-3'
 
 
 class SIEMError(ValueError):

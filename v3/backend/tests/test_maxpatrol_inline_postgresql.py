@@ -30,6 +30,8 @@ class InlineMigrationTests(unittest.TestCase):
             'CREATE TEMP TABLE iris_module (module_name text, module_config json)',
         ):
             self.connection.execute(text(sql))
+        # Migration-created archive tables must also remain in this temporary schema.
+        self.connection.execute(text('SET LOCAL search_path TO pg_temp'))
 
     def upgrade(self):
         with Operations.context(MigrationContext.configure(self.connection)):
@@ -114,3 +116,47 @@ class InlineMigrationTests(unittest.TestCase):
         self.assertTrue(saved['event_collection']['refresh_blocked'])
         self.assertNotIn('events', saved)
         self.assertEqual(self.connection.execute(text('SELECT count(*) FROM maxpatrol_event_record')).scalar(), 4200)
+
+    def test_oversized_source_json_is_preserved_without_casting_it_to_jsonb(self):
+        for mib in (226, 418):
+            with self.subTest(mib=mib):
+                uid = uuid4()
+                # Construct a large plain JSON value in PostgreSQL, never in Python or JSONB.
+                self.connection.execute(text("INSERT INTO alerts VALUES (:id, 'MaxPatrol SIEM', "
+                    "('{\"event_storage\":{\"kind\":\"maxpatrol\"},\"body\":\"' || "
+                    "repeat('x', :bytes) || '\"}')::json)"), {'id': uid, 'bytes': mib * 1024 * 1024})
+                size, digest = self.connection.execute(text('SELECT octet_length(alert_source_content::text), '
+                    'md5(alert_source_content::text) FROM alerts WHERE alert_uuid=:id'), {'id': uid}).one()
+                self.upgrade()
+                saved = self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
+                    {'id': uid}).scalar()
+                self.assertTrue(saved['event_collection']['refresh_blocked'])
+                self.assertLess(len(json.dumps(saved)), 4096)
+                archive_id = saved['event_storage']['payload_archive_id']
+                archived = self.connection.execute(text('SELECT alert_uuid, payload_bytes, '
+                    'octet_length(payload::text), md5(payload::text) FROM maxpatrol_payload_archive '
+                    'WHERE archive_id=:id'), {'id': archive_id}).one()
+                self.assertEqual(archived, (uid, size, size, digest))
+                count = self.connection.execute(text('SELECT count(*) FROM maxpatrol_payload_archive')).scalar()
+                self.upgrade()
+                self.assertEqual(self.connection.execute(text('SELECT count(*) FROM maxpatrol_payload_archive')).scalar(), count)
+
+    def test_large_source_without_storage_marker_is_archived_before_json_inspection(self):
+        uid = self.add_alert({'body': 'x' * (9 * 1024 * 1024)})
+        self.upgrade()
+        saved = self.connection.execute(text('SELECT alert_source_content FROM alerts WHERE alert_uuid=:id'),
+            {'id': uid}).scalar()
+        self.assertTrue(saved['event_storage']['payload_archive_id'] > 0)
+        self.assertTrue(saved['event_collection']['refresh_blocked'])
+
+    def test_rolled_back_transfer_preserves_source_and_can_be_retried(self):
+        uid = self.add_alert({'body': 'x' * (9 * 1024 * 1024)})
+        original = self.connection.execute(text('SELECT md5(alert_source_content::text) '
+            'FROM alerts WHERE alert_uuid=:id'), {'id': uid}).scalar()
+        savepoint = self.connection.begin_nested()
+        self.upgrade()
+        savepoint.rollback()
+        self.assertEqual(self.connection.execute(text('SELECT md5(alert_source_content::text) '
+            'FROM alerts WHERE alert_uuid=:id'), {'id': uid}).scalar(), original)
+        self.upgrade()
+        self.assertEqual(self.connection.execute(text('SELECT count(*) FROM maxpatrol_payload_archive')).scalar(), 1)

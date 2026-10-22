@@ -10,19 +10,56 @@ MAX_INLINE_BYTES = 8 * 1024 * 1024
 
 
 def upgrade():
+    # JSON can exceed JSONB's container limit. Preserve the original without parsing/casting it.
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS maxpatrol_payload_archive (
+            archive_id BIGSERIAL PRIMARY KEY,
+            alert_uuid UUID NOT NULL,
+            payload JSON NOT NULL,
+            payload_bytes BIGINT NOT NULL,
+            archived_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    op.execute('CREATE INDEX IF NOT EXISTS ix_maxpatrol_payload_archive_alert_uuid '
+               'ON maxpatrol_payload_archive (alert_uuid)')
+    op.execute(sa.text("""
+        WITH archived AS (
+            INSERT INTO maxpatrol_payload_archive (alert_uuid, payload, payload_bytes)
+            SELECT alert_uuid, alert_source_content, octet_length(alert_source_content::text)
+            FROM alerts
+            WHERE alert_source = 'MaxPatrol SIEM'
+              AND octet_length(alert_source_content::text) > :max_inline_bytes
+            RETURNING archive_id, alert_uuid, payload_bytes
+        )
+        UPDATE alerts a SET alert_source_content = json_build_object(
+            'event_storage', json_build_object(
+                'kind', 'maxpatrol', 'archived_only', true,
+                'payload_archive_id', archived.archive_id, 'payload_bytes', archived.payload_bytes),
+            'event_collection', json_build_object(
+                'version', 2, 'complete', false, 'refresh_blocked', true,
+                'source', 'retained_payload_archive', 'inline_limit_bytes', :max_inline_bytes,
+                'errors', json_build_array(json_build_object('reason', 'legacy_payload_too_large')))
+        )
+        FROM archived WHERE a.alert_uuid = archived.alert_uuid
+    """).bindparams(max_inline_bytes=MAX_INLINE_BYTES))
     # Measure individual rows first. Never aggregate a large archive into one JSONB container.
     op.execute(sa.text("""
-        WITH sizes AS (
+        WITH small_sources AS MATERIALIZED (
+            SELECT a.alert_uuid, a.alert_source_content FROM alerts a
+            WHERE a.alert_source = 'MaxPatrol SIEM'
+              AND CASE WHEN octet_length(a.alert_source_content::text) <= :max_inline_bytes
+                  THEN a.alert_source_content #>> '{event_storage,kind}' = 'maxpatrol'
+                   AND a.alert_source_content #>> '{event_storage,payload_archive_id}' IS NULL
+                  ELSE false END
+        ), sizes AS (
             SELECT a.alert_uuid, count(e.alert_uuid) AS event_count,
                    COALESCE(sum(octet_length(e.payload::text)), 0) AS total_bytes
-            FROM alerts a LEFT JOIN maxpatrol_event_record e ON e.alert_uuid = a.alert_uuid
-            WHERE a.alert_source = 'MaxPatrol SIEM'
-              AND a.alert_source_content::jsonb #>> '{event_storage,kind}' = 'maxpatrol'
+            FROM small_sources a LEFT JOIN maxpatrol_event_record e ON e.alert_uuid = a.alert_uuid
             GROUP BY a.alert_uuid
         )
         UPDATE alerts a SET alert_source_content = (CASE
-          WHEN sizes.total_bytes + octet_length(a.alert_source_content::text) <= :max_inline_bytes THEN
-            (a.alert_source_content::jsonb - 'event_storage') || jsonb_build_object(
+          WHEN sizes.total_bytes + octet_length(small.alert_source_content::text) <= :max_inline_bytes THEN
+            (small.alert_source_content::jsonb - 'event_storage') || jsonb_build_object(
                 'events', COALESCE((
                     SELECT jsonb_agg(jsonb_strip_nulls(e.payload) ORDER BY e.event_key)
                     FROM maxpatrol_event_record e WHERE e.alert_uuid = a.alert_uuid
@@ -30,7 +67,7 @@ def upgrade():
                 'event_collection', jsonb_build_object(
                     'version', 2, 'complete', false, 'source', 'restored_inline', 'errors', '[]'::jsonb)
             )
-          ELSE a.alert_source_content::jsonb || jsonb_build_object(
+          ELSE small.alert_source_content::jsonb || jsonb_build_object(
                 'event_storage', jsonb_build_object(
                     'kind', 'maxpatrol', 'archived_only', true,
                     'count', sizes.event_count, 'bytes', sizes.total_bytes),
@@ -40,7 +77,8 @@ def upgrade():
                     'errors', jsonb_build_array(jsonb_build_object('reason', 'legacy_payload_too_large')))
             )
           END)::json
-        FROM sizes WHERE a.alert_uuid = sizes.alert_uuid
+        FROM sizes JOIN small_sources small ON small.alert_uuid = sizes.alert_uuid
+        WHERE a.alert_uuid = sizes.alert_uuid
     """).bindparams(max_inline_bytes=MAX_INLINE_BYTES))
     op.execute("""
         UPDATE iris_module m SET module_config = COALESCE((
