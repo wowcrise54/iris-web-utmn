@@ -28,15 +28,8 @@ def prepare_parameter(name, value, existing=None):
             raise BusinessProcessingError('API token is required')
         return encrypt_secret(value.strip())
     try:
-        if name in ('customer_id', 'interval', 'lookback_hours', 'timeout', 'severity_id', 'status_id',
-                    'event_page_size', 'max_events_per_poll', 'max_response_mb', 'max_bytes_per_poll_mb',
-                    'max_incidents_per_poll', 'max_requests_per_poll'):
-            maximum = {'interval': 86400, 'lookback_hours': 8760, 'timeout': 600,
-                       'event_page_size': 250, 'max_events_per_poll': 10000, 'max_response_mb': 16,
-                       'max_bytes_per_poll_mb': 128, 'max_incidents_per_poll': 50,
-                       'max_requests_per_poll': 100}.get(name, 2147483647)
-            if name == 'max_requests_per_poll' and str(value) == '1':
-                raise ValueError('max_requests_per_poll must be at least 2')
+        if name in ('customer_id', 'interval', 'lookback_hours', 'timeout', 'severity_id', 'status_id'):
+            maximum = {'interval': 86400, 'lookback_hours': 8760, 'timeout': 600}.get(name, 2147483647)
             return str(positive_int(value, name, maximum))
         if name in ('siem_url', 'verify_tls'):
             config = Config.from_values({'siem_url': 'https://placeholder.invalid', 'api_token': 'placeholder', name: value})
@@ -53,19 +46,6 @@ def public_config(parameters):
             parameter['has_value'] = bool(parameter.get('value'))
             parameter['value'] = ''
     return result
-
-
-def sync_module_parameters():
-    """Expose budgets on installed modules while retaining their saved settings."""
-    from iris_maxpatrol_module.IrisMaxPatrolInterface import IrisMaxPatrolInterface
-    for row in IrisModule.query.filter_by(module_name=MODULE):
-        config = copy.deepcopy(row.module_config or [])
-        names = {p['param_name'] for p in config}
-        additions = [{**p, 'value': p['default']} for p in IrisMaxPatrolInterface._module_configuration
-                     if p['param_name'] not in names]
-        if additions:
-            row.module_config = config + additions
-    db.session.commit()
 
 
 class IrisStore:

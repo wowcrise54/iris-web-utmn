@@ -9,7 +9,7 @@ def parameter(name, label, default, description='', mandatory=True, kind='string
 class IrisMaxPatrolInterface(IrisModuleInterface):
     _module_name = 'MaxPatrol SIEM'
     _module_description = 'Automatic MaxPatrol incident ingestion as IRIS alerts, with persistent deduplication.'
-    _module_version = '1.1.0'
+    _module_version = '1.0.0'
     _interface_version = '1.2.0'
     _module_type = IrisModuleTypes.module_processor
     _pipeline_support = False
@@ -25,12 +25,6 @@ class IrisMaxPatrolInterface(IrisModuleInterface):
         parameter('timeout', 'HTTP request timeout (seconds)', '60', '1–600 per API request.'),
         parameter('severity_id', 'IRIS alert severity ID', '1', 'Default matches the supplied exporter.'),
         parameter('status_id', 'IRIS alert status ID', '5', 'Default matches the supplied exporter.'),
-        parameter('event_page_size', 'Событий на страницу', '25', '1–250; страница уменьшается при превышении размера ответа.'),
-        parameter('max_events_per_poll', 'Событий за опрос', '100', '1–10000; остаток дочитывается по сохранённому курсору.'),
-        parameter('max_response_mb', 'Максимум одного ответа (МиБ)', '2', '1–16; потоковое чтение с ограничением размера.'),
-        parameter('max_bytes_per_poll_mb', 'Объём ответов за опрос (МиБ)', '8', '1–128; общий бюджет всех запросов.'),
-        parameter('max_incidents_per_poll', 'Инцидентов за опрос', '5', '1–50; очередь обслуживается по давности попытки.'),
-        parameter('max_requests_per_poll', 'Запросов за опрос', '10', '2–100; включая поиск инцидентов.'),
         parameter('verify_tls', 'Проверять TLS-сертификат (true / false)', True,
                   'Disable only for appliances whose certificate cannot be verified.', mandatory=False, kind='bool'),
     ]

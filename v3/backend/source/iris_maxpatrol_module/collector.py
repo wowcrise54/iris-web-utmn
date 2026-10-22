@@ -2,7 +2,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
-import json
 import re
 import warnings
 from itertools import chain
@@ -14,10 +13,9 @@ import requests
 from urllib3.exceptions import InsecureRequestWarning
 
 from iris_maxpatrol_module.logging_utils import context_logger, logging_context
-from iris_maxpatrol_module.bounded_http import read_response_bytes, ResponseLimitError
 
 log = context_logger(__name__)
-REQUEST_REVISION = 'mp10-bounded-pages-2'
+REQUEST_REVISION = 'mp10-inline-clean-json-1'
 
 
 class SIEMError(ValueError):
@@ -86,12 +84,6 @@ class Config:
     verify_tls: bool = True
     severity_id: int = 1
     status_id: int = 5
-    event_page_size: int = 25
-    max_events_per_poll: int = 100
-    max_response_mb: int = 2
-    max_bytes_per_poll_mb: int = 8
-    max_incidents_per_poll: int = 5
-    max_requests_per_poll: int = 10
 
     @classmethod
     def from_values(cls, values):
@@ -116,12 +108,7 @@ class Config:
         numbers = {name: positive_int(values.get(name, default), name, maximum) for name, default, maximum in (
             ('customer_id', 1, 2147483647), ('interval', 30, 86400),
             ('lookback_hours', 72, 8760), ('timeout', 60, 600),
-            ('severity_id', 1, 2147483647), ('status_id', 5, 2147483647),
-            ('event_page_size', 25, 250), ('max_events_per_poll', 100, 10000),
-            ('max_response_mb', 2, 16), ('max_bytes_per_poll_mb', 8, 128),
-            ('max_incidents_per_poll', 5, 50), ('max_requests_per_poll', 10, 100))}
-        if numbers['max_requests_per_poll'] < 2:
-            raise ValueError('max_requests_per_poll must be at least 2 (discovery and events)')
+            ('severity_id', 1, 2147483647), ('status_id', 5, 2147483647))}
         return cls(url=url, token=token.strip(), verify_tls=tls, **numbers)
 
     @property
@@ -142,8 +129,6 @@ class Client:
         self.session = session or requests.Session()
         self.session.trust_env = False
         self._insecure_notice_logged = False
-        self.byte_limit = config.max_response_mb * 1024 * 1024
-        self.last_response_bytes = 0
 
     def close(self):
         self.session.close()
@@ -170,7 +155,6 @@ class Client:
         return data
 
     def _request(self, method, path, *, body=None, params=None):
-        self.last_response_bytes = 0
         try:
             with warnings.catch_warnings():
                 if not self.config.verify_tls:
@@ -184,23 +168,15 @@ class Client:
                         module=r'(?:requests\.packages\.)?urllib3\.connectionpool')
                 response = self.session.request(method, self.config.url + path,
                     headers={'Authorization': f'Bearer {self.config.token}', 'Accept': 'application/json',
-                             'Content-Type': 'application/json', 'Accept-Encoding': 'identity'},
+                             'Content-Type': 'application/json'},
                     json=body, params=params, timeout=self.config.timeout,
-                    verify=self.config.verify_tls, allow_redirects=False, stream=True)
-            if response.headers.get('Content-Encoding', 'identity').lower() not in ('identity', ''):
-                response.close()
-                raise SIEMError('Compressed response refused to bound decompressor memory', code='response_encoding')
-            try:
-                raw = read_response_bytes(response, self.byte_limit)
-                self.last_response_bytes = len(raw)
-            except ResponseLimitError as exc:
-                self.last_response_bytes = exc.bytes_read
-                raise SIEMError('MaxPatrol response exceeded byte budget', code='response_too_large') from None
+                    verify=self.config.verify_tls, allow_redirects=False)
             if not 200 <= response.status_code < 300:
                 raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}',
                     diagnostic={'status': response.status_code,
-                                **request_diagnostic(method, path, body, raw.decode('utf-8', errors='replace'), self.config.token)})
-            data = json.loads(raw)
+                                **request_diagnostic(method, path, body, response.text, self.config.token)})
+            # Filter each object during decoding, before collecting events or building the tree.
+            data = response.json(object_pairs_hook=lambda pairs: {key: value for key, value in pairs if value is not None})
         except requests.exceptions.SSLError:
             raise SIEMError('MaxPatrol TLS request failed', code='tls_error') from None
         except requests.exceptions.Timeout:
@@ -337,7 +313,7 @@ def render_event_tree(root_ids, events, edges):
         if uid in rendered or depth >= 64:
             return {**node, 'reference': True}
         rendered.add(uid)
-        return {**node,
+        return {**node, 'event': events[uid],
                 'subevents': [branch(child, depth + 1) for child in edges.get(uid, [])]}
 
     result = [branch(uid) for uid in dict.fromkeys(root_ids) if uid]

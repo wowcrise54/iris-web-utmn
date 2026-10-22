@@ -16,12 +16,6 @@ def event(uid, children=(), **fields):
 
 
 class SubeventTests(unittest.TestCase):
-    def assert_reference_tree(self, nodes):
-        for node in nodes:
-            self.assertNotIn('event', node, 'Raw events must only live in the flat event collection')
-            self.assertTrue(set(node) <= {'uuid', 'subevents', 'reference', 'missing'})
-            self.assert_reference_tree(node.get('subevents', []))
-
     def setUp(self):
         self.m = base_tests.MaxPatrolTests().core()
         self.config = self.m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'secret'})
@@ -85,9 +79,7 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(self.m.collect(self.config, self.client, store), 1)
         content = store.create.call_args.args[1]['alert_source_content']
         self.assertEqual(len(content['events']), 2)
-        child_ref = content['event_tree'][0]['subevents'][0]
-        child = next(row for row in content['events'] if row['uuid'] == child_ref['uuid'])
-        self.assert_reference_tree(content['event_tree'])
+        child = content['event_tree'][0]['subevents'][0]['event']
         self.assertEqual(child['body'], '<Event>original</Event>')
         self.assertEqual(child['custom']['process']['name'], 'example')
         self.assertTrue(content['event_collection']['complete'])
@@ -104,9 +96,7 @@ class SubeventTests(unittest.TestCase):
         self.assertTrue(result['event_collection']['complete'])
         self.assertEqual(len(result['event_tree']), 1)
         self.assertEqual(result['event_tree'][0]['uuid'], A)
-        child_ref = result['event_tree'][0]['subevents'][0]
-        child = next(row for row in result['events'] if row['uuid'] == child_ref['uuid'])
-        self.assert_reference_tree(result['event_tree'])
+        child = result['event_tree'][0]['subevents'][0]['event']
         self.assertEqual(child['_presentation'], [])
         self.assertIsNone(child['_whitelisting'])
         self.assertEqual(child['body'], rows[0]['body'])
@@ -130,8 +120,8 @@ class SubeventTests(unittest.TestCase):
         from pathlib import Path
         expected = (Path(__file__).parent / 'fixtures/maxpatrol_v3_select.txt').read_text(encoding='utf-8').strip()
         session = Mock()
-        session.request.return_value = base_tests.streaming_response(
-            200, b'{"errors":null,"events":[],"token":null}')
+        session.request.return_value.status_code = 200
+        session.request.return_value.json.return_value = {'errors': None, 'events': [], 'token': None}
         client = self.m.Client(self.config, session)
         client.events(A, datetime.fromtimestamp(1792486213, timezone.utc),
                       datetime.fromtimestamp(1792486218, timezone.utc))
@@ -139,8 +129,6 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(call.args, ('POST', 'https://siem.local/api/events/v3/events/'))
         self.assertEqual(call.kwargs['params'], {'incidentId': A, 'offset': 0, 'limit': 250, 'noCount': 'true'})
         self.assertEqual(call.kwargs['headers']['Content-Type'], 'application/json')
-        self.assertEqual(call.kwargs['headers']['Accept-Encoding'], 'identity')
-        self.assertTrue(call.kwargs['stream'])
         self.assertEqual(call.kwargs['json'], {'filter': expected, 'timeFrom': 1792486213, 'timeTo': 1792486218})
 
     def test_old_incident_refresh_uses_bounded_window_around_creation(self):
@@ -163,8 +151,9 @@ class SubeventTests(unittest.TestCase):
     def test_http_400_records_request_context_and_redacts_server_excerpt(self):
         from datetime import datetime, timezone
         session = Mock()
-        session.request.return_value = base_tests.streaming_response(
-            400, b'Unknown field; Authorization: Bearer secret another=pat_EXAMPLE_NOT_A_REAL_TOKEN')
+        session.request.return_value.status_code = 400
+        session.request.return_value.text = ('Unknown field; Authorization: Bearer secret '
+                                             'another=pat_EXAMPLE_NOT_A_REAL_TOKEN')
         client = self.m.Client(self.config, session)
         with self.assertRaises(self.m.SIEMError) as caught:
             client.events(A, datetime.fromtimestamp(1792486213, timezone.utc),

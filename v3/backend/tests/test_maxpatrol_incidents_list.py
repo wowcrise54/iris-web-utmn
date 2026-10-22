@@ -1,6 +1,5 @@
 """Use the two working requests supplied by the user, without a card GET."""
 from datetime import datetime, timezone
-import json
 import unittest
 from unittest.mock import Mock
 
@@ -35,13 +34,14 @@ class IncidentsListTests(unittest.TestCase):
                'created': '2026-10-21T08:00:00Z'}
 
         def respond(method, url, **_kwargs):
+            response = Mock(status_code=200)
             if (method, url) == ('POST', 'https://siem.local/api/v2/incidents/'):
-                payload = {'incidents': [row]}
+                response.json.return_value = {'incidents': [row]}
             elif (method, url) == ('POST', 'https://siem.local/api/events/v3/events/'):
-                payload = {'events': []}
+                response.json.return_value = {'events': []}
             else:
                 self.fail(f'Unapproved request: {method} {url}')
-            return base_tests.streaming_response(200, json.dumps(payload).encode())
+            return response
 
         session.request.side_effect = respond
         client = self.m.Client(self.config, session)

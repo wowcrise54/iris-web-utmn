@@ -39,7 +39,6 @@ from app.blueprints.rest.v2.alerts_routes.dim_hooks import alerts_dim_hooks_blue
 from app.blueprints.rest.v2.alerts_routes.investigation_progress import alerts_investigation_progress_blueprint
 from app.blueprints.rest.v2.alerts_routes.iocs import alerts_iocs_blueprint
 from app.blueprints.rest.v2.alerts_routes.artifacts import alerts_artifacts_blueprint
-from app.blueprints.rest.v2.alerts_routes.siem_events import alerts_siem_events_blueprint
 from app.blueprints.iris_user import iris_current_user
 from app.business.access_controls import check_ua_case_client
 from app.business.alerts import ALERT_SORT_COLUMNS
@@ -448,7 +447,6 @@ alerts_blueprint.register_blueprint(alerts_investigation_progress_blueprint)
 alerts_blueprint.register_blueprint(alerts_iocs_blueprint)
 alerts_blueprint.register_blueprint(alerts_artifacts_blueprint)
 alerts_blueprint.register_blueprint(alerts_assets_blueprint)
-alerts_blueprint.register_blueprint(alerts_siem_events_blueprint)
 
 alerts_operations = AlertsOperations()
 

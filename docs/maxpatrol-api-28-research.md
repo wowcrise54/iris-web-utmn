@@ -8,9 +8,7 @@
 
 `POST /api/events/v3/events/`
 
-Параметры URL: `incidentId`, `offset`, `limit` (до 250), `noCount=true`.
-С ревизии `mp10-bounded-pages-1` размер страницы по умолчанию 25; курсор и
-общие бюджеты опроса описаны в [инструкции модуля](maxpatrol-siem.md).
+Параметры URL: `incidentId`, `offset`, `limit=250`, `noCount=true`.
 На следующих страницах также передаётся полученный `token`.
 Заголовок `Content-Type: application/json`; Bearer-токен берётся из конфигурации
 и не включён в документацию или фикстуры.

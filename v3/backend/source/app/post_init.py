@@ -1503,8 +1503,6 @@ class PostInit:
 
                 from app.business.ptsandbox import sync_module_parameters
                 sync_module_parameters()
-                from app.business.maxpatrol import sync_module_parameters as sync_maxpatrol_parameters
-                sync_maxpatrol_parameters()
 
                 self._logger.info('Creating initial customer')
                 client = create_safe_client()

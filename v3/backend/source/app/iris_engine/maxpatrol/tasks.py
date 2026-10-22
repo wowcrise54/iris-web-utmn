@@ -7,11 +7,10 @@ from uuid import uuid4
 from sqlalchemy import text
 from app import celery
 from app.db import db
-from app.business.maxpatrol import MODULE, configuration
-from app.business.maxpatrol_ingestion import run_bounded_poll
+from app.business.maxpatrol import MODULE, configuration, IrisStore
 from app.models.models import IrisModule
 from app.models.maxpatrol import MaxPatrolPollState
-from iris_maxpatrol_module.collector import Client, error_reason, REQUEST_REVISION
+from iris_maxpatrol_module.collector import Client, collect, error_reason, REQUEST_REVISION
 from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
@@ -70,7 +69,8 @@ def _poll(module_id):
             log.info('MaxPatrol poll started: module=%s interval=%s request_revision=%s verify_tls=%s',
                      module_id, config.interval, REQUEST_REVISION, config.verify_tls)
             client = Client(config)
-            count = run_bounded_poll(config, client, module_id)
+            store = IrisStore(module_id, config)
+            count = collect(config, client, store, extra_incidents=store.refresh_candidates())
             log.info('MaxPatrol poll completed: module=%s alerts_created=%s duration_ms=%.1f',
                      module_id, count, (perf_counter() - started) * 1000)
     except Exception as exc:
