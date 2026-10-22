@@ -7,6 +7,48 @@ import { render, fireEvent, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi } from 'vitest';
 import CardField from '../../../routes/(app)/case/[case_id]/incident-card/CardField.svelte';
 describe('incident card field UX', () => {
+	it('exposes incident type choices in named groups and preserves independent repeated labels', async () => {
+		const onchange = vi.fn();
+		render(CardField, {
+			definition: {
+				key: 'incident_types',
+				label_ru: 'Тип инцидента',
+				label_en: 'Incident type',
+				type: 'multichoice',
+				auto: false,
+				options: [
+					{
+						value: 'fire',
+						label_ru: 'Пожар',
+						label_en: 'Fire',
+						group_ru: 'Естественный',
+						group_en: 'Natural'
+					},
+					{
+						value: 'fire_repeat',
+						label_ru: 'Пожар',
+						label_en: 'Fire',
+						group_ru: 'Естественный',
+						group_en: 'Natural'
+					}
+				]
+			},
+			field: { ...field, value: [] },
+			zone: 'UTC',
+			editable: true,
+			onchange
+		});
+		expect(screen.getByRole('group', { name: 'Natural' })).toBeInTheDocument();
+		const boxes = screen.getAllByRole('checkbox', { name: 'Fire' });
+		await fireEvent.click(boxes[1]);
+		expect(onchange).toHaveBeenCalledWith(['fire_repeat']);
+	});
+
+	it('does not add automatic/manual metadata to the regulation field', () => {
+		render(CardField, { definition, field, zone: 'UTC', view: true, onchange: vi.fn() });
+		expect(screen.queryByText('Auto')).not.toBeInTheDocument();
+		expect(screen.queryByText('Manual')).not.toBeInTheDocument();
+	});
 	const definition = {
 		key: 'description',
 		label_ru: 'Описание',

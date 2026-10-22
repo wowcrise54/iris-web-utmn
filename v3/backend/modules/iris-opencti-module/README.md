@@ -88,6 +88,10 @@ sanitized failures, caching/deduplication, disabled tasks, module lifecycle agai
 the shipped DIM interface and worker snapshot preservation. SQLAlchemy is needed
 for the worker and storage tests; no real OpenCTI token is used.
 
+Install the `test` extra (`python -m pip install -e ".[test]"`) to include GraphQL
+validation of relationship endpoints against a reduced OpenCTI 7.260902.0 schema
+contract. Endpoints are unions; their identity fields must use typed fragments.
+
 The client follows OpenCTI's GraphQL `FilterGroup`, observable, Indicator and
 relationship API. Enable-time probes check the target deployment's actual schema.
 Local fixture tests are not certification against a live OpenCTI version.

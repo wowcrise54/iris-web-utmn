@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toLocalInput, fromLocalInput, cardPayload } from '../incident-card';
+import { toLocalInput, fromLocalInput, cardPayload, deriveCard } from '../incident-card';
 describe('incident card draft', () => {
 	it('shows UTC in chosen timezone', () =>
 		expect(toLocalInput('2026-10-13T00:00:00Z', 'Asia/Yekaterinburg')).toBe('2026-10-13T05:00:00'));
@@ -22,4 +22,26 @@ describe('incident card draft', () => {
 			fields: { title: { value: 'X', mode: 'manual' } },
 			selections: {}
 		}));
+});
+
+describe('live incident calculations', () => {
+	it('recalculates importance, automatic priority and finished duration from current fields', () => {
+		const fields: any = {
+			categories: { value: [2] },
+			prioritization_type: { value: 'target' },
+			priority_override: { value: 9, mode: 'auto' },
+			completed: { value: true },
+			occurred_at: { value: '2026-10-20T00:00:00Z' },
+			incident_ended_at: { value: '2026-10-20T01:30:00Z' }
+		};
+		expect(deriveCard(fields)).toEqual({
+			importance: 'high',
+			priority: 1,
+			incident_duration_seconds: 5400
+		});
+		fields.prioritization_type.value = 'auxiliary';
+		expect(deriveCard(fields).priority).toBe(6);
+		fields.completed.value = false;
+		expect(deriveCard(fields).incident_duration_seconds).toBeNull();
+	});
 });

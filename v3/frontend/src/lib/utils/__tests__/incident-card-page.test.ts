@@ -19,25 +19,15 @@ import type { IncidentCard } from '$lib/types/resources/incident-card';
 const fixture: IncidentCard = {
 	schema_version: 1,
 	revision: 1,
-	meta: { case_id: 2, author: 'Analyst', created_at: null, updated_at: null, status: 'Open' },
+	meta: { case_id: 2 },
 	fields: {
 		description: { value: 'Incident overview', mode: 'auto', source: 'case', status: 'ok' }
 	},
-	selections: {
-		alert_id: null,
-		affected_asset_ids: [],
-		source_asset_id: null,
-		target_asset_id: null,
-		ioc_ids: [],
-		file_ids: [],
-		performed_task_ids: [],
-		planned_task_ids: []
-	},
+	selections: {},
 	derived: {
 		importance: 'low',
 		priority: 1,
-		incident_duration_seconds: null,
-		reaction_seconds: null
+		incident_duration_seconds: null
 	},
 	catalog: {
 		sections: [
@@ -57,9 +47,7 @@ const fixture: IncidentCard = {
 			}
 		]
 	},
-	sources: { alerts: [], assets: [], iocs: [], files: [], tasks: [] },
-	warnings: [],
-	completeness: { missing: [], total: 1, filled: 1 }
+	warnings: []
 };
 function mount(canEdit = true) {
 	return render(IncidentPage, {
@@ -71,6 +59,86 @@ beforeEach(() => {
 	vi.mocked(IncidentCardService.save).mockResolvedValue(structuredClone(fixture));
 });
 describe('incident card view/edit session', () => {
+	it('reveals unacceptable event options only for Yes without losing previous selections', async () => {
+		const conditional = structuredClone(fixture);
+		conditional.fields = {
+			unacceptable_event: { value: false, mode: 'manual', source: null, status: 'manual' },
+			unacceptable_event_kinds: { value: ['leak'], mode: 'manual', source: null, status: 'manual' }
+		};
+		conditional.catalog.sections = [
+			{
+				id: 'unacceptable_event',
+				label_ru: 'Недопустимое событие',
+				label_en: 'Unacceptable event',
+				fields: [
+					{
+						key: 'unacceptable_event',
+						label_ru: 'Недопустимое событие',
+						label_en: 'Unacceptable event flag',
+						type: 'boolean',
+						auto: false
+					},
+					{
+						key: 'unacceptable_event_kinds',
+						label_ru: 'Виды',
+						label_en: 'Event kinds',
+						type: 'multichoice',
+						auto: false,
+						options: [{ value: 'leak', label_ru: 'Утечка', label_en: 'Leak' }]
+					}
+				]
+			}
+		];
+		vi.mocked(IncidentCardService.get).mockResolvedValueOnce(conditional);
+		mount();
+		await screen.findByText('Unacceptable event');
+		await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+		expect(screen.queryByRole('checkbox', { name: 'Leak' })).not.toBeInTheDocument();
+		await fireEvent.change(screen.getByLabelText('Unacceptable event flag'), {
+			target: { value: 'true' }
+		});
+		expect(screen.getByRole('checkbox', { name: 'Leak' })).toBeChecked();
+	});
+
+	it('keeps calculation tables in the logical priority block, separate from investigation', async () => {
+		const grouped = structuredClone(fixture);
+		grouped.catalog.sections = [
+			{
+				id: 'priority',
+				label_ru: 'Приоритизация инцидента',
+				label_en: 'Prioritization',
+				fields: []
+			},
+			{
+				id: 'investigation',
+				label_ru: 'Расследование инцидента',
+				label_en: 'Investigation',
+				fields: []
+			}
+		];
+		vi.mocked(IncidentCardService.get).mockResolvedValueOnce(grouped);
+		mount();
+		const priority = (await screen.findByText('Prioritization')).closest('details')!;
+		const investigation = screen.getByText('Investigation').closest('details')!;
+		expect(priority.querySelectorAll('table')).toHaveLength(2);
+		expect(investigation.querySelectorAll('table')).toHaveLength(0);
+	});
+	it('shows only the form and no removed metadata or relationship blocks', async () => {
+		mount();
+		await screen.findByText('Incident overview');
+		for (const text of [
+			'Sources and relations',
+			'Author',
+			'Created',
+			'Modified',
+			'Case status',
+			'Reaction time',
+			'Completed',
+			'Revision',
+			'1 fields'
+		])
+			expect(screen.queryByText(text)).not.toBeInTheDocument();
+	});
 	it('starts in readable view and opens editable inputs only after Edit', async () => {
 		mount();
 		await screen.findByText('Incident overview');

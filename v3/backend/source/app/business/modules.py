@@ -106,6 +106,9 @@ def module_get_detail(module_id):
     if module.module_name == 'iris_ptsandbox_module':
         from app.business.ptsandbox import public_config
         config = public_config(config)
+    if module.module_name == 'iris_maxpatrol_module':
+        from app.business.maxpatrol import public_config
+        config = public_config(config)
     return {
         'id': module.id,
         'module_name': module.module_name,
@@ -228,6 +231,9 @@ def modules_export_config(module_id):
 
     if mod_name == 'iris_ptsandbox_module':
         from app.business.ptsandbox import public_config
+        mod_config = public_config(mod_config)
+    if mod_name == 'iris_maxpatrol_module':
+        from app.business.maxpatrol import public_config
         mod_config = public_config(mod_config)
 
     return {

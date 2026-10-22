@@ -3,18 +3,15 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
-from app.business.incident_card_catalog import FIELDS, SECTIONS
+import re
+from app.business.incident_card_catalog import (
+    FIELDS,
+    SECTIONS,
+    normalize_criticality,
+    normalize_preparers,
+)
 
-SELECTIONS = {
-    "alert_id": None,
-    "affected_asset_ids": [],
-    "source_asset_id": None,
-    "target_asset_id": None,
-    "ioc_ids": [],
-    "file_ids": [],
-    "performed_task_ids": [],
-    "planned_task_ids": [],
-}
+SELECTIONS = {}
 
 
 class CardValidationError(ValueError):
@@ -23,6 +20,76 @@ class CardValidationError(ValueError):
 
 class CardConflictError(ValueError):
     pass
+
+
+def alert_defaults(case, alerts):
+    """Use one same-customer origin alert and its persisted escalation history."""
+    candidates = []
+    for alert in alerts:
+        if alert.alert_customer_id != case.client_id:
+            continue
+        moments = []
+        history = (
+            alert.modification_history
+            if isinstance(alert.modification_history, dict)
+            else {}
+        )
+        for stamp, event in history.items():
+            if not isinstance(event, dict) or not re.search(
+                r"^Alert (?:escalated to|escalated into new|merged into existing) case #"
+                + re.escape(str(case.case_id))
+                + r"$",
+                str(event.get("action", "")),
+                re.I,
+            ):
+                continue
+            try:
+                moments.append(datetime.fromtimestamp(float(stamp), timezone.utc))
+            except (TypeError, ValueError, OverflowError, OSError):
+                continue
+        moment = min(moments) if moments else None
+        candidates.append(
+            (
+                moment.timestamp() if moment else float("inf"),
+                alert.alert_id,
+                alert,
+                moment,
+            )
+        )
+    if not candidates:
+        return {}
+    _, _, alert, moment = min(candidates, key=lambda item: (item[0], item[1]))
+    source = "alert:" + str(alert.alert_id)
+    time_source = source
+    if moment is None:
+        moment = getattr(case, "initial_date", None)
+        time_source = "case.initial_date"
+        if moment is not None and moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+
+    severity = alert.severity.severity_name if alert.severity else None
+    # The card has three levels; a critical source alert belongs to its highest bucket.
+    level = (
+        "Высокий"
+        if str(severity).strip().casefold()
+        in ("critical", "критический", "критическая")
+        else normalize_criticality(severity)
+    )
+    event_time = alert.alert_source_event_time
+    if event_time is not None and event_time.tzinfo is None:
+        event_time = event_time.replace(tzinfo=timezone.utc)
+    return dict(
+        criticality=(level, source),
+        detection_source=(alert.alert_source, source),
+        incident_at=(
+            moment.astimezone(timezone.utc).isoformat() if moment else None,
+            time_source,
+        ),
+        occurred_at=(
+            event_time.astimezone(timezone.utc).isoformat() if event_time else None,
+            source,
+        ),
+    )
 
 
 def timestamp(value):
@@ -67,7 +134,9 @@ def validate_update(payload):
         kind = spec["type"]
         if value is not None:
             if kind in ("text", "textarea") and (
-                not isinstance(value, str) or len(value) > 20000
+                not isinstance(value, str)
+                or len(value)
+                > {"investigators": 50200, "report_url": 40001}.get(key, 20000)
             ):
                 raise CardValidationError("Invalid text: " + key)
             if kind == "boolean" and type(value) is not bool:
@@ -95,7 +164,8 @@ def validate_update(payload):
                         or set(person) != {"name", "position"}
                         or any(
                             (
-                                not isinstance(v, str) or len(v) > 500
+                                not isinstance(v, str)
+                                or len(v) > (20000 if key == "prepared_by" else 500)
                                 for v in person.values()
                             )
                         )
@@ -152,26 +222,21 @@ def derive(fields):
     ]
     levels = ["low", "medium", "high"]
     if categories and asset_type in ("auxiliary", "key", "target"):
-        if 8 not in categories or (
-            v("category8_importance") in levels
-            and isinstance(v("category8_reason"), str)
-            and v("category8_reason").strip()
-        ):
-            values = [
-                matrix[c - 1][["auxiliary", "key", "target"].index(asset_type)]
-                for c in categories
-                if 1 <= c <= 7
-            ]
-            if 8 in categories:
-                values.append(v("category8_importance"))
-            if values:
-                importance = max(values, key=levels.index)
-    priority = (
+        column = ["auxiliary", "key", "target"].index(asset_type)
+        values = [matrix[c - 1][column] if c != 8 else "low" for c in categories]
+        importance = max(values, key=levels.index)
+    base_priority = (
         {"auxiliary": [9, 8, 6], "key": [7, 5, 3], "target": [4, 2, 1]}[asset_type][
             levels.index(importance)
         ]
         if importance
         else None
+    )
+    priority = (
+        v("priority_override")
+        if v("priority_override") is not None
+        and fields.get("priority_override", {}).get("mode") != "auto"
+        else base_priority
     )
     pairs = [
         ("occurred_at", "detected_at"),
@@ -198,35 +263,12 @@ def derive(fields):
         incident_duration_seconds=elapsed("occurred_at", "incident_ended_at")
         if v("completed") is True
         else None,
-        reaction_seconds=elapsed("detected_at", "investigation_started_at"),
     )
-
-
-def unresolved_sources(stored, submitted, available):
-    """Echoing selections does not resolve an imported partial or missing source."""
-    unresolved = []
-    for key in stored.get("missing_sources", []):
-        value = submitted.get(key)
-        previous = stored.get("selections", {}).get(key)
-        ids = value if isinstance(value, list) else [value] if value is not None else []
-        changed = (
-            (set(value) != set(previous))
-            if isinstance(value, list) and isinstance(previous, list)
-            else value != previous
-        )
-        if (
-            key not in submitted
-            or not ids
-            or not changed
-            or not set(ids).issubset(available.get(key, set()))
-        ):
-            unresolved.append(key)
-    return unresolved
 
 
 def merge_fields(stored_fields, submitted_fields):
     """Auto fallback values and provenance belong exclusively to the server."""
-    merged = deepcopy(stored_fields)
+    merged = {k: deepcopy(v) for k, v in stored_fields.items() if k in FIELDS}
     for key, entry in submitted_fields.items():
         if entry["mode"] == "manual":
             merged[key] = deepcopy(entry)
@@ -243,15 +285,28 @@ def merge_fields(stored_fields, submitted_fields):
 def build_snapshot(context, stored=None):
     stored = stored or {}
     selected = deepcopy(SELECTIONS)
-    selected.update(stored.get("selections", {}))
-    fields = deepcopy(stored.get("fields", {}))
+
+    fields = {
+        k: v
+        for k, v in normalize_preparers(stored.get("fields", {})).items()
+        if k in FIELDS
+    }
     automatic = context.get("automatic", {})
     warnings = []
     for key, spec in FIELDS.items():
         entry = fields.get(
             key, {"value": None, "mode": "auto" if spec["auto"] else "manual"}
         )
-        if entry["mode"] == "auto":
+        if key in (
+            "incident_at",
+            "detection_source",
+            "occurred_at",
+            "priority_override",
+        ) and entry.get("value") in (None, ""):
+            entry = dict(entry, mode="auto")
+        if key == "priority_override" and entry["mode"] == "auto":
+            entry = dict(value=None, mode="auto", source=None)
+        if entry["mode"] == "auto" and spec["auto"]:
             value, source = automatic.get(key, (None, None))
             if value is not None:
                 entry = dict(value=value, mode="auto", source=source, status="ok")
@@ -270,15 +325,15 @@ def build_snapshot(context, stored=None):
             entry = dict(
                 value=entry.get("value"), mode="manual", source=None, status="manual"
             )
+        if key == "criticality":
+            previous = entry["value"]
+            entry["value"] = normalize_criticality(previous)
+            if previous is not None and entry["value"] is None:
+                entry["status"] = "missing"
+                warnings.append(
+                    "Выберите уровень критичности: Высокий, Средний или Низкий"
+                )
         fields[key] = entry
-    missing = [
-        key
-        for key, entry in fields.items()
-        if entry["value"] is None
-        or entry["value"] == ""
-        or entry["value"] == []
-        or (entry["status"] == "missing")
-    ]
     try:
         derived = derive(fields)
     except CardValidationError as exc:
@@ -287,10 +342,14 @@ def build_snapshot(context, stored=None):
             importance=None,
             priority=None,
             incident_duration_seconds=None,
-            reaction_seconds=None,
         )
-    if 8 in (fields["categories"]["value"] or []) and derived["importance"] is None:
-        warnings.append("Category 8 requires importance and rationale")
+    if fields["priority_override"]["mode"] == "auto":
+        fields["priority_override"] = dict(
+            value=derived["priority"],
+            mode="auto",
+            source="regulation",
+            status="ok" if derived["priority"] is not None else "missing",
+        )
     return dict(
         schema_version=1,
         revision=stored.get("revision", 0),
@@ -299,11 +358,7 @@ def build_snapshot(context, stored=None):
         selections=selected,
         derived=derived,
         catalog={"sections": deepcopy(SECTIONS)},
-        sources=context["sources"],
         warnings=warnings + context.get("warnings", []),
-        completeness=dict(
-            missing=missing, total=len(FIELDS), filled=len(FIELDS) - len(missing)
-        ),
     )
 
 

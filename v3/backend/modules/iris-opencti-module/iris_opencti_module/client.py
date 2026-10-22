@@ -103,8 +103,16 @@ INDICATOR_QUERY = '''query IrisOpenCTIIndicators($filters: FilterGroup, $after: 
 }'''
 RELATION_QUERY = '''query IrisOpenCTIRelations($ids: [String], $after: ID) {
   stixCoreRelationships(fromOrToId: $ids, first: 100, after: $after) {
-    edges { node { id relationship_type from { id entity_type }
-      to { id entity_type
+    edges { node { id relationship_type
+      from {
+        ... on StixObject { id entity_type }
+        ... on StixRelationship { id entity_type }
+        ... on Creator { id entity_type }
+      }
+      to {
+        ... on StixObject { id entity_type }
+        ... on StixRelationship { id entity_type }
+        ... on Creator { id entity_type }
         ... on Malware { name } ... on Tool { name } ... on Campaign { name }
         ... on IntrusionSet { name } ... on AttackPattern { name }
         ... on ThreatActorGroup { name }

@@ -388,6 +388,7 @@ def alerts_update_route(alert_id) -> Response:
                     activity_data.append(f"\"{key}\"")
 
         # Deserialize the JSON data into an Alert object
+        previous_content = alert.alert_source_content
         updated_alert = alert_schema.load(data, instance=alert, partial=True)
         if data.get('alert_owner_id') is None and updated_alert.alert_owner_id is None:
             updated_alert.alert_owner_id = iris_current_user.id
@@ -396,6 +397,8 @@ def alerts_update_route(alert_id) -> Response:
             updated_alert.alert_owner_id = None
 
         # Save the changes
+        from app.business.alert_ioc_extraction import extract_alert_iocs
+        extract_alert_iocs(updated_alert, previous_content)
         db.session.commit()
 
         updated_alert = call_modules_hook('on_postload_alert_update', updated_alert)
@@ -484,7 +487,10 @@ def alerts_batch_update_route() -> Response:
                 updates['alert_owner_id'] = None
 
             # Deserialize the JSON data into an Alert object
+            previous_content = alert.alert_source_content
             alert_schema.load(updates, instance=alert, partial=True)
+            from app.business.alert_ioc_extraction import extract_alert_iocs
+            extract_alert_iocs(alert, previous_content)
 
             db.session.commit()
 

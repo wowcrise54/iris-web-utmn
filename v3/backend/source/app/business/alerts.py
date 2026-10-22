@@ -175,6 +175,9 @@ def alerts_create(alert: Alert, iocs: list[Ioc], assets: list[CaseAssets]) -> Al
     alert.iocs = iocs
     alert.assets = assets
 
+    from app.business.alert_ioc_extraction import extract_alert_iocs
+    extract_alert_iocs(alert)
+
     db.session.add(alert)
     db.session.commit()
 
@@ -475,6 +478,8 @@ def alerts_update(alert: Alert, updated_alert: Alert, activity_data) -> Alert:
     # different object than the one in the session — left the alert
     # changed with nothing in its history to say so. `on_postload_*`
     # means "after commit in DB" anyway, which is what this now is.
+    from app.business.alert_ioc_extraction import extract_alert_iocs
+    extract_alert_iocs(updated_alert, alert.alert_source_content)
     add_obj_history_entry(updated_alert, history_entry)
     db.session.commit()
 

@@ -9,5 +9,8 @@ description = "Optional OpenCTI enrichment processor for DFIR-IRIS"
 requires-python = ">=3.10"
 dependencies = ["iris-interface==1.2.0"]
 
+[project.optional-dependencies]
+test = ["graphql-core>=3.2,<3.3"]
+
 [tool.setuptools.packages.find]
 include = ["iris_opencti_module*"]
