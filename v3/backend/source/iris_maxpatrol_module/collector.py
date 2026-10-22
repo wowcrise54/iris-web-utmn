@@ -15,7 +15,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
-REQUEST_REVISION = 'mp10-list-v2-events-v3-335-1'
+REQUEST_REVISION = 'mp10-inline-clean-json-3'
 
 
 class SIEMError(ValueError):
@@ -34,6 +34,15 @@ def error_reason(error):
 
 def error_details(error):
     return {'reason': error_reason(error), **(error.diagnostic if isinstance(error, SIEMError) else {})}
+
+
+def without_null_fields(value):
+    """Drop null object fields; preserve scalar values, array positions and raw strings."""
+    if isinstance(value, dict):
+        return {key: without_null_fields(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [without_null_fields(item) for item in value]
+    return value
 
 
 def request_diagnostic(method, path, body, response_text, token):
@@ -166,7 +175,8 @@ class Client:
                 raise SIEMError(f'MaxPatrol HTTP {response.status_code}', code=f'http_{response.status_code}',
                     diagnostic={'status': response.status_code,
                                 **request_diagnostic(method, path, body, response.text, self.config.token)})
-            data = response.json()
+            # Filter each object during decoding, before collecting events or building the tree.
+            data = response.json(object_pairs_hook=lambda pairs: {key: value for key, value in pairs if value is not None})
         except requests.exceptions.SSLError:
             raise SIEMError('MaxPatrol TLS request failed', code='tls_error') from None
         except requests.exceptions.Timeout:

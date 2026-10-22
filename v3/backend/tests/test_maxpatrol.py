@@ -5,12 +5,29 @@ import sys
 import unittest
 from unittest.mock import Mock
 from datetime import datetime, timezone
+from requests import Response
 
 SOURCE = Path(__file__).resolve().parents[1] / 'source'
 sys.path.insert(0, str(SOURCE))
 
 
 class MaxPatrolTests(unittest.TestCase):
+    def test_http_json_is_cleaned_before_any_incident_or_event_processing(self):
+        m = self.core()
+        response = Response()
+        response.status_code = 200
+        response._content = (b'{"errors":null,"events":[{"uuid":"test","empty":null,'
+            b'"nested":{"empty":null,"flag":false,"count":0,"text":""},'
+            b'"items":[null,{"empty":null,"keep":1}],"body":"{\\"raw\\":null}"}]}')
+        session = Mock()
+        session.request.return_value = response
+        config = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'secret'})
+        result = m.Client(config, session).request('POST', '/api/events/v3/events/')
+        self.assertNotIn('errors', result)
+        self.assertEqual(result['events'][0], {'uuid': 'test',
+            'nested': {'flag': False, 'count': 0, 'text': ''},
+            'items': [None, {'keep': 1}], 'body': '{"raw":null}'})
+
     def core(self):
         path = SOURCE / 'iris_maxpatrol_module' / 'collector.py'
         self.assertTrue(path.exists(), 'MaxPatrol collector is missing')
