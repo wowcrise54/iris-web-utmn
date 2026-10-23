@@ -59,7 +59,9 @@ _MIN_TEXT_FIELD_BYTES = 200
 _HINT = (
     'The result was too large to return in full. Narrow the filters, '
     'lower `per_page`, or fetch individual records with the matching '
-    '`*_get` tool. Do not assume the omitted records are absent.'
+    '`*_get` tool. For oversized alert_source_content or alert_context, use '
+    '`iris_alerts_source_get` and follow `next_offset` to read every page. '
+    'Do not assume the omitted records are absent.'
 )
 
 

@@ -35,6 +35,7 @@ from __future__ import annotations
 READ_ONLY_TOOLS: frozenset[str] = frozenset({
     'iris_cases_list', 'iris_cases_filter', 'iris_cases_get',
     'iris_alerts_list', 'iris_alerts_get', 'iris_alerts_related_get',
+    'iris_alerts_source_get',
     # Alerts — lookup reads (needed before iris_alerts_update)
     'iris_alerts_status_list', 'iris_alerts_resolution_list',
     'iris_alerts_severity_list', 'iris_alerts_classification_list',

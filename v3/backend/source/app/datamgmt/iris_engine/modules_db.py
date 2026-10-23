@@ -86,6 +86,13 @@ def iris_module_save_parameter(mod_id, mod_config, parameter, value, section=Non
         for p in mod_config:
             p.pop('connection_check', None)
 
+    if data.module_name == 'iris_maxpatrol_module':
+        from copy import deepcopy
+        from app.business.maxpatrol import prepare_parameter
+        mod_config = deepcopy(data.module_config or [])
+        existing = next((p.get('value') for p in mod_config if p['param_name'] == parameter), None)
+        value = prepare_parameter(parameter, value, existing)
+
     index = 0
     for config in mod_config:
 
