@@ -2,6 +2,7 @@ import json
 import threading
 import unittest
 import time
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from iris_opencti_module.client import OpenCTIClient, OpenCTIError, normalize_ioc
@@ -174,6 +175,37 @@ class HTTPContractTests(unittest.TestCase):
             self.assertIn(expected, output)
         for private in ('secret', 'private.example', 'sensitive-server-body', '127.0.0.1'):
             self.assertNotIn(private, output)
+
+    def test_trace_logs_bodies_and_correlates_http_errors(self):
+        client = OpenCTIClient(f'http://127.0.0.1:{self.server.server_port}', 'secret')
+        with patch.dict('os.environ', {'IRIS_OPENCTI_LOG_LEVEL': 'TRACE'}), self.assertLogs('iris_opencti_module', level='DEBUG') as captured:
+            client.query('check', {'value': 'private.example', 'echo': 'secret'})
+            with self.assertRaises(OpenCTIError):
+                client.query('unauthorized', {})
+        output = '\n'.join(captured.output)
+        self.assertIn('private.example', output)
+        self.assertIn('sensitive-server-body', output)
+        self.assertIn('http_status=401', output)
+        self.assertIn('[REDACTED]', output)
+        self.assertNotIn('secret', output)
+        self.assertNotIn('Bearer', output)
+        requests = [r for r in captured.records if 'TRACE request ' in r.getMessage()]
+        responses = [r for r in captured.records if 'TRACE response ' in r.getMessage()]
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(responses), 2)
+        for request, response in zip(requests, responses):
+            self.assertEqual(request.getMessage().split('request_id=')[1].split()[0],
+                             response.getMessage().split('request_id=')[1].split()[0])
+
+    def test_trace_truncates_payload_and_is_off_in_debug(self):
+        client = OpenCTIClient(f'http://127.0.0.1:{self.server.server_port}', 'secret')
+        with patch.dict('os.environ', {'IRIS_OPENCTI_LOG_LEVEL': 'TRACE'}), self.assertLogs('iris_opencti_module', level='DEBUG') as captured:
+            client.query('check', {'value': 'x' * 20000 + 'secret'})
+        self.assertIn('truncated=true', '\n'.join(captured.output))
+        self.assertNotIn('secret', '\n'.join(captured.output))
+        with patch.dict('os.environ', {'IRIS_OPENCTI_LOG_LEVEL': 'DEBUG', 'IRIS_OPENCTI_LOG_PAYLOADS': 'false'}), self.assertLogs('iris_opencti_module', level='DEBUG') as captured:
+            client.query('check', {'value': 'private.example'})
+        self.assertNotIn('TRACE', '\n'.join(captured.output))
 
     def test_timeout_is_exposed_as_a_safe_status(self):
         client = OpenCTIClient(f'http://127.0.0.1:{self.server.server_port}', 'secret', timeout=0.005)

@@ -112,11 +112,33 @@ Set `IRIS_OPENCTI_LOG_LEVEL=DEBUG` in the environment of **both app and worker**
 to include cache source (`miss`, `batch`, `persistent`), request stages and page
 counts. In the current live stack this can be added to `.env.v3.live`; recreate
 app and worker following the root AGENTS.md after rebuilding the wheel/image.
-Supported levels: DEBUG, INFO, WARNING, ERROR, CRITICAL; invalid values fall back
+Supported levels: TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL; invalid values fall back
 to INFO. Restart is required when changing the environment. Existing handler
 filters still apply. Return to INFO after diagnosis to reduce volume.
 
-Logs omit tokens, credential fingerprints, IOC values, URLs, GraphQL variables,
-response bodies and exception text. Match the numeric `ioc_id` to IRIS records.
+Normal INFO/DEBUG logs omit tokens, credential fingerprints, IOC values, URLs,
+GraphQL variables, response bodies and exception text. Match the numeric `ioc_id` to IRIS records.
 Concurrent worker logs can interleave; request/page DEBUG events describe their
 operation rather than an individual IOC. No separate log files are created.
+
+### TRACE request/response bodies
+
+Set `IRIS_OPENCTI_LOG_LEVEL=TRACE` in both app and worker environments, then
+restart/recreate them using the root AGENTS.md procedure. Alternatively,
+`IRIS_OPENCTI_LOG_PAYLOADS=true` enables the same payload logging with DEBUG.
+TRACE records use Python DEBUG severity and an explicit `OpenCTI TRACE` marker
+so existing IRIS/Celery handlers can process them; handler DEBUG filters must
+allow these records.
+
+Each request logs the GraphQL document and variables. Responses include the raw
+body (including GraphQL errors and HTTP error bodies), HTTP status, duration and
+a matching `request_id`. Transport failures without a response retain the normal
+sanitized warning. Headers are never logged; appearances of the configured API
+token in bodies are replaced with `[REDACTED]` before truncation. Bodies are
+limited to 16,384 characters per record, with `truncated=true` for larger bodies.
+Bodies are JSON-escaped onto a single log line.
+
+TRACE includes IOC values and returned threat intelligence. Enable it temporarily
+and restrict access to logs. To switch it off, restore INFO and remove/set false
+`IRIS_OPENCTI_LOG_PAYLOADS`, then restart both services. No payload logs are
+produced by default or by DEBUG alone.
