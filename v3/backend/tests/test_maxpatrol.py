@@ -64,6 +64,34 @@ class MaxPatrolTests(unittest.TestCase):
         self.assertEqual([call.kwargs['body']['offset'] for call in calls], [0, 50])
         self.assertEqual(calls[0].kwargs['body']['timeTo'], calls[1].kwargs['body']['timeTo'])
 
+    def test_poll_caps_saved_lookback_and_preserves_existing_incident_refresh(self):
+        m = self.core()
+        now = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+        for hours, expected_start in (
+                ('72', datetime(2026, 10, 19, 12, tzinfo=timezone.utc)),
+                ('24', datetime(2026, 10, 19, 12, tzinfo=timezone.utc)),
+                ('12', datetime(2026, 10, 20, tzinfo=timezone.utc)),
+                ('1', datetime(2026, 10, 20, 11, tzinfo=timezone.utc))):
+            with self.subTest(lookback_hours=hours):
+                config = m.Config.from_values({'siem_url': 'https://siem.local',
+                    'api_token': 'x', 'lookback_hours': hours, 'interval': '120'})
+                client, store = Mock(), Mock()
+                client.incidents.return_value = [{'id': 'existing'}]
+                client.events.return_value = []
+                store.active.return_value = True
+                store.seen.return_value = True
+                store.needs_event_refresh.return_value = True
+                store.stored_incident.return_value = {'id': 'existing', 'created': '2026-10-20T11:30:00Z'}
+
+                self.assertEqual(m.collect(config, client, store, now=now), 0)
+
+                client.incidents.assert_called_once_with(expected_start, now)
+                client.events.assert_called_once_with('existing', expected_start, now)
+                self.assertEqual(config.interval, 120)
+                store.needs_event_refresh.assert_called_once_with('existing')
+                store.refresh_events.assert_called_once()
+                store.create.assert_not_called()
+
     def test_events_pagination_cleanup_and_payload(self):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})

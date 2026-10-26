@@ -16,6 +16,7 @@ from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
 REQUEST_REVISION = 'mp10-inline-clean-json-3'
+LOOKBACK_DESCRIPTION = '1–8760; capped at 24 hours on every poll, including the first.'
 
 
 class SIEMError(ValueError):
@@ -359,7 +360,7 @@ def alert_payload(config, incident_id, detail, events, now, *, event_materials=N
 def collect(config, client, store, *, now=None, extra_incidents=()):
     started = perf_counter()
     end = now or datetime.now(timezone.utc)
-    start = end - timedelta(hours=config.lookback_hours)
+    start = end - timedelta(hours=min(config.lookback_hours, 24))
     successes = received = already_imported = failed = invalid = events_failed = refreshed = 0
     incomplete_incidents = 0
     closed_skipped = 0

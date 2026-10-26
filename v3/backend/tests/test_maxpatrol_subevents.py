@@ -85,7 +85,7 @@ class SubeventTests(unittest.TestCase):
         self.assertTrue(content['event_collection']['complete'])
         body = self.client.request.call_args_list[0].kwargs['body']
         self.assertGreater(body['timeFrom'], 0)
-        self.assertEqual(body['timeTo'] - body['timeFrom'], 72 * 3600)
+        self.assertEqual(body['timeTo'] - body['timeFrom'], 24 * 3600)
         self.assertEqual(self.client.request.call_count, 1)
 
     def test_v3_full_response_builds_tree_without_detail_or_subevent_requests(self):
@@ -144,7 +144,7 @@ class SubeventTests(unittest.TestCase):
                        extra_incidents=['old'])
         _, start, end = client.events.call_args.args
         self.assertGreater(start.timestamp(), 0)
-        self.assertLessEqual((end - start).total_seconds(), 2 * 72 * 3600)
+        self.assertEqual((end - start).total_seconds(), 2 * 24 * 3600)
         self.assertEqual(start.year, 2019)
         self.assertEqual(end.year, 2020)
 

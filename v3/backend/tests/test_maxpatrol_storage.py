@@ -341,6 +341,15 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(business.public_config(values)[0]['value'], '')
             self.assertEqual(values[0]['value'], encrypted)
 
+    def test_public_config_updates_saved_lookback_description_without_mutating_settings(self):
+        with harness() as h:
+            values = [{'param_name': 'lookback_hours', 'value': '72',
+                       'param_description': 'Old description'}]
+            exported = h.business.public_config(values)
+            self.assertIn('24 hours', exported[0]['param_description'])
+            self.assertEqual(exported[0]['value'], '72')
+            self.assertEqual(values[0]['param_description'], 'Old description')
+
     def test_poll_interval_and_disabled_module_never_contact_siem(self):
         with harness() as h, patch('maxpatrol_test_tasks.source_lock') as lock, \
                 patch('maxpatrol_test_tasks.Client') as client:

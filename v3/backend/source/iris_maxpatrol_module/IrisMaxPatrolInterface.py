@@ -1,4 +1,5 @@
 from iris_interface.IrisModuleInterface import IrisModuleInterface, IrisModuleTypes
+from iris_maxpatrol_module.collector import LOOKBACK_DESCRIPTION
 
 
 def parameter(name, label, default, description='', mandatory=True, kind='string'):
@@ -21,7 +22,7 @@ class IrisMaxPatrolInterface(IrisModuleInterface):
                   kind='sensitive_string'),
         parameter('customer_id', 'IRIS customer ID', '1'),
         parameter('interval', 'Polling interval (seconds)', '30', '1–86400; worker checks due sources every 5 seconds.'),
-        parameter('lookback_hours', 'Lookback (hours)', '72', '1–8760; applies on every poll, including the first.'),
+        parameter('lookback_hours', 'Lookback (hours)', '72', LOOKBACK_DESCRIPTION),
         parameter('timeout', 'HTTP request timeout (seconds)', '60', '1–600 per API request.'),
         parameter('severity_id', 'IRIS alert severity ID', '1', 'Default matches the supplied exporter.'),
         parameter('status_id', 'IRIS alert status ID', '5', 'Default matches the supplied exporter.'),

@@ -8,7 +8,9 @@ from app.models.errors import BusinessProcessingError
 from app.models.models import IrisModule
 from app.models.maxpatrol import MaxPatrolReceipt
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
-from iris_maxpatrol_module.collector import Config, positive_int, event_uuid, render_event_tree, without_null_fields
+from iris_maxpatrol_module.collector import (
+    LOOKBACK_DESCRIPTION, Config, positive_int, event_uuid, render_event_tree, without_null_fields,
+)
 
 MODULE = 'iris_maxpatrol_module'
 NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
@@ -42,6 +44,8 @@ def prepare_parameter(name, value, existing=None):
 def public_config(parameters):
     result = copy.deepcopy(parameters or [])
     for parameter in result:
+        if parameter['param_name'] == 'lookback_hours':
+            parameter['param_description'] = LOOKBACK_DESCRIPTION
         if parameter['param_name'] == 'api_token':
             parameter['has_value'] = bool(parameter.get('value'))
             parameter['value'] = ''
