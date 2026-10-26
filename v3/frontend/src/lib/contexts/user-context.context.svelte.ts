@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 /**
  * Svelte context for the SPA-wide user/server context:
  *   * Current IRIS version (shown in the side bar)
@@ -107,7 +108,7 @@ export const createUserContext = (): UserCtx => {
 			UserContext['preferences']
 		>);
 		if (!response.ok) {
-			console.warn('[user-context] failed to persist preference', key, response.error);
+			logger.warn('[user-context] failed to persist preference', key, response.error);
 		}
 	};
 

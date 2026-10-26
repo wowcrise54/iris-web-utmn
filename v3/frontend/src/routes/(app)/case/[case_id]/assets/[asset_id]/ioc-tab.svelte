@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -84,7 +86,7 @@
 
 			filterIocs();
 		} catch (err) {
-			console.error('Error fetching IOCs:', err);
+			logger.error('Error fetching IOCs:', err);
 			error = 'An error occurred while loading IOCs';
 		} finally {
 			isLoading = false;
@@ -197,7 +199,7 @@
 				variant: 'success'
 			});
 		} catch (err) {
-			console.error('Error removing IOCs:', err);
+			logger.error('Error removing IOCs:', err);
 
 			toast({
 				title: irisT("Error", $irisLocale),

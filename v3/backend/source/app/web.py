@@ -440,6 +440,8 @@ class HTTPRequestBufferMiddleware:
         body = tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
         size = 0
         limit = self.iris_app.config.get("MAX_CONTENT_LENGTH")
+        if scope.get('path', '').rstrip('/') == '/api/v2/observability/client-events':
+            limit = min(limit, 65536) if limit is not None else 65536
         oversized = False
         req = None
         try:

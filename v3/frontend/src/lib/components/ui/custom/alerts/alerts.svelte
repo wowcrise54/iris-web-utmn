@@ -1,5 +1,7 @@
 <!-- src/routes/(app)/alerts/+page.svelte -->
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -21,7 +23,7 @@
 	let alerts = data.alerts ?? [];
 
 	onMount(() => {
-		console.log('Alerts:', alerts);
+		logger.debug('Alerts:', alerts);
 		isLoadingAlertsStore.set(false);
 	});
 
@@ -33,7 +35,7 @@
 				isLoadingAlertsStore.set(false);
 			});
 		} catch (error) {
-			console.error('Error fetching alerts:', error);
+			logger.error('Error fetching alerts:', error);
 		} finally {
 			isLoadingAlertsStore.set(false);
 		}

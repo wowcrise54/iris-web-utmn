@@ -1541,5 +1541,4 @@ class PostInit:
                     if self._configuration.get('IRIS_ADM_PASSWORD'):
                         self._logger.info(f'You can now login with user {admin.user} using the configured password')
                     else:
-                        self._logger.info(f'You can now login with user {admin.user} and password >>> {pwd} <<< '
-                                          f'on {os.getenv("INTERFACE_HTTPS_PORT")}')
+                        self._logger.warning('Administrator password generated. Configure IRIS_ADM_PASSWORD before first startup or use password recovery; credentials are not written to logs.')

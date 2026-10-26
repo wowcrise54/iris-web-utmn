@@ -1,16 +1,14 @@
+import { logger } from '$lib/observability/logger';
 /**
  * Utility functions to debug authentication issues
  */
 export function debugAuthRequest() {
 	try {
-		console.group('Authentication Debug Information');
-
-		// Log cookies
-		console.log('Cookies:', document.cookie);
+		logger.debug('Authentication Debug Information');
 
 		// Log origin and CORS info
-		console.log('Page Origin:', window.location.origin);
-		console.log('API URL:', new URL('/login', window.location.origin).toString());
+		logger.debug('Page Origin:', window.location.origin);
+		logger.debug('API URL:', new URL('/login', window.location.origin).toString());
 
 		// Check for security headers
 		fetch('/login', {
@@ -18,15 +16,13 @@ export function debugAuthRequest() {
 			credentials: 'include'
 		})
 			.then((response) => {
-				console.log('OPTIONS response status:', response.status);
-				console.log('Response headers:', Object.fromEntries([...response.headers.entries()]));
+				logger.debug('OPTIONS response status:', response.status);
 			})
 			.catch((error) => {
-				console.error('OPTIONS request failed:', error);
+				logger.error('OPTIONS request failed:', error);
 			});
 
-		console.groupEnd();
 	} catch (error) {
-		console.error('Error in auth debugging:', error);
+		logger.error('Error in auth debugging:', error);
 	}
 }

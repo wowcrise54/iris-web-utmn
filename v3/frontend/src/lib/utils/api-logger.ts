@@ -1,96 +1,63 @@
 import { browser } from '$app/environment';
-import { DEV } from 'esm-env';
+import { logger } from '$lib/observability/logger';
 
-// Configuration for the logger
+// Preserve the debug panel API; payload switches are ignored by policy.
 export const ApiLoggerConfig = {
-	enabled: DEV || (browser && localStorage.getItem('debug_api') === 'true'),
-	logRequestBody: true,
-	logResponseBody: true,
-	truncateBodyAt: 1000, // Characters to show before truncating
-	colorizeOutput: browser // Use colors in browser console
+	enabled: false,
+	logRequestBody: false,
+	logResponseBody: false,
+	truncateBodyAt: 1000,
+	colorizeOutput: browser
 };
 
-/**
- * Logger utility for API requests and responses
- */
 export class ApiLogger {
 	static configure(options: Partial<typeof ApiLoggerConfig>) {
-		Object.assign(ApiLoggerConfig, options);
+		Object.assign(ApiLoggerConfig, options, { logRequestBody: false, logResponseBody: false });
 	}
-
 	static enable() {
-		if (browser) localStorage.setItem('debug_api', 'true');
-		ApiLoggerConfig.enabled = true;
-	}
-
-	static disable() {
-		if (browser) localStorage.removeItem('debug_api');
-		ApiLoggerConfig.enabled = false;
-	}
-
-	static logRequest(method: string, url: string, headers: Record<string, string>, body?: any) {
-		if (!ApiLoggerConfig.enabled) return;
-
-		const styles = ApiLoggerConfig.colorizeOutput ? 'color: #61affe; font-weight: bold;' : '';
-
-		console.groupCollapsed(`%c→ ${method} ${url}`, styles);
-		console.log('Headers:', headers);
-
-		if (ApiLoggerConfig.logRequestBody && body) {
+		if (browser) {
 			try {
-				console.log('Body:', this.truncateIfNeeded(body));
-			} catch (_e) {
-				console.log('Body: [Could not stringify]');
+				localStorage.setItem('debug_api', 'true');
+			} catch {
+				/* restricted storage */
 			}
 		}
-
-		console.groupEnd();
+		ApiLoggerConfig.enabled = true;
 	}
-
+	static disable() {
+		if (browser) {
+			try {
+				localStorage.removeItem('debug_api');
+			} catch {
+				/* restricted storage */
+			}
+		}
+		ApiLoggerConfig.enabled = false;
+	}
+	static logRequest(method: string, url: string, headers: Record<string, string>, _body?: unknown) {
+		logger.debug('http_started', {
+			method,
+			path: url,
+			request_id: headers['x-request-id'] || headers['X-Request-Id']
+		});
+	}
 	static logResponse(
 		method: string,
 		url: string,
 		status: number,
 		headers: Record<string, string>,
-		body?: any,
+		_body?: unknown,
 		duration?: number
 	) {
-		if (!ApiLoggerConfig.enabled) return;
-
-		const isSuccess = status >= 200 && status < 300;
-		const styles = ApiLoggerConfig.colorizeOutput
-			? `color: ${isSuccess ? '#49cc90' : '#f93e3e'}; font-weight: bold;`
-			: '';
-
-		const durationText = duration ? ` (${duration}ms)` : '';
-
-		console.groupCollapsed(`%c← ${status} ${method} ${url}${durationText}`, styles);
-		console.log('Headers:', headers);
-
-		if (ApiLoggerConfig.logResponseBody && body) {
-			try {
-				console.log('Body:', this.truncateIfNeeded(body));
-			} catch (_e) {
-				console.log('Body: [Could not stringify]');
-			}
-		}
-
-		console.groupEnd();
-	}
-
-	private static truncateIfNeeded(data: any): any {
-		if (!data) return data;
-
-		const str = typeof data === 'string' ? data : JSON.stringify(data);
-		if (str.length <= ApiLoggerConfig.truncateBodyAt) return data;
-
-		if (typeof data === 'string') {
-			return `${str.substring(0, ApiLoggerConfig.truncateBodyAt)}... [truncated, ${str.length} chars total]`;
-		}
-
-		return {
-			...data,
-			_note: `Response truncated. Original size: ${str.length} chars`
+		const details = {
+			method,
+			path: url,
+			status,
+			duration_ms: duration,
+			request_id: headers['x-request-id'] || headers['X-Request-Id']
 		};
+		if (status >= 500) logger.error('http_failed', details);
+		else if (status >= 400) logger.warn('http_rejected', details);
+		else logger.debug('http_completed', details);
 	}
 }

@@ -50,8 +50,8 @@ def build_upload_path(case_customer, case_name, module, create=False):
 
         return None
 
-    except Exception as e:
-        print(e)
+    except Exception:
+        app.logger.exception('file_path_resolution_failed')
         return None
 
 

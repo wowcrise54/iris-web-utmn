@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { API_BASE_URL } from '$lib/config/api.config';
 	import { browser } from '$app/environment';
 
@@ -11,7 +13,7 @@
 				const url = new URL(API_BASE_URL);
 				apiOrigin = url.origin;
 			} catch (e) {
-				console.error('Failed to parse API URL:', e);
+				logger.error('Failed to parse API URL:', e);
 				// Fallback to self
 				apiOrigin = window.location.origin;
 			}

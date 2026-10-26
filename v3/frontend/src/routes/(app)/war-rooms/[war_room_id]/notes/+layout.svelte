@@ -14,6 +14,8 @@
       wire the same check used by case-access.context.
 -->
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -439,7 +441,7 @@
 							toast({ title: 'Link copied', variant: 'success' });
 						})
 						.catch((e) => {
-							console.error('Clipboard copy error:', e);
+							logger.error('Clipboard copy error:', e);
 							toast({ title: 'Could not copy link', variant: 'destructive' });
 						});
 				}}
@@ -454,7 +456,7 @@
 							toast({ title: 'Link copied', variant: 'success' });
 						})
 						.catch((e) => {
-							console.error('Clipboard copy error:', e);
+							logger.error('Clipboard copy error:', e);
 							toast({ title: 'Could not copy link', variant: 'destructive' });
 						});
 				}}

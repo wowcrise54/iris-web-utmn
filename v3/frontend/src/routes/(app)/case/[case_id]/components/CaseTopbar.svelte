@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -404,7 +406,7 @@
 				linkedAlertsTotal = 0;
 			}
 		} catch (err) {
-			console.error('[case-topbar] failed to load linked alerts', err);
+			logger.error('[case-topbar] failed to load linked alerts', err);
 			linkedAlerts = [];
 			linkedAlertsTotal = 0;
 		} finally {

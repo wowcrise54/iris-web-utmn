@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { writable } from 'svelte/store';
 import { ApiService } from '$lib/services/api.service';
 import { ENDPOINTS } from '$lib/constants/endpoints';
@@ -26,14 +27,14 @@ function createIocTypesStore() {
 			(async () => {
 				try {
 					const response = await ApiService.get(ENDPOINTS.manage.ioc_types.list);
-					console.log('Fetched IOC types:', response.data);
+					logger.debug('Fetched IOC types:', response.data);
 
 					if (response && response.data) {
 						set(response.data as IocType[]);
 					}
 					initialized = true;
 				} catch (error) {
-					console.error('Error fetching asset types:', error);
+					logger.error('Error fetching asset types:', error);
 				} finally {
 					fetchPromise = null;
 					resolve();

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -60,10 +62,10 @@
 					description: errorData?.message || 'Failed to delete item. Please try again.',
 					variant: 'destructive'
 				});
-				console.error('Error deleting item:', errorData);
+				logger.error('Error deleting item:', errorData);
 			}
 		} catch (error: any) {
-			console.error('Error deleting item:', error);
+			logger.error('Error deleting item:', error);
 			toast({
 				title: irisT("Error", $irisLocale),
 				description: error?.message || 'An unexpected error occurred. Please try again.',

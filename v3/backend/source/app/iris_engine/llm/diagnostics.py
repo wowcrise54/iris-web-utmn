@@ -11,6 +11,7 @@ log = logging.getLogger('iris.chatbot.provider')
 
 def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwargs):
     started, received = time.monotonic(), 0
+    log.log(5, 'llm_started', extra={'event': 'llm_started', 'stage': 'provider'})
     stream = provider.stream_completion(**kwargs)
     streamed_tools = set()
     tool_bytes = 0
@@ -51,4 +52,6 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
         if hasattr(stream, 'close'):
             stream.close()
         log.info('llm_request request_id=%s provider=%s elapsed_ms=%d response_bytes=%d',
-                 correlation_id, provider.name, (time.monotonic() - started) * 1000, received)
+                 correlation_id, provider.name, (time.monotonic() - started) * 1000, received,
+                 extra={'event': 'llm_completed', 'duration_ms': round((time.monotonic() - started) * 1000, 2),
+                        'stage': 'provider', 'metadata': {'response_bytes': received}})

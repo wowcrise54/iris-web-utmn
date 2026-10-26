@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -379,7 +381,7 @@
 		});
 
 		socket.on('connect_error', (err) => {
-			console.error('Collab socket connection error:', err.message);
+			logger.error('Collab socket connection error:', err.message);
 		});
 
 		provider = new SocketYjsProvider({
@@ -1238,7 +1240,7 @@
 	 * chunk; this path runs at most once per stuck keystroke.
 	 */
 	const reportKeymapFailure = ({ error, depth, path }: KeymapFailure) => {
-		console.error('[markdown-editor] keymap transform failed', { error, depth, path });
+		logger.error('[markdown-editor] keymap transform failed', { error, depth, path });
 
 		toast({
 			title: irisT("That line break could not be applied", $irisLocale),
@@ -1510,7 +1512,7 @@
 	$effect(() => {
 		const current = docName;
 		if (current === joinedDoc) return;
-		console.warn(
+		logger.warn(
 			`collab: docName changed under a mounted editor (${joinedDoc} → ${current}). ` +
 				`Wrap the editor in {#key <id>} at the call site to force a remount instead.`
 		);

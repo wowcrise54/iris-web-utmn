@@ -18,7 +18,6 @@
 
 import secrets
 import marshmallow
-import traceback
 from app.web import Blueprint
 from app.web import request
 
@@ -329,8 +328,7 @@ def manage_user_cac_delete_cases(cur_id):
         db.session.commit()
 
     except Exception as e:
-        log.error(f"Error while removing cases access from user: {e}")
-        log.error(traceback.format_exc())
+        log.exception(f"Error while removing cases access from user: {e}")
         return response_error(msg=str(e))
 
     if success:
@@ -466,8 +464,8 @@ def view_delete_user(cur_id):
         track_activity(message=f"deleted user ID {cur_id}", ctx_less=True)
         return response_success(f"Deleted user ID {cur_id}")
 
-    except Exception as e:
-        print(e)
+    except Exception:
+        log.exception('user_operation_failed')
         db.session.rollback()
         track_activity(message=f"tried to delete active user ID {cur_id}", ctx_less=True)
         return response_error("Cannot delete active user")

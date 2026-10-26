@@ -17,7 +17,9 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import datetime
-import traceback
+import logging
+
+log = logging.getLogger(__name__)
 from app.web import Blueprint
 from app.web import request
 from marshmallow import ValidationError
@@ -101,7 +103,7 @@ def customer_update_contact(client_id, contact_id):
         return response_error(msg='Error update contact', data=e.messages)
 
     except Exception as e:
-        print(traceback.format_exc())
+        log.exception('customer_operation_failed')
         return response_error(f'An error occurred during contact update. {e}')
 
     track_activity(f'Updated contact {contact.contact_name}', ctx_less=True)
@@ -135,7 +137,7 @@ def customer_add_contact(client_id):
         return response_error(msg='Error adding contact', data=e.messages)
 
     except Exception as e:
-        print(traceback.format_exc())
+        log.exception('customer_operation_failed')
         return response_error(f'An error occurred during contact addition. {e}')
 
     track_activity(f"Added contact {contact.contact_name}", ctx_less=True)
@@ -254,7 +256,7 @@ def view_customers(client_id):
         return response_error('', data=e.messages)
 
     except Exception as e:
-        print(traceback.format_exc())
+        log.exception('customer_operation_failed')
         return response_error(f'An error occurred during Customer update. {e}')
 
     return response_success('Customer updated', client_schema.dump(customer))
@@ -275,7 +277,7 @@ def add_customers():
     except ValidationError as e:
         return response_error(msg='Error adding customer', data=e.messages)
     except Exception as e:
-        print(traceback.format_exc())
+        log.exception('customer_operation_failed')
         return response_error(f'An error occurred during customer addition. {e}')
 
     track_activity(f"Added customer {customer.name}", ctx_less=True)

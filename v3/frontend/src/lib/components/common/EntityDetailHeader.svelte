@@ -9,6 +9,8 @@
   clipboard and hook plumbing.
 -->
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -107,7 +109,7 @@
 				toast({ title: irisT("Link copied", $irisLocale), variant: 'success' });
 			})
 			.catch((e) => {
-				console.error('Clipboard copy error:', e);
+				logger.error('Clipboard copy error:', e);
 
 				toast({ title: irisT("Could not copy link", $irisLocale), variant: 'destructive' });
 			});

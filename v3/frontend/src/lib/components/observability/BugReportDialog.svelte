@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -69,7 +71,7 @@
 			});
 			return true;
 		} catch (error) {
-			console.error('Sentry captureFeedback failed', error);
+			logger.error('Sentry captureFeedback failed', error);
 			return false;
 		}
 	};

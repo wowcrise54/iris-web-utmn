@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { writable, get } from 'svelte/store';
 import type { Ioc } from '$lib/types/resources/ioc';
 
@@ -39,7 +40,7 @@ function createIocsStore() {
 				const existingIoc = store.iocs[iocId];
 				const mergedIoc = existingIoc ? { ...existingIoc, ...updatedIoc } : { ...updatedIoc };
 
-				console.log('mergedIoc', mergedIoc);
+				logger.debug('mergedIoc', mergedIoc);
 				return {
 					...store,
 					iocs: {

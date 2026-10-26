@@ -19,7 +19,6 @@
 
 import binascii
 import marshmallow
-import traceback
 from app.web import Blueprint
 from app.web import request
 
@@ -200,8 +199,7 @@ def group_cac_set_case(caseid):
             success, logs = ac_set_case_access_for_users(group.group_members, caseid, access_level)
 
     except Exception as e:
-        log.error(f'Error while setting case access for group: {e}')
-        log.error(traceback.format_exc())
+        log.exception(f'Error while setting case access for group: {e}')
         return response_error(msg=str(e))
 
     if success:
@@ -261,8 +259,7 @@ def user_cac_set_case(caseid):
         return response_success(msg=f'Case access set to {access_level} for user {user.id}')
 
     except Exception as e:
-        log.error(f'Error while setting case access for user: {e}')
-        log.error(traceback.format_exc())
+        log.exception(f'Error while setting case access for user: {e}')
         return response_error(str(e))
 
 

@@ -151,19 +151,18 @@ class OpenCTIClient:
 
     def _trace(self, direction, request_id, body, http_status=None, clock=None):
         log = logging.getLogger(__name__)
-        if not (os.environ.get('IRIS_OPENCTI_LOG_LEVEL', '').upper() == 'TRACE'
+        if not (log.isEnabledFor(5) or os.environ.get('IRIS_OPENCTI_LOG_LEVEL', '').upper() == 'TRACE'
                 or os.environ.get('IRIS_OPENCTI_LOG_PAYLOADS', '').lower() == 'true'):
             return
         if not log.isEnabledFor(logging.DEBUG):
             return
-        # Redact before truncating, including JSON-escaped appearances of the token.
-        body = body.decode('utf-8', errors='replace') if isinstance(body, bytes) else body
-        for token in (json.dumps(self.token)[1:-1], self.token):
-            body = body.replace(token, '[REDACTED]')
-        truncated = len(body) > 16384
-        log.debug('OpenCTI TRACE %s request_id=%s http_status=%s duration_ms=%.1f truncated=%s body=%s',
+        # TRACE is metadata-only, including when the legacy payload flag is set.
+        log.log(5 if log.isEnabledFor(5) else logging.DEBUG,
+                  'OpenCTI TRACE %s request_id=%s http_status=%s duration_ms=%.1f bytes=%s',
                   direction, request_id, http_status, (monotonic() - clock) * 1000,
-                  str(truncated).lower(), json.dumps(body[:16384], ensure_ascii=True))
+                  len(body), extra={'event': 'opencti_http', 'stage': direction,
+                                    'status': http_status, 'duration_ms': round((monotonic() - clock) * 1000, 2),
+                                    'metadata': {'bytes': len(body)}})
 
     def query(self, document, variables):
         log = logging.getLogger(__name__)

@@ -117,8 +117,8 @@ def bug_report_submit() -> Response:
         'server_request_id': g.get('request_id'),
         'user_id': user_id,
     }
-    # `%s` with a positional so the format-safe path is used and any
-    # `%` in the description doesn't blow up the logging call.
-    app.logger.warning('User bug report: %s', fields)
+    # Explicit user-authored report fields survive generic payload suppression;
+    # the formatter still applies redaction and size limits.
+    app.logger.warning('user_bug_report', extra={'event': 'user_bug_report', 'metadata': fields})
     track_activity(f'Bug report filed: {title}', ctx_less=False)
     return response_api_success({'received': True})

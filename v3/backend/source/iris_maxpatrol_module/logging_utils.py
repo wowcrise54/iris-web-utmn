@@ -22,6 +22,7 @@ class ContextFilter(logging.Filter):
     def filter(self, record):
         values = _context.get()
         if values:
+            record.metadata = {**getattr(record, 'metadata', {}), **values}
             context = ' '.join(f'{key}={json.dumps(value, ensure_ascii=True)}' for key, value in values.items())
             # Format existing arguments first: identifiers must not inject % placeholders.
             record.msg = f'[{context}] {record.getMessage()}'

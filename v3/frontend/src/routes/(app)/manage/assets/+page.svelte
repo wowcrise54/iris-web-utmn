@@ -22,6 +22,8 @@
     not cleared for.
 -->
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -120,7 +122,7 @@
 		});
 
 		if (unique.length !== source.length) {
-			console.warn(
+			logger.warn(
 				`[assets] API returned ${source.length - unique.length} duplicate asset id(s) on page ${page}; totals are unreliable`
 			);
 		}

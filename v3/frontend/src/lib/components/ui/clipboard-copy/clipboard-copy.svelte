@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 	import { Copy, CheckCheck } from 'lucide-svelte';
@@ -50,7 +52,7 @@
 				}, 2000);
 			})
 			.catch((error) => {
-				console.error('Failed to copy:', error);
+				logger.error('Failed to copy:', error);
 			});
 	}
 

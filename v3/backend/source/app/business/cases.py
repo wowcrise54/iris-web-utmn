@@ -17,7 +17,6 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import datetime
-import traceback
 
 from app.db import db
 from app.logger import logger
@@ -356,8 +355,7 @@ def cases_update(case: Cases, updated_case, protagonists, tags,
         raise e
 
     except Exception as e:
-        logger.error(e.__str__())
-        logger.error(traceback.format_exc())
+        logger.exception('case_update_failed')
         raise BusinessProcessingError('Data error', str(e))
 
 
