@@ -1,6 +1,7 @@
 """Native module settings and transactional incident ingestion."""
 import copy
 from datetime import datetime, timezone
+from itertools import chain
 from uuid import UUID, uuid5
 
 from app.db import db
@@ -58,48 +59,49 @@ class IrisStore:
         self.config = config
 
     def active(self):
-        db.session.expire_all()
-        row = db.session.get(IrisModule, self.module_id)
+        row = db.session.query(IrisModule.is_active, IrisModule.module_name, IrisModule.module_config).filter(
+            IrisModule.id == self.module_id).first()
         return bool(row and row.is_active and row.module_name == MODULE and configuration(row) == self.config)
 
     def seen(self, incident_id):
         return db.session.get(MaxPatrolReceipt, (self.config.source_key, incident_id)) is not None
 
-    def _imported_alert(self, incident_id):
+    def _imported_alert_query(self, *columns):
         from app.models.alerts import Alert
-        receipt = db.session.get(MaxPatrolReceipt, (self.config.source_key, incident_id))
-        if not receipt:
-            return None
-        return db.session.query(Alert).filter_by(alert_uuid=receipt.alert_uuid, alert_customer_id=self.config.customer_id,
-                                     alert_source='MaxPatrol SIEM', alert_source_ref=incident_id).first()
-
-    def needs_event_refresh(self, incident_id):
-        alert = self._imported_alert(incident_id)
-        if not alert:
-            return False
-        return self._event_refresh_due(alert)
-
-    def stored_incident(self, incident_id):
-        alert = self._imported_alert(incident_id)
-        content = alert.alert_source_content if alert and isinstance(alert.alert_source_content, dict) else {}
-        incident = content.get('incident')
-        if isinstance(incident, dict) and incident.get('id') == incident_id:
-            return copy.deepcopy(incident)
-        return None
-
-    def refresh_candidates(self):
-        from app.models.alerts import Alert
-        rows = db.session.query(MaxPatrolReceipt, Alert).join(Alert,
+        return db.session.query(*columns).select_from(MaxPatrolReceipt).join(Alert,
             Alert.alert_uuid == MaxPatrolReceipt.alert_uuid).filter(
                 MaxPatrolReceipt.source_key == self.config.source_key,
                 Alert.alert_customer_id == self.config.customer_id,
                 Alert.alert_source == 'MaxPatrol SIEM',
-                Alert.alert_source_ref == MaxPatrolReceipt.incident_id).all()
-        return [receipt.incident_id for receipt, alert in rows if self._event_refresh_due(alert)]
+                Alert.alert_source_ref == MaxPatrolReceipt.incident_id)
 
-    def _event_refresh_due(self, alert):
-        content = alert.alert_source_content if isinstance(alert.alert_source_content, dict) else {}
-        state = content.get('event_collection')
+    def _imported_alert(self, incident_id):
+        from app.models.alerts import Alert
+        return self._imported_alert_query(Alert).filter(
+            MaxPatrolReceipt.incident_id == incident_id).populate_existing().first()
+
+    def needs_event_refresh(self, incident_id):
+        from app.models.alerts import Alert
+        row = self._imported_alert_query(Alert.alert_source_content['event_collection']).filter(
+            MaxPatrolReceipt.incident_id == incident_id).first()
+        return bool(row and self._event_refresh_due(row[0]))
+
+    def stored_incident(self, incident_id):
+        from app.models.alerts import Alert
+        row = self._imported_alert_query(Alert.alert_source_content['incident']).filter(
+            MaxPatrolReceipt.incident_id == incident_id).first()
+        incident = row[0] if row else None
+        if isinstance(incident, dict) and incident.get('id') == incident_id:
+            return incident
+        return None
+
+    def refresh_candidates(self):
+        from app.models.alerts import Alert
+        rows = self._imported_alert_query(
+            MaxPatrolReceipt.incident_id, Alert.alert_source_content['event_collection']).yield_per(100)
+        return [incident_id for incident_id, state in rows if self._event_refresh_due(state)]
+
+    def _event_refresh_due(self, state):
         if not isinstance(state, dict):
             return True
         if state.get('refresh_blocked') is True:
@@ -119,17 +121,18 @@ class IrisStore:
         alert = self._imported_alert(incident_id)
         if not alert:
             return False
-        content = copy.deepcopy(alert.alert_source_content) if isinstance(alert.alert_source_content, dict) else {}
+        previous_content = alert.alert_source_content if isinstance(alert.alert_source_content, dict) else {}
+        content = dict(previous_content)
         # Retain earlier evidence if a later attempt returns only a partial graph.
         events, unidentified = {}, []
-        for row in [*(content.get('events') or []), *(materials.get('events') or [])]:
+        for row in chain(content.get('events') or [], materials.get('events') or []):
             uid = event_uuid(row)
             if uid:
-                events[uid] = {**events.get(uid, {}), **row}
+                events[uid] = {**events[uid], **row} if uid in events else row
             elif row not in unidentified:
                 unidentified.append(row)
         old_roots = [node.get('uuid') for node in content.get('event_tree') or []]
-        links = copy.deepcopy(content.get('event_links') or {})
+        links = dict(content.get('event_links') or {})
         if not (materials.get('event_collection') or {}).get('complete'):
             for uid, children in (materials.get('event_links') or {}).items():
                 links[uid] = list(dict.fromkeys([*links.get(uid, []), *children]))
@@ -137,7 +140,6 @@ class IrisStore:
         else:
             links = materials.get('event_links') or links
             roots = [node.get('uuid') for node in materials.get('event_tree') or []]
-        previous_content = copy.deepcopy(content)
         content.update(materials)
         content['events'] = [*events.values(), *unidentified]
         content['event_links'] = links

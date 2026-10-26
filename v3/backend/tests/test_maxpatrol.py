@@ -12,6 +12,17 @@ sys.path.insert(0, str(SOURCE))
 
 
 class MaxPatrolTests(unittest.TestCase):
+    def test_null_cleanup_reuses_shared_event_data_without_mutating_input(self):
+        m = self.core()
+        event = {'body': 'original', 'empty': None, 'nested': {'count': 0, 'empty': None}}
+        content = {'events': [event], 'event_tree': [{'event': event}, {'event': event}]}
+        cleaned = m.without_null_fields(content)
+        self.assertEqual(cleaned['events'][0], {'body': 'original', 'nested': {'count': 0}})
+        self.assertIs(cleaned['events'][0], cleaned['event_tree'][0]['event'])
+        self.assertIs(cleaned['events'][0], cleaned['event_tree'][1]['event'])
+        self.assertIn('empty', event)
+        self.assertIn('empty', event['nested'])
+
     def test_http_json_is_cleaned_before_any_incident_or_event_processing(self):
         m = self.core()
         response = Response()

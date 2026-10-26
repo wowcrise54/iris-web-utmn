@@ -37,13 +37,23 @@ def error_details(error):
     return {'reason': error_reason(error), **(error.diagnostic if isinstance(error, SIEMError) else {})}
 
 
-def without_null_fields(value):
+def without_null_fields(value, _memo=None):
     """Drop null object fields; preserve scalar values, array positions and raw strings."""
+    if not isinstance(value, (dict, list)):
+        return value
+    memo = {} if _memo is None else _memo
+    if id(value) in memo:
+        return memo[id(value)]
+    # Events appear in both the flat list and the tree; clean each object only once.
     if isinstance(value, dict):
-        return {key: without_null_fields(item) for key, item in value.items() if item is not None}
-    if isinstance(value, list):
-        return [without_null_fields(item) for item in value]
-    return value
+        cleaned = {}
+        memo[id(value)] = cleaned
+        cleaned.update((key, without_null_fields(item, memo)) for key, item in value.items() if item is not None)
+    else:
+        cleaned = []
+        memo[id(value)] = cleaned
+        cleaned.extend(without_null_fields(item, memo) for item in value)
+    return cleaned
 
 
 def request_diagnostic(method, path, body, response_text, token):
@@ -260,10 +270,15 @@ def build_event_materials(rows, *, is_active=None):
         else:
             unidentified.append(row)
             errors.append({'reason': 'event_reference_invalid'})
+    next_active_check = None
     for uid, row in events.items():
-        if is_active and not is_active():
-            errors.append({'reason': 'module_inactive'})
-            break
+        if is_active:
+            checked_at = perf_counter()
+            if next_active_check is None or checked_at >= next_active_check:
+                if not is_active():
+                    errors.append({'reason': 'module_inactive'})
+                    break
+                next_active_check = checked_at + 1
         children = row.get('subevents') or []
         if not isinstance(children, list):
             children = []

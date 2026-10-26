@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import types
@@ -26,7 +27,7 @@ def load(name, path):
 
 
 @contextmanager
-def harness():
+def harness(*, json_deserializer=None):
     base = declarative_base()
 
     association = Table('alert_iocs', base.metadata,
@@ -69,7 +70,7 @@ def harness():
         alert_source_content = Column(JSON)
         iocs = relationship(Ioc, secondary=association)
 
-    engine = create_engine('sqlite://')
+    engine = create_engine('sqlite://', json_deserializer=json_deserializer)
     session = sessionmaker(bind=engine)()
     db = types.SimpleNamespace(Model=base, session=session, engine=engine)
     module_names = ('app', 'app.db', 'app.models', 'app.models.models', 'app.models.errors',
@@ -120,6 +121,127 @@ def harness():
 
 
 class StorageTests(unittest.TestCase):
+    def test_refresh_metadata_and_incident_queries_do_not_deserialize_event_payloads(self):
+        def metadata_only(raw):
+            value = json.loads(raw)
+            if isinstance(value, dict) and 'events' in value:
+                raise AssertionError('Full event payload returned to the worker')
+            return value
+
+        with harness(json_deserializer=metadata_only) as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            for name, state in (
+                    ('due', {'version': 2, 'complete': False}),
+                    ('fresh', {'version': 2, 'complete': True,
+                               'collected_at': datetime.now(timezone.utc).isoformat()}),
+                    ('blocked', {'refresh_blocked': True})):
+                h.store.create(name, {'alert_title': name, 'alert_customer_id': 1,
+                    'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': name,
+                    'alert_source_content': {'incident': {'id': name, 'name': name},
+                        'events': [{'body': 'x' * (1024 * 1024)}], 'event_collection': state}})
+            self.assertEqual(h.store.refresh_candidates(), ['due'])
+            self.assertTrue(h.store.needs_event_refresh('due'))
+            self.assertFalse(h.store.needs_event_refresh('fresh'))
+            self.assertFalse(h.store.needs_event_refresh('blocked'))
+            self.assertFalse(h.store.needs_event_refresh('missing'))
+            card = h.store.stored_incident('due')
+            self.assertEqual(card, {'id': 'due', 'name': 'due'})
+            card['name'] = 'changed outside storage'
+            self.assertEqual(h.store.stored_incident('due')['name'], 'due')
+            self.assertIsNone(h.store.stored_incident('missing'))
+
+    def test_refresh_projection_queries_keep_customer_source_and_receipt_scope(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            for name, extra in (
+                    ('other-customer', {'alert_customer_id': 2}),
+                    ('other-source', {'alert_source': 'Other SIEM'}),
+                    ('other-reference', {'alert_source_ref': 'different'})):
+                h.store.create(name, {'alert_title': name, 'alert_customer_id': 1,
+                    'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': name,
+                    'alert_source_content': {'incident': {'id': name}}, **extra})
+                self.assertFalse(h.store.needs_event_refresh(name))
+                self.assertIsNone(h.store.stored_incident(name))
+            self.assertEqual(h.store.refresh_candidates(), [])
+
+    def test_refresh_candidates_returns_all_ids_across_metadata_batches(self):
+        from uuid import uuid4
+        with harness() as h:
+            for n in range(205):
+                name = str(n)
+                alert_uuid = uuid4()
+                h.db.session.add(h.models.MaxPatrolReceipt(source_key=h.config.source_key,
+                    incident_id=name, alert_uuid=alert_uuid, imported_at=datetime.now(timezone.utc)))
+                h.db.session.add(h.Alert(alert_uuid=alert_uuid, alert_title=name, alert_customer_id=1,
+                    alert_source='MaxPatrol SIEM', alert_source_ref=name,
+                    alert_source_content={'incident': {'id': name}, 'events': []}))
+            h.db.session.commit()
+            self.assertCountEqual(h.store.refresh_candidates(), [str(n) for n in range(205)])
+
+    def test_active_check_does_not_expire_or_discard_other_loaded_objects(self):
+        with harness() as h:
+            alert = h.Alert(alert_title='Original title')
+            h.db.session.add(alert)
+            h.db.session.commit()
+            self.assertEqual(alert.alert_title, 'Original title')
+            alert.alert_title = 'Pending analyst edit'
+            self.assertTrue(h.store.active())
+            self.assertEqual(alert.alert_title, 'Pending analyst edit')
+
+    def test_refresh_does_not_deepcopy_existing_evidence_or_mutate_incoming_materials(self):
+        class Evidence(dict):
+            def __deepcopy__(self, memo):
+                raise AssertionError('Full event payload copied')
+
+        def deserialize(raw):
+            value = json.loads(raw)
+            return Evidence(value) if isinstance(value, dict) and 'events' in value else value
+
+        with harness(json_deserializer=deserialize) as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            uid = '00000006-050d-0642-f000-0000255d3663'
+            h.store.create('one', {'alert_title': 'One', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
+                'alert_source_content': {'events': [{'uuid': uid, 'body': 'retained'}],
+                    'event_links': {uid: ['old-child']}, '_iris_auto_iocs': [['ip-src', '192.0.2.1']]}})
+            materials = {'events': [{'uuid': uid, 'new_null': None, 'count': 0}],
+                'event_links': {uid: ['new-child']}, 'event_collection': {'complete': False}}
+            self.assertTrue(h.store.refresh_events('one', materials))
+            content = h.db.session.query(h.Alert).one().alert_source_content
+            self.assertEqual(content['events'], [{'uuid': uid, 'body': 'retained', 'count': 0}])
+            self.assertEqual(content['event_links'][uid], ['old-child', 'new-child'])
+            self.assertEqual(content['_iris_auto_iocs'], [['ip-src', '192.0.2.1']])
+            self.assertIn('new_null', materials['events'][0])
+            self.assertEqual(materials['event_links'][uid], ['new-child'])
+
+    def test_refresh_reads_current_payload_when_alert_is_already_in_identity_map(self):
+        with harness() as h:
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+            h.alerts.alerts_create = create
+            h.store.create('one', {'alert_title': 'One', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
+                'alert_source_content': {'events': [], 'custom': 'old'}})
+            loaded = h.db.session.query(h.Alert).one()
+            h.db.session.execute(h.Alert.__table__.update().values(
+                alert_source_content={'events': [], 'custom': 'latest',
+                    '_iris_auto_iocs': [['ip-src', '192.0.2.1']]}))
+            self.assertEqual(loaded.alert_source_content['custom'], 'old')
+            h.store.refresh_events('one', {'events': [{'src.ip': '192.0.2.1'}]})
+            self.assertEqual(loaded.alert_source_content['custom'], 'latest')
+            self.assertEqual(loaded.iocs, [])
+            self.assertEqual(loaded.alert_source_content['_iris_auto_iocs'], [['ip-src', '192.0.2.1']])
+
     def test_auto_iocs_persist_and_deleted_link_stays_deleted_on_refresh(self):
         with harness() as h:
             def create(alert, **kwargs):

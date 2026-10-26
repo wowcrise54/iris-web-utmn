@@ -1,5 +1,5 @@
 """Tree assembly and captured v3 request contract, without guessed event APIs."""
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import unittest
 
 import test_maxpatrol as base_tests
@@ -30,6 +30,24 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(tree['uuid'], A)
         self.assertEqual(tree['subevents'][0]['uuid'], B)
         self.assertTrue(tree['subevents'][0]['subevents'][0]['subevents'][0]['reference'])
+
+    def test_active_check_is_not_repeated_for_each_event_in_a_fast_batch(self):
+        from uuid import UUID
+        rows = [event(str(UUID(int=n + 1))) for n in range(200)]
+        active = Mock(return_value=True)
+        with patch.object(self.m, 'perf_counter', return_value=100):
+            result = self.m.build_event_materials(rows, is_active=active)
+        self.assertTrue(result['event_collection']['complete'])
+        self.assertEqual(len(result['events']), 200)
+        active.assert_called_once_with()
+
+    def test_active_check_stops_event_processing_when_module_is_disabled(self):
+        active = Mock(side_effect=[True, False])
+        with patch.object(self.m, 'perf_counter', side_effect=[100, 100.3, 101.1]):
+            result = self.m.build_event_materials([event(A), event(B), event(C)], is_active=active)
+        self.assertFalse(result['event_collection']['complete'])
+        self.assertIn({'reason': 'module_inactive'}, result['event_collection']['errors'])
+        self.assertEqual(active.call_count, 2)
 
     def test_missing_events_are_explicit_and_successful_children_survive(self):
         result = self.m.build_event_materials([event(A, [B, C]), event(B, body='retained')])
