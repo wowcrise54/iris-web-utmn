@@ -13,7 +13,7 @@
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
 		SparklesIcon,
@@ -241,6 +241,15 @@
 	}
 
 	let win = $state<WinState>(loadWinState());
+
+	$effect(() => {
+		if (chat.state.revealRequest > 0) {
+			untrack(() => {
+				win.minimized = false;
+				saveWinState();
+			});
+		}
+	});
 
 	function saveWinState() {
 		if (typeof localStorage === 'undefined') return;

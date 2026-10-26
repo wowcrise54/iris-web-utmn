@@ -67,6 +67,7 @@ export interface ChatFocusHint {
 export const createChatPanelContext = () => {
 	const state = $state<{
 		open: boolean;
+		revealRequest: number;
 		streamingConversationId: number | null;
 		currentConversation: ChatConversation | null;
 		messages: ChatMessage[];
@@ -90,6 +91,7 @@ export const createChatPanelContext = () => {
 		usage: ChatUsage | null;
 	}>({
 		open: false,
+		revealRequest: 0,
 		streamingConversationId: null,
 		currentConversation: null,
 		messages: [],
@@ -357,6 +359,7 @@ export const createChatPanelContext = () => {
 
 	const openPanel = () => {
 		state.open = true;
+		state.revealRequest++;
 	};
 	const closePanel = () => {
 		state.open = false;
@@ -507,7 +510,7 @@ export const createChatPanelContext = () => {
 	};
 
 	const startGlobalConversation = async (title = '') => {
-		conversationEpoch++;
+		const epoch = ++conversationEpoch;
 		_flushTyping();
 		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
@@ -518,6 +521,7 @@ export const createChatPanelContext = () => {
 		state.usage = null;
 		try {
 			const res = await ChatService.createGlobalConversation({ title });
+			if (epoch !== conversationEpoch) return null;
 			if (res.ok && res.data && typeof res.data !== 'string') {
 				const conv = res.data as ChatConversation;
 				state.currentConversation = conv;
@@ -529,7 +533,7 @@ export const createChatPanelContext = () => {
 			state.error = (res.error?.message as string) || 'Could not create conversation';
 			return null;
 		} finally {
-			state.loading = false;
+			if (epoch === conversationEpoch) state.loading = false;
 		}
 	};
 
@@ -631,6 +635,27 @@ export const createChatPanelContext = () => {
 		return convId;
 	};
 
+	const canAnalyzeAlert = $derived(
+		!state.loading &&
+			state.streamingConversationId == null &&
+			state.pendingToolCalls.length === 0 &&
+			state.progress?.stage !== 'awaiting_approval'
+	);
+
+	const analyzeAlert = async (alertId: number, prompt: string): Promise<boolean> => {
+		if (!canAnalyzeAlert || !prompt.trim()) return false;
+		openPanel();
+		try {
+			const id = await startWithScope({ kind: 'currentAlert', alertId });
+			if (id == null || state.currentConversation?.id !== id) return false;
+			send(prompt);
+			return true;
+		} catch {
+			state.error = 'Could not start alert analysis. Please try again.';
+			return false;
+		}
+	};
+
 	const approveTool = (pendingToolCallId: number) => {
 		if (!state.currentConversation) return;
 		// Optimistically drop the row so the Approve card disappears the
@@ -692,6 +717,10 @@ export const createChatPanelContext = () => {
 		send,
 		sendOrStart,
 		startWithScope,
+		analyzeAlert,
+		get canAnalyzeAlert() {
+			return canAnalyzeAlert;
+		},
 		approveTool,
 		denyTool,
 		denyAllPending,

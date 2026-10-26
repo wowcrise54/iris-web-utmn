@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatSocketHandlers } from '$lib/services/chat.service';
 
-const mock = vi.hoisted(() => ({ handlers: {} as ChatSocketHandlers, getConversation: vi.fn() }));
+const mock = vi.hoisted(() => ({
+	handlers: {} as ChatSocketHandlers,
+	getConversation: vi.fn(),
+	createGlobalConversation: vi.fn(),
+	send: vi.fn()
+}));
 vi.mock('$lib/services/chat.service', () => ({
-	ChatService: { getConversation: mock.getConversation },
+	ChatService: {
+		getConversation: mock.getConversation,
+		createGlobalConversation: mock.createGlobalConversation
+	},
 	ChatSocketClient: class {
 		constructor(handlers: ChatSocketHandlers) {
 			mock.handlers = handlers;
@@ -11,7 +19,7 @@ vi.mock('$lib/services/chat.service', () => ({
 		connect() {}
 		joinConversation() {}
 		leaveConversation() {}
-		send() {}
+		send = mock.send;
 		approveTool() {}
 		denyTool() {}
 		disconnect() {}
@@ -30,6 +38,100 @@ beforeEach(async () => {
 	chat = createChatPanelContext();
 	await chat.openConversation(1);
 	chat.send('hello');
+});
+
+describe('one-click alert analysis', () => {
+	beforeEach(() => {
+		mock.handlers.onAssistantEnd?.({ conversation_id: 1 });
+		mock.send.mockClear();
+		mock.createGlobalConversation.mockResolvedValue({ ok: true, data: { id: 41 } });
+	});
+
+	it('opens a fresh conversation and immediately sends the prompt with the selected alert focus', async () => {
+		expect(await chat.analyzeAlert(42, 'Analyze alert #42.')).toBe(true);
+		expect(chat.state.open).toBe(true);
+		expect(chat.state.revealRequest).toBe(1);
+		expect(chat.state.currentConversation?.id).toBe(41);
+		expect(mock.send).toHaveBeenCalledExactlyOnceWith(
+			41,
+			'[context: focused on alert #42]\n\nAnalyze alert #42.'
+		);
+		expect(chat.state.focusHint).toBeNull();
+		expect(chat.state.streamingConversationId).toBe(41);
+	});
+
+	it('prevents a second launch while creating the conversation', async () => {
+		let finish!: (value: unknown) => void;
+		mock.createGlobalConversation.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+		const first = chat.analyzeAlert(42, 'Analyze alert #42.');
+		expect(await chat.analyzeAlert(43, 'Analyze alert #43.')).toBe(false);
+		finish({ ok: true, data: { id: 41 } });
+		expect(await first).toBe(true);
+		expect(mock.createGlobalConversation).toHaveBeenCalledTimes(1);
+		expect(mock.send).toHaveBeenCalledTimes(1);
+	});
+
+	it('preserves an ongoing conversation instead of replacing it', async () => {
+		chat.send('Existing work');
+		expect(await chat.analyzeAlert(42, 'Analyze alert #42.')).toBe(false);
+		expect(chat.state.currentConversation?.id).toBe(1);
+		expect(mock.createGlobalConversation).not.toHaveBeenCalled();
+	});
+
+	it('preserves a conversation awaiting tool approval before its pending rows refresh', async () => {
+		mock.handlers.onAssistantProgress?.({ conversation_id: 1, stage: 'awaiting_approval' });
+		expect(chat.canAnalyzeAlert).toBe(false);
+		expect(await chat.analyzeAlert(42, 'Analyze alert #42.')).toBe(false);
+		expect(mock.createGlobalConversation).not.toHaveBeenCalled();
+	});
+
+	it('does not replace a chat opened while the analysis conversation was being created', async () => {
+		let finish!: (value: unknown) => void;
+		mock.createGlobalConversation.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+		const analysis = chat.analyzeAlert(42, 'Analyze alert #42.');
+		await chat.openConversation(2);
+		finish({ ok: true, data: { id: 41 } });
+		expect(await analysis).toBe(false);
+		expect(chat.state.currentConversation?.id).toBe(2);
+		expect(mock.send).not.toHaveBeenCalled();
+	});
+
+	it('keeps creation errors visible and does not send into the old conversation', async () => {
+		mock.createGlobalConversation.mockResolvedValueOnce({
+			ok: false,
+			error: { message: 'Access denied' }
+		});
+		expect(await chat.analyzeAlert(42, 'Analyze alert #42.')).toBe(false);
+		expect(chat.state.open).toBe(true);
+		expect(chat.state.error).toBe('Access denied');
+		expect(mock.send).not.toHaveBeenCalled();
+	});
+
+	it('handles a failed creation request and unlocks the launch button', async () => {
+		mock.createGlobalConversation.mockRejectedValueOnce(new Error('network failed'));
+		expect(await chat.analyzeAlert(42, 'Analyze alert #42.')).toBe(false);
+		expect(chat.state.loading).toBe(false);
+		expect(chat.state.error).toBeTruthy();
+		expect(mock.send).not.toHaveBeenCalled();
+	});
+
+	it('shows socket connection failure and clears the running state', async () => {
+		await chat.analyzeAlert(42, 'Analyze alert #42.');
+		mock.handlers.onConnectFailure?.();
+		expect(chat.state.open).toBe(true);
+		expect(chat.state.error).toContain('Could not connect');
+		expect(chat.state.streamingConversationId).toBeNull();
+	});
 });
 afterEach(() => {
 	chat.disconnect();

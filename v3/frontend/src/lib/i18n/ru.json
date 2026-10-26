@@ -4810,5 +4810,8 @@
   "Conversation is no longer available.": "Разговор больше недоступен.",
   "Case access is no longer available.": "Доступ к кейсу больше недоступен.",
   "War-room access is no longer available.": "Доступ к оперативной комнате больше недоступен.",
-  "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели."
+  "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели.",
+  "Analyze in Yuki": "Анализировать в Yuki",
+  "Analyze alert #{id}: examine the source events, related assets and IOCs. Assess TP/FP, provide evidence and recommend next steps. Read large source events completely; if data is incomplete, explicitly state the gaps and avoid an unsupported verdict. Do not modify the alert automatically.": "Проанализируй оповещение №{id}: изучи исходные события, связанные активы и IOC. Оцени TP/FP, приведи доказательства и предложи следующие действия. Полностью прочитай большие исходные события; если данных недостаточно, явно укажи пробелы и не делай необоснованный вывод. Не изменяй оповещение автоматически.",
+  "Could not start alert analysis. Please try again.": "Не удалось запустить анализ оповещения. Повторите попытку."
 }

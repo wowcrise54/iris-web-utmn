@@ -309,6 +309,7 @@
 						}
 					}}
 					onShowInvestigationFlow={() => openInvestigationFlow(current)}
+					onOpenYuki={() => (open = false)}
 					onUnlinkCase={(case_id) => unlinkCase(case_id)}
 					onDelete={() => (showConfirmDelete = true)}
 				/>
