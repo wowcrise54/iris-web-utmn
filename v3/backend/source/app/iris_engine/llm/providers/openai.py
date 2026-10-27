@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 from typing import Any, Iterator
 
 import requests
@@ -44,6 +46,56 @@ from app.iris_engine.llm.providers.base import (
 
 
 logger = logging.getLogger('iris.chatbot.openai')
+
+
+def _http_error(response, api_key: str) -> Error:
+    """Inspect a bounded error body; raw provider text never reaches the client."""
+    raw = bytearray()
+    truncated = False
+    try:
+        for chunk in response.iter_content(chunk_size=4096):
+            raw.extend(chunk[:16_384 - len(raw)])
+            if len(raw) >= 16_384:
+                truncated = True
+                break
+    except requests.RequestException:
+        truncated = True
+    text = raw.decode('utf-8', errors='replace')
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        payload = {}
+    error = payload.get('error', {}) if isinstance(payload, dict) else {}
+    detail = error if isinstance(error, dict) else {}
+    code = str(detail.get('code') or '').lower()
+    message = str(detail.get('message') or error or '').lower()
+    category = f'http_{response.status_code}'
+    user_message = f'openai: provider HTTP {response.status_code}. You can continue the analysis.'
+    if response.status_code in (400, 413, 422) and (
+        code in ('context_length_exceeded', 'context_window_exceeded', 'max_context_length_exceeded')
+        or re.search(r'(maximum|max) context (length|window)', message)
+        or re.search(r'context (length|window).{0,80}(exceed|too (long|large))', message)
+    ):
+        category = 'context_length_exceeded'
+        user_message = ('The alert or conversation exceeds the AI provider context limit. '
+                        'A complete analysis could not be produced. Start a new conversation '
+                        'with a narrower question or use a model with a larger context.')
+    elif response.status_code == 413:
+        category = 'request_too_large'
+        user_message = ('The AI provider or gateway rejected the request size. '
+                        'Start a new conversation with a narrower analysis.')
+    logger.warning('llm_http_error status=%d category=%s error_body_bytes_read=%d truncated=%s',
+                   response.status_code, category, len(raw), truncated,
+                   extra={'event': 'llm_http_error', 'stage': 'provider', 'status': response.status_code,
+                          'metadata': {'category': category, 'error_body_bytes_read': len(raw),
+                                       'error_body_truncated': truncated}})
+    if os.environ.get('IRIS_CHATBOT_LOG_PROVIDER_ERRORS') == '1' and logger.isEnabledFor(5):
+        from app.observability_logging import clean_text
+        # Mask the active key before the shared scrubber bounds the diagnostic excerpt.
+        excerpt = clean_text(text.replace(api_key, '[Filtered]') if api_key else text)
+        logger.log(5, 'llm_error_detail excerpt=%s', excerpt,
+                   extra={'event': 'llm_error_detail', 'stage': 'provider'})
+    return Error(user_message, provider_code=category, http_status=response.status_code)
 
 _OPENAI_BASE = 'https://api.openai.com'
 _STREAM_TIMEOUT = (10, 300)
@@ -84,6 +136,12 @@ class OpenAIProvider(LLMProvider):
         max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
         body = self._build_body(model, system, messages, tools, max_tokens)
+        request_bytes = len(json.dumps(body, allow_nan=False).encode('utf-8'))
+        logger.info('llm_input request_bytes=%d message_count=%d tool_count=%d',
+                    request_bytes, len(body['messages']), len(tools),
+                    extra={'event': 'llm_input', 'stage': 'provider', 'metadata': {
+                        'request_bytes': request_bytes,
+                        'message_count': len(body['messages']), 'tool_count': len(tools)}})
         headers = {
             'content-type': 'application/json',
         }
@@ -104,10 +162,11 @@ class OpenAIProvider(LLMProvider):
             return
 
         if resp.status_code != 200:
-            status = resp.status_code
-            resp.close()
-            yield Error(message=f'openai: provider HTTP {status}. You can continue the analysis.',
-                        provider_code=f'http_{status}', http_status=status)
+            try:
+                error = _http_error(resp, self._api_key)
+            finally:
+                resp.close()
+            yield error
             return
 
         try:

@@ -234,7 +234,8 @@ def test_provider_budget_stops_oversized_tool_arguments(events):
 def test_adapters_preserve_502_status_without_gateway_body(events, monkeypatch, name):
     base, _ = events
     module = load(SOURCE / f'app/iris_engine/llm/providers/{name}.py', 'evidence_adapter_' + name)
-    response = SimpleNamespace(status_code=502, close=Mock(), text='secret gateway body')
+    response = SimpleNamespace(status_code=502, close=Mock(), text='secret gateway body',
+                               iter_content=lambda **kwargs: iter([b'secret gateway body']))
     monkeypatch.setattr(module.requests, 'post', Mock(return_value=response))
     cls = {'openai': module.__dict__.get('OpenAIProvider'), 'anthropic': module.__dict__.get('AnthropicProvider'), 'ollama': module.__dict__.get('OllamaProvider')}[name]
     provider = cls(api_key='test', base_url='https://example.test')

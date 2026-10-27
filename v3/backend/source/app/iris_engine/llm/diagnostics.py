@@ -4,7 +4,7 @@ import time
 import re
 import json
 import requests
-from app.iris_engine.llm.providers.base import Error, TextDelta, ToolUseDelta, ToolUseEnd
+from app.iris_engine.llm.providers.base import Error, MessageEnd, TextDelta, ToolUseDelta, ToolUseEnd
 
 log = logging.getLogger('iris.chatbot.provider')
 
@@ -15,6 +15,7 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
     stream = provider.stream_completion(**kwargs)
     streamed_tools = set()
     tool_bytes = 0
+    completed = False
     try:
         for event in stream:
             chunk_bytes = 0
@@ -35,7 +36,11 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
                 log.warning('llm_failure request_id=%s provider=%s status=%s code=%s elapsed_ms=%d response_bytes=%d',
                             correlation_id, provider.name, event.http_status, re.sub(r'[^a-zA-Z0-9_:-]', '_', str(event.provider_code))[:64],
                             (time.monotonic() - started) * 1000, received)
+            if isinstance(event, MessageEnd):
+                completed = True
             yield event
+            if isinstance(event, Error):
+                return
     except requests.Timeout:
         log.warning('llm_timeout request_id=%s provider=%s elapsed_ms=%d response_bytes=%d',
                     correlation_id, provider.name, (time.monotonic() - started) * 1000, received)
@@ -51,7 +56,9 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
     finally:
         if hasattr(stream, 'close'):
             stream.close()
-        log.info('llm_request request_id=%s provider=%s elapsed_ms=%d response_bytes=%d',
+        log.info('llm_request request_id=%s provider=%s elapsed_ms=%d stream_output_bytes=%d',
                  correlation_id, provider.name, (time.monotonic() - started) * 1000, received,
-                 extra={'event': 'llm_completed', 'duration_ms': round((time.monotonic() - started) * 1000, 2),
-                        'stage': 'provider', 'metadata': {'response_bytes': received}})
+                 extra={'event': 'llm_completed' if completed else 'llm_failed',
+                        'duration_ms': round((time.monotonic() - started) * 1000, 2),
+                        'stage': 'provider', 'metadata': {'stream_output_bytes': received,
+                                                         'response_bytes': received}})

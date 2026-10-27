@@ -4813,5 +4813,7 @@
   "Provider reached its own output limit without an answer. Check the model settings.": "Провайдер достиг собственного лимита ответа. Проверьте настройки модели.",
   "Analyze in Yuki": "Анализировать в Yuki",
   "Analyze alert #{id}: examine the source events, related assets and IOCs. Assess TP/FP, provide evidence and recommend next steps. Read large source events completely; if data is incomplete, explicitly state the gaps and avoid an unsupported verdict. Do not modify the alert automatically.": "Проанализируй оповещение №{id}: изучи исходные события, связанные активы и IOC. Оцени TP/FP, приведи доказательства и предложи следующие действия. Полностью прочитай большие исходные события; если данных недостаточно, явно укажи пробелы и не делай необоснованный вывод. Не изменяй оповещение автоматически.",
-  "Could not start alert analysis. Please try again.": "Не удалось запустить анализ оповещения. Повторите попытку."
+  "Could not start alert analysis. Please try again.": "Не удалось запустить анализ оповещения. Повторите попытку.",
+  "The alert or conversation exceeds the AI provider context limit. A complete analysis could not be produced. Start a new conversation with a narrower question or use a model with a larger context.": "Оповещение или диалог превышает лимит контекста AI-провайдера. Полный анализ не выполнен. Начните новый диалог с более узким вопросом или выберите модель с большим контекстом.",
+  "The AI provider or gateway rejected the request size. Start a new conversation with a narrower analysis.": "AI-провайдер или API-посредник отклонил запрос из-за его размера. Начните новый диалог с более узкой задачей анализа."
 }

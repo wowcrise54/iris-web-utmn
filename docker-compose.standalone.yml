@@ -7,6 +7,8 @@ x-backend: &backend
     dockerfile: docker/webApp/Dockerfile.standalone
   environment: &backend-env
     IRIS_ALLOW_ORIGIN: ${IRIS_PUBLIC_URL:-https://localhost:18545}
+    IRIS_LOG_LEVELS: ${IRIS_LOG_LEVELS:-{}}
+    IRIS_CHATBOT_LOG_PROVIDER_ERRORS: ${IRIS_CHATBOT_LOG_PROVIDER_ERRORS:-0}
   volumes:
     - runtime:/runtime:ro
     - downloads:/home/iris/downloads
