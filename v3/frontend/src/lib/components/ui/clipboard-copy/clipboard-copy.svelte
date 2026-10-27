@@ -64,24 +64,22 @@
 
 <TooltipProvider>
 	<Tooltip delayDuration={100}>
-		<TooltipTrigger>
-			<button
-				class={cn(
-					'inline-flex items-center justify-center rounded-sm p-0.5 transition-all hover:text-primary',
-					alwaysVisible ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
-					disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-					className
-				)}
-				onclick={copyToClipboard}
-				{disabled}
-				aria-label={irisT(tooltipText, $irisLocale)}
-			>
-				{#if copied}
-					<CheckCheck {size} />
-				{:else}
-					<Copy {size} />
-				{/if}
-			</button>
+		<TooltipTrigger
+			class={cn(
+				'inline-flex items-center justify-center rounded-sm p-0.5 transition-all hover:text-primary',
+				alwaysVisible ? 'opacity-100' : 'opacity-0 focus:opacity-100 group-hover:opacity-100',
+				disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+				className
+			)}
+			onclick={copyToClipboard}
+			{disabled}
+			aria-label={irisT(tooltipText, $irisLocale)}
+		>
+			{#if copied}
+				<CheckCheck {size} />
+			{:else}
+				<Copy {size} />
+			{/if}
 		</TooltipTrigger>
 		<TooltipContent side={tooltipPosition}>
 			<p class="text-xs">{irisT(copied ? copiedText : tooltipText, $irisLocale)}</p>
