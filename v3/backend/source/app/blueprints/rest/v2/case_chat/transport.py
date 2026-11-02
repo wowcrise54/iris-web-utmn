@@ -36,6 +36,7 @@ from app.blueprints.rest.endpoints import (
 )
 from app.blueprints.rest.v2.case_chat import case_chat_blueprint
 from app.business import case_chat as case_chat_biz
+from app.business.alert_analysis import authorize_alert, authorize_alert_conversation
 from app.iris_engine.llm.client import ChatbotDisabledError, load_config
 from app.models.authorization import (
     CaseAccessLevel,
@@ -147,10 +148,36 @@ def _require_own_conversation(conversation_id: int):
         return None, response_api_not_found()
     if conv.user_id != iris_current_user.id:
         return None, ac_api_return_access_denied()
+    if getattr(conv, 'alert_id', None) is not None:
+        try:
+            authorize_alert_conversation(conv, iris_current_user._get_current_object())
+        except ObjectNotFoundError:
+            return None, ac_api_return_access_denied()
     return conv, None
 
 
 # ---- Case-scoped conversation CRUD ---------------------------------
+
+@case_chat_blueprint.get('/alerts/<int:alert_id>/conversations')
+@ac_api_requires(Permissions.alerts_read)
+@api_doc(response=CaseChatConversationSchema, tags=['CaseChat'],
+         summary='List caller alert-scoped analysis conversations')
+def list_alert_conversations(alert_id: int):
+    try:
+        authorize_alert(alert_id, iris_current_user._get_current_object())
+    except ObjectNotFoundError:
+        return ac_api_return_access_denied()
+    conversations = CaseChatConversation.query.filter_by(
+        alert_id=alert_id, user_id=iris_current_user.id, archived_at=None,
+    ).order_by(CaseChatConversation.updated_at.desc()).all()
+    allowed = []
+    for conv in conversations:
+        try:
+            authorize_alert_conversation(conv, iris_current_user._get_current_object())
+            allowed.append(conv)
+        except ObjectNotFoundError:
+            continue
+    return response_api_success({'conversations': _dump_conversations(allowed)})
 
 @case_chat_blueprint.get('/cases/<int:case_id>/conversations')
 @ac_api_requires(Permissions.standard_user)

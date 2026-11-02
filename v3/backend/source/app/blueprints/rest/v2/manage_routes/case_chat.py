@@ -220,7 +220,7 @@ def update_policy(policy_id: int):
     _mutable_fields = {
         'name', 'description', 'restriction_level', 'provider', 'model',
         'base_url', 'auto_execute_read_tools', 'auto_approve_write_tools',
-        'max_output_tokens', 'max_turns_per_conversation', 'max_tool_calls_per_turn',
+        'context_window_tokens', 'max_output_tokens', 'max_turns_per_conversation', 'max_tool_calls_per_turn',
         'daily_token_budget_per_user', 'daily_token_budget_org',
         'redact_ips', 'redact_emails', 'redact_hashes', 'retention_days',
     }

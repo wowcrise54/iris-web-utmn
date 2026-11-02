@@ -1,5 +1,5 @@
 """Derived, bounded analysis jobs; original evidence remains in its existing storage."""
-from sqlalchemy import Column, BigInteger, Text, Integer, DateTime, ForeignKey, Index, text
+from sqlalchemy import Column, BigInteger, Text, Integer, DateTime, ForeignKey, Index, CheckConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from app.db import db
 
@@ -7,7 +7,8 @@ from app.db import db
 class EvidenceAnalysis(db.Model):
     __tablename__ = 'evidence_analysis'
     id = Column(BigInteger, primary_key=True)
-    case_id = Column(BigInteger, ForeignKey('cases.case_id', ondelete='CASCADE'), nullable=False, index=True)
+    case_id = Column(BigInteger, ForeignKey('cases.case_id', ondelete='CASCADE'), nullable=True, index=True)
+    alert_id = Column(BigInteger, ForeignKey('alerts.alert_id', ondelete='CASCADE'), nullable=True, index=True)
     requested_by = Column(BigInteger, ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     conversation_id = Column(BigInteger, ForeignKey('case_chat_conversation.id', ondelete='SET NULL'))
     message_id = Column(BigInteger, ForeignKey('case_chat_message.id', ondelete='SET NULL'))
@@ -21,5 +22,10 @@ class EvidenceAnalysis(db.Model):
     error = Column(Text)
     created_at = Column(DateTime, nullable=False, server_default=text('now()'))
     updated_at = Column(DateTime, nullable=False, server_default=text('now()'))
-    __table_args__ = (Index('uq_evidence_analysis_active', 'requested_by', 'case_id', 'source_key', unique=True,
-                           postgresql_where=text("status IN ('queued', 'running')")),)
+    __table_args__ = (
+        CheckConstraint('(case_id IS NULL) <> (alert_id IS NULL)', name='ck_evidence_analysis_scope'),
+        Index('uq_evidence_alert_analysis_active', 'requested_by', 'alert_id', 'source_key', unique=True,
+              postgresql_where=text("alert_id IS NOT NULL AND status IN ('queued', 'running')")),
+        Index('uq_evidence_analysis_active', 'requested_by', 'case_id', 'source_key', unique=True,
+              postgresql_where=text("status IN ('queued', 'running')")),
+    )

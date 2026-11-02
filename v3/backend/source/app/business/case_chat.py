@@ -37,19 +37,25 @@ def create_conversation(
     model: str,
     title: str = '',
     war_room_id: Optional[int] = None,
+    alert_id: Optional[int] = None,
+    commit: bool = True,
 ) -> CaseChatConversation:
-    # A conversation is scoped to at most one of (case, war-room). The
-    # SPA sets exactly one based on the route; global is "neither".
-    # We don't enforce mutual exclusion with a check constraint — cheap
-    # to relax later if we ever want to link both.
-    #
+    # Alert scope excludes both older scopes; historical case/war-room
+    # records retain their existing compatibility.
     # Stamp the resolved policy at creation. `model` here is the model
     # NAME chosen by the caller, read from the global server settings.
     from app.iris_engine.llm.policy import (
         resolve_for_case,
+        resolve_for_alert,
         resolve_for_war_room,
     )
-    if war_room_id is not None:
+    if alert_id is not None and (case_id is not None or war_room_id is not None):
+        raise BusinessProcessingError('Alert conversations cannot include another scope')
+    if alert_id is not None:
+        from app.business.alert_analysis import authorize_alert
+        alert_customer_id = authorize_alert(alert_id, user).alert_customer_id
+        resolved = resolve_for_alert(alert_id)
+    elif war_room_id is not None:
         resolved = resolve_for_war_room(war_room_id)
     elif case_id is not None:
         resolved = resolve_for_case(case_id)
@@ -70,13 +76,18 @@ def create_conversation(
         user_id=user.id,
         case_id=case_id,
         war_room_id=war_room_id,
+        alert_id=alert_id,
+        alert_customer_id=alert_customer_id if alert_id is not None else None,
         model=effective_model,
         title=(title or '')[:200],
         resolved_policy_id=resolved.policy.id if resolved.policy else None,
         resolved_restriction_level=resolved.restriction_level,
     )
     db.session.add(conv)
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return conv
 
 
@@ -106,6 +117,7 @@ def list_global_conversations(
         CaseChatConversation.user_id == user.id,
         CaseChatConversation.case_id.is_(None),
         CaseChatConversation.war_room_id.is_(None),
+        CaseChatConversation.alert_id.is_(None),
     )
     if not include_archived:
         query = query.filter(CaseChatConversation.archived_at.is_(None))

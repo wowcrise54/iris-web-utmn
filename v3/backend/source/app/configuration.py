@@ -236,6 +236,7 @@ class CeleryConfig:
         'app.iris_engine.ptsandbox.tasks',
         'app.iris_engine.maxpatrol.tasks',
         'app.iris_engine.evidence.tasks',
+        'app.iris_engine.evidence.alert_tasks',
     ]
 
 

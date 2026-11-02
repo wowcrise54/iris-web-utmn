@@ -81,6 +81,7 @@
 	}
 
 	function scopeLabel(c: ChatConversation): string {
+		if (c.alert_id != null) return `alert #${c.alert_id}`;
 		if (c.war_room_id != null) return `war-room #${c.war_room_id}`;
 		if (c.case_id != null) return `case #${c.case_id}`;
 		return 'global';

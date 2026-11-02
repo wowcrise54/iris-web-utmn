@@ -33,11 +33,13 @@ from app.blueprints.rest.v2.case_chat.approve_tool import (
     approve_pending_tool_call,
     deny_pending_tool_call,
 )
-from app.blueprints.rest.v2.case_chat.loop import ChatEvent, run_one_iteration
+from app.blueprints.rest.v2.case_chat.loop import ChatEvent, run_one_iteration, ALERT_READ_TOOLS
 from app.business import case_chat as case_chat_biz
+from app.business.alert_analysis import authorize_alert_conversation
+from app.blueprints.rest.v2.mcp.classification import mutates
 from app.business.auth import validate_auth_token
 from app.models.authorization import CaseAccessLevel, WarRoomAccessLevel
-from app.models.case_chat import ROLE_USER
+from app.models.case_chat import ROLE_USER, CaseChatPendingToolCall
 from app.models.errors import ObjectNotFoundError
 
 
@@ -181,6 +183,8 @@ class ChatNamespace(Namespace):
         if conv.user_id != _current_user_id():
             emit('error', {'message': 'This conversation belongs to another user.'})
             return
+        if not _require_alert_conversation_access(conv):
+            return
         if conv.case_id is not None:
             if not ac_fast_check_current_user_has_case_access(
                     conv.case_id,
@@ -224,6 +228,8 @@ class ChatNamespace(Namespace):
         if user_id is None or conv.user_id != user_id:
             emit('error', {'message': 'This conversation belongs to another user.'})
             return
+        if not _require_alert_conversation_access(conv):
+            return
         if conv.case_id is not None:
             if not ac_fast_check_current_user_has_case_access(
                     conv.case_id,
@@ -264,10 +270,12 @@ class ChatNamespace(Namespace):
         if pending_id is None:
             emit('error', {'message': 'pending_tool_call_id is required'})
             return
-        conv_id = _int(data, 'conversation_id')
+        conv = _pending_conversation(pending_id, approve=True)
+        if conv is None:
+            return
         approve_pending_tool_call(
             pending_tool_call_id=pending_id,
-            emit=_emit_for_conv(conv_id) if conv_id else _emit_direct(),
+            emit=_emit_for_conv(conv.id),
         )
 
     def on_deny_tool(self, data: Any) -> None:
@@ -278,14 +286,46 @@ class ChatNamespace(Namespace):
         if pending_id is None:
             emit('error', {'message': 'pending_tool_call_id is required'})
             return
-        conv_id = _int(data, 'conversation_id')
+        conv = _pending_conversation(pending_id)
+        if conv is None:
+            return
         deny_pending_tool_call(
             pending_tool_call_id=pending_id,
-            emit=_emit_for_conv(conv_id) if conv_id else _emit_direct(),
+            emit=_emit_for_conv(conv.id),
         )
 
 
 # ---- Helpers -------------------------------------------------------
+
+def _require_alert_conversation_access(conv) -> bool:
+    if getattr(conv, 'alert_id', None) is None:
+        return True
+    try:
+        authorize_alert_conversation(conv, iris_current_user._get_current_object())
+    except ObjectNotFoundError:
+        emit('error', {'message': 'No access to this alert.'})
+        return False
+    return True
+
+
+def _pending_conversation(pending_id, approve=False):
+    row = CaseChatPendingToolCall.query.filter_by(id=pending_id).first()
+    if row is None:
+        emit('error', {'message': 'Pending tool call not found.'})
+        return None
+    conv = case_chat_biz.get_conversation(row.conversation_id)
+    if conv.user_id != _current_user_id():
+        emit('error', {'message': 'This conversation belongs to another user.'})
+        return None
+    if not _require_alert_conversation_access(conv):
+        return None
+    if approve and getattr(conv, 'alert_id', None) is not None and mutates(row.tool_name):
+        emit('error', {'message': 'Alert analysis conversations cannot execute write tools.'})
+        return None
+    if approve and getattr(conv, 'alert_id', None) is not None and row.tool_name not in ALERT_READ_TOOLS:
+        emit('error', {'message': 'This tool is not available in an alert analysis conversation.'})
+        return None
+    return conv
 
 def _int(data: Any, key: str) -> int | None:
     if not isinstance(data, dict):
@@ -323,6 +363,16 @@ def _emit_for_conv(conversation_id: int):
     """Return an `Emitter` bound to a per-conversation room, so every
     panel the analyst has open on this conversation sees the stream."""
     def _emit(event: ChatEvent) -> None:
+        # Recheck alert ACL on emission too: an already-joined socket must
+        # stop receiving report content if customer/read access is revoked.
+        try:
+            conv = case_chat_biz.get_conversation(conversation_id)
+            if getattr(conv, 'alert_id', None) is not None:
+                from app.db import db
+                from app.models.authorization import User
+                authorize_alert_conversation(conv, db.session.get(User, conv.user_id))
+        except ObjectNotFoundError:
+            return
         from app.blueprints.rest.v2.case_chat.progress import progress_for_event
         progress = progress_for_event(event.name, event.payload)
         if progress is not None:

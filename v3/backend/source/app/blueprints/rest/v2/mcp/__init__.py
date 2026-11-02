@@ -61,3 +61,4 @@ from app.blueprints.rest.v2.mcp.tools import war_rooms as _tools_war_rooms
 from app.blueprints.rest.v2.mcp.tools import sandbox as _tools_sandbox
 
 from app.blueprints.rest.v2.mcp.tools import evidence_analysis as _tools_evidence_analysis
+from app.blueprints.rest.v2.mcp.tools import alert_analysis as _tools_alert_analysis

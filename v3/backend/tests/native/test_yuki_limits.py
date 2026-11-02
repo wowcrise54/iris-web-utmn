@@ -77,12 +77,12 @@ def test_zero_history_retains_every_message():
 
 def loop_scope(limit=0, budget=0):
     conv = SimpleNamespace(id=1, user_id=7, archived_at=None, resolved_policy_id=None,
-                           resolved_restriction_level=0, case_id=2, war_room_id=None)
+                           resolved_restriction_level=0, case_id=2, war_room_id=None, alert_id=None)
     user = SimpleNamespace(id=7,active=True)
     token_type = extract(SOURCE/'app/blueprints/iris_user.py','TokenUser',{})
     token_user = token_type({'user_id':7,'user_login':'test','user_name':'Test','user_email':'test@example.test'})
     cfg = SimpleNamespace(enabled=True, provider='test', model='test', max_tool_calls_per_turn=limit,
-        daily_token_budget_per_user=budget, daily_token_budget_org=0, max_output_tokens=0)
+        daily_token_budget_per_user=budget, daily_token_budget_org=0, max_output_tokens=0, context_window_tokens=0)
     consume = Mock(side_effect=[SimpleNamespace(terminated=False,paused_on_write=False)]*70+
                               [SimpleNamespace(terminated=True,paused_on_write=False)])
     biz = SimpleNamespace(sum_tokens_today=Mock(return_value=0), record_egress=Mock(return_value=SimpleNamespace(id=1)))
@@ -96,6 +96,9 @@ def loop_scope(limit=0, budget=0):
         CaseAccessLevel=SimpleNamespace(read_only=1,full_access=2), WarRoomAccessLevel=SimpleNamespace(read_only=1,full_access=2),
         _load_history=lambda *args:[], _scope_is_read_only=lambda _:False, _prepare_tools=lambda *args,**kwargs:[],
         system_prompt=lambda **kwargs:'system', _estimate_request_bytes=lambda *args:1,
+        check_chat_request_budget=Mock(return_value=SimpleNamespace(fits=True,input_tokens=None,
+            method='utf8_bytes_fallback',request_bytes=1,limit=16384)),
+        _authorize_alert_scope=Mock(), ObjectNotFoundError=LookupError, BusinessProcessingError=ValueError,
         _history_was_redacted=lambda *args:False, _build_request_snapshot=lambda *args:{}, _consume_stream=consume)
     scope['db'].session.get.return_value=user
     fn = extract(SOURCE/'app/blueprints/rest/v2/case_chat/loop.py', 'run_one_iteration', scope)
@@ -139,6 +142,14 @@ def test_unlimited_loop_rechecks_stops_before_another_provider_request(stop):
     emitted=[];fn(conversation=conv,emit=emitted.append)
     assert consume.call_count==1
     assert bool(emitted)==(stop!='write_approval')
+
+
+
+
+
+
+
+
 
 
 @pytest.fixture

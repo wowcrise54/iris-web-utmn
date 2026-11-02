@@ -67,6 +67,7 @@ class ChatbotPolicy(db.Model):
                                      server_default=text('true'))
     auto_approve_write_tools = Column(Boolean, nullable=False, default=False,
                                       server_default=text('false'))
+    context_window_tokens = Column(Integer, nullable=False, default=0, server_default=text('0'))
     max_output_tokens = Column(Integer, nullable=False, default=2048, server_default=text('2048'))
     max_turns_per_conversation = Column(Integer, nullable=False,
                                         default=25, server_default=text('25'))

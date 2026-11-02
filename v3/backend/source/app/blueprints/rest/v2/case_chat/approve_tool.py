@@ -22,6 +22,8 @@ from app.blueprints.rest.v2.case_chat.loop import (
     ChatEvent,
     Emitter,
     run_one_iteration,
+    _authorize_alert_scope,
+    ALERT_READ_TOOLS,
 )
 from app.blueprints.rest.v2.mcp import classification as tool_classification
 from app.blueprints.rest.v2.mcp.dispatch import MCPError, dispatch_tool_call
@@ -64,6 +66,16 @@ def approve_pending_tool_call(
 
     # Scope override — the LLM-supplied args may have been redirected.
     args: dict[str, Any] = dict(row.arguments or {})
+    if getattr(conv, 'alert_id', None) is not None:
+        try:
+            _authorize_alert_scope(conv)
+        except (ObjectNotFoundError, BusinessProcessingError):
+            emit(ChatEvent('error', {'message': 'Alert access is no longer available.'}))
+            return
+        if row.tool_name not in ALERT_READ_TOOLS:
+            emit(ChatEvent('error', {'message': 'This tool is not available in an alert analysis conversation.'}))
+            return
+        args['alert_identifier'] = int(conv.alert_id)
     if conv.case_id is not None:
         llm_case = args.get('case_identifier')
         if llm_case is not None and int(llm_case) != int(conv.case_id):
