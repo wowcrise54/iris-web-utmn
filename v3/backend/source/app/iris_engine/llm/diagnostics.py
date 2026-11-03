@@ -16,6 +16,7 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
     streamed_tools = set()
     tool_bytes = 0
     completed = False
+    end = None
     try:
         for event in stream:
             chunk_bytes = 0
@@ -38,6 +39,7 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
                             (time.monotonic() - started) * 1000, received)
             if isinstance(event, MessageEnd):
                 completed = True
+                end = event
             yield event
             if isinstance(event, Error):
                 return
@@ -56,9 +58,14 @@ def provider_events(provider, *, correlation_id, max_response_bytes=48000, **kwa
     finally:
         if hasattr(stream, 'close'):
             stream.close()
-        log.info('llm_request request_id=%s provider=%s elapsed_ms=%d stream_output_bytes=%d',
+        stop_reason = re.sub(r'[^a-zA-Z0-9_:-]', '_', str(end.stop_reason))[:64] if end else None
+        log.info('llm_request request_id=%s provider=%s elapsed_ms=%d stream_output_bytes=%d stop_reason=%s prompt_tokens=%s completion_tokens=%s',
                  correlation_id, provider.name, (time.monotonic() - started) * 1000, received,
+                 stop_reason, end.prompt_tokens if end else None, end.completion_tokens if end else None,
                  extra={'event': 'llm_completed' if completed else 'llm_failed',
                         'duration_ms': round((time.monotonic() - started) * 1000, 2),
                         'stage': 'provider', 'metadata': {'stream_output_bytes': received,
-                                                         'response_bytes': received}})
+                                                         'response_bytes': received,
+                                                         'stop_reason': stop_reason,
+                                                         'prompt_tokens': end.prompt_tokens if end else None,
+                                                         'completion_tokens': end.completion_tokens if end else None}})

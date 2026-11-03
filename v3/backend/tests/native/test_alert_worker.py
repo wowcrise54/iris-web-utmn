@@ -241,3 +241,17 @@ def test_revocation_during_token_counting_stops_generation_before_audit(tmp_path
         api['_infer'](task, store, NS(name='custom'), settings, conv, user, 'map',
                       {'text':'source','references':[{'source_id':'one','offset':0,'end_offset':6}]})
     biz.record_egress.assert_not_called()
+
+
+def test_analysis_respects_configured_output_budget():
+    api = functions()
+    assert api['_analysis_output_limit'](NS(max_output_tokens=32768)) == 32768
+    assert api['_analysis_output_limit'](NS(max_output_tokens=0)) == 8192
+
+
+def test_output_exhaustion_is_not_retried_as_context_rejection():
+    api = functions()
+    with pytest.raises(ValueError, match='output token limit') as error:
+        api['_check_analysis_end'](NS(stop_reason='max_tokens'))
+    assert not isinstance(error.value, pipeline.SplitPacket)
+    api['_check_analysis_end'](NS(stop_reason='end_turn'))

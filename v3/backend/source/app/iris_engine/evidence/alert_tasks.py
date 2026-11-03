@@ -265,6 +265,18 @@ def _decode(value):
     return result
 
 
+def _analysis_output_limit(cfg):
+    # Reasoning models can spend the output allowance before returning any JSON.
+    return cfg.max_output_tokens if cfg.max_output_tokens > 0 else 8192
+
+
+def _check_analysis_end(end):
+    if end.stop_reason == 'max_tokens':
+        raise ValueError('The model exhausted its output token limit (including reasoning). '
+                         'This is not an input context rejection. Increase the provider/policy '
+                         'output token limit and start a new analysis. Progress was saved.')
+
+
 def _infer(job, store, provider, cfg, conv, user, stage, payload):
     # ACL and live policy/configuration are checked even for a cached result.
     current_user, _ = authorize_alert_analysis(job)
@@ -291,7 +303,7 @@ def _infer(job, store, provider, cfg, conv, user, stage, payload):
                          redact_emails=cfg.redact_emails, redact_hashes=cfg.redact_hashes)
     messages = [ChatMessage(role='user', content=[{'type': 'text', 'text': prompt}])]
     # Bounded stage output is working memory, not a change to ordinary-chat zero-limit semantics.
-    max_tokens = min(cfg.max_output_tokens, 8192) if cfg.max_output_tokens > 0 else 8192
+    max_tokens = _analysis_output_limit(cfg)
     decision = check_request_budget(provider, model=cfg.model, system=SYSTEM, messages=messages, tools=[],
         max_output_tokens=max_tokens, context_window_tokens=getattr(cfg, 'context_window_tokens', 0))
     if not decision.fits:
@@ -326,15 +338,16 @@ def _infer(job, store, provider, cfg, conv, user, stage, payload):
         job._analysis_measurement.update(prompt_tokens=end.prompt_tokens if end else None,
                                          completion_tokens=end.completion_tokens if end else None)
     if failure:
+        log.warning('alert_analysis_request_failed analysis_id=%s stage=%s code=%s request_bytes=%s input_tokens=%s output_limit=%s',
+                    job.id, stage, failure.provider_code, decision.request_bytes, decision.input_tokens, max_tokens)
         if failure.provider_code in ('context_length_exceeded', 'request_too_large') and stage == 'map':
             raise SplitPacket('Provider rejected this packet size', provider_rejection=True)
         raise ValueError(failure.message)
     if end is None:
         raise ValueError('Provider stream interrupted; this packet was not marked complete.')
-    if end.stop_reason == 'max_tokens':
-        if stage == 'map':
-            raise SplitPacket('The model output limit prevented complete facts for this packet', provider_rejection=True)
-        raise ValueError('The model output limit prevented a complete result. Increase its output limit and retry.')
+    log.info('alert_analysis_request_completed analysis_id=%s stage=%s stop_reason=%s prompt_tokens=%s completion_tokens=%s output_limit=%s',
+             job.id, stage, end.stop_reason, end.prompt_tokens, end.completion_tokens, max_tokens)
+    _check_analysis_end(end)
     value = _decode(''.join(chunks))
     if stage in ('map', 'reduce'):
         validate_node(value, payload['references'])
