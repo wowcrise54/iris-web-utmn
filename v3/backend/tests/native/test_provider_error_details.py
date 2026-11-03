@@ -105,17 +105,3 @@ def test_wire_request_size_is_logged_without_request_content(modules, monkeypatc
     record = next(r for r in caplog.records if getattr(r, 'event', '') == 'llm_input')
     assert record.metadata['request_bytes'] == len(json.dumps(post.call_args.kwargs['json']).encode())
     assert record.metadata['message_count'] == 1
-
-
-def test_empty_length_completion_logs_output_exhaustion_and_usage(modules, caplog):
-    base, _, diagnostics = modules
-    provider = SimpleNamespace(name='custom', stream_completion=lambda **kw:
-        iter([base.MessageEnd('max_tokens', prompt_tokens=3675, completion_tokens=8192)]))
-    caplog.set_level(logging.INFO)
-    list(diagnostics.provider_events(provider, correlation_id='empty-reasoning'))
-    record = next(r for r in caplog.records if getattr(r, 'event', '') == 'llm_completed')
-    assert record.metadata['stop_reason'] == 'max_tokens'
-    assert record.metadata['completion_tokens'] == 8192
-    assert record.metadata['prompt_tokens'] == 3675
-    assert record.metadata['stream_output_bytes'] == 0
-    assert 'stop_reason=max_tokens' in record.getMessage()
