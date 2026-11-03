@@ -1,6 +1,5 @@
 """Evidence integrity, transport failures and offline isolation without booting IRIS."""
 import ast
-from contextlib import nullcontext
 import gzip
 import importlib.util
 import json
@@ -414,7 +413,6 @@ def test_background_summary_preserves_pinned_chat_policy(events, live_level, res
         case_chat=SimpleNamespace(sum_tokens_today=lambda **kw: 0, record_egress=Mock(return_value=SimpleNamespace(id=9)), finalise_egress=Mock()),
         summary_messages=summary.summary_messages, redact_text=lambda value, **kwargs: value,
         provider_events=diagnostics.provider_events, FINAL_TOKENS=2048, SUMMARY_TOKENS=1024,
-        _provider_slot=lambda provider: nullcontext(True),
         TextDelta=base.TextDelta, MessageEnd=base.MessageEnd, Error=base.Error, log=Mock())
     fn=extract(ENGINE / 'tasks.py', 'summarize', namespace)
     job=SimpleNamespace(id=4, case_id=3, conversation_id=1, progress=0, result={})

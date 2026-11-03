@@ -145,7 +145,11 @@
 	const analyzeInYuki = () => {
 		if (!chat?.canAnalyzeAlert) return;
 		onOpenYuki?.();
-		void chat.analyzeAlert(alert.alert_id);
+		const prompt = irisT(
+			'Analyze alert #{id}: examine the source events, related assets and IOCs. Assess TP/FP, provide evidence and recommend next steps. Read large source events completely; if data is incomplete, explicitly state the gaps and avoid an unsupported verdict. Do not modify the alert automatically. At the end of your response, propose a rule exception using PCRE2 regular expressions. Put each condition on a separate line in the format: event taxonomy field - PCRE2 regex (for example, correlation_name - ^ExactRuleName$). Multiple lines are combined with AND. Use only field names and values found in the source events, escape literal regex metacharacters and keep the exception narrowly scoped. If the evidence is insufficient to propose an exception, explain what is missing instead of inventing one.',
+			$irisLocale
+		).replace('{id}', String(alert.alert_id));
+		void chat.analyzeAlert(alert.alert_id, prompt);
 	};
 	const canTriggerHooks = $derived(
 		alertHooks.options.length > 0 && userCtx?.can('alerts_write') === true

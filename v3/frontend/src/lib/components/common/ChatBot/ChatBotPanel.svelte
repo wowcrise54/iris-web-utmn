@@ -28,8 +28,6 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from '$lib/components/ui/toast';
 	import { CHAT_PANEL_CTX, type ChatPanelContext } from '$lib/contexts/chat-panel.context.svelte';
-	import AlertAnalysisProgress from './components/AlertAnalysisProgress.svelte';
-	import { analysisActive } from '$lib/services/alert-analysis.service';
 	import ChatMessage from './components/ChatMessage.svelte';
 	import ChatComposer from './components/ChatComposer.svelte';
 	import ChatUsageBar from './components/ChatUsageBar.svelte';
@@ -67,23 +65,9 @@
 		return Number.isFinite(n) ? n : null;
 	});
 
- let loadedAnalysisLink = '';
- $effect(() => {
-  const jobId = page.url.searchParams.get('analysis');
-  const alertId = currentAlertId;
-  const key = alertId && jobId ? `${alertId}/${jobId}` : '';
-  if (!key) loadedAnalysisLink = '';
-  const busy = chat.state.loading || chat.state.streamingConversationId != null || chat.state.pendingToolCalls.length > 0;
-  if (key && key !== loadedAnalysisLink && !busy) {
-   loadedAnalysisLink = key;
-   untrack(() => { void chat.loadAlertAnalysis(alertId!, jobId!); });
-  }
- });
-
 	const streaming = $derived(chat.state.streamingConversationId != null);
 	const disabled = $derived(
 		streaming ||
-			analysisActive(chat.state.alertAnalysis) ||
 			chat.state.pendingToolCalls.length > 0 ||
 			chat.state.progress?.stage === 'awaiting_approval'
 	);
@@ -147,7 +131,6 @@
 	const currentConversationScope = $derived.by<string>(() => {
 		const conv = chat.state.currentConversation;
 		if (!conv) return '';
-		if (conv.alert_id != null) return `alert #${conv.alert_id}`;
 		if (conv.war_room_id != null) return `war-room #${conv.war_room_id}`;
 		if (conv.case_id != null) return `case #${conv.case_id}`;
 		return 'global';
@@ -581,7 +564,6 @@
 						{chat}
 						{currentCaseId}
 						{currentWarRoomId}
-						currentAlertId={currentAlertId ?? chat.state.currentConversation?.alert_id ?? null}
 						onClose={() => (showHistory = false)}
 					/>
 				{/if}
@@ -645,10 +627,6 @@
 						</div>
 					{/if}
 
-					{#if chat.state.alertAnalysis}
-						<AlertAnalysisProgress {chat} />
-					{/if}
-
 					{#if progress}
 						<ThinkingShimmer
 							label={progressLabel + (progress.tool_name ? `: ${progress.tool_name}` : '')}
@@ -677,13 +655,10 @@
 						<PendingToolApproval {pending} onApprove={chat.approveTool} onDeny={chat.denyTool} />
 					{/each}
 
+					{#if chat.state.error}
+						<p class="text-2xs text-destructive">{irisT(chat.state.error, $irisLocale)}</p>
+					{/if}
 				{/if}
-                {#if chat.state.error}
-                    <p role="alert" class="text-2xs text-destructive">{irisT(chat.state.error, $irisLocale)}</p>
-                {/if}
-                {#if chat.state.analysisError && !chat.state.alertAnalysis}
-                    <p role="alert" class="text-2xs text-destructive">{irisT(chat.state.analysisError, $irisLocale)}</p>
-                {/if}
 			</div>
 
 			<ChatComposer

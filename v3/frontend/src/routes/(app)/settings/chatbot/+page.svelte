@@ -102,7 +102,6 @@
 		'chatbot_model',
 		'chatbot_base_url',
 		'chatbot_max_output_tokens',
-		'chatbot_context_window_tokens',
 		'chatbot_max_turns_per_conversation',
 		'chatbot_max_tool_calls_per_turn',
 		'chatbot_auto_execute_read_tools',
@@ -202,7 +201,6 @@
 			auto_execute_read_tools: true,
 			auto_approve_write_tools: false,
 			max_output_tokens: 2048,
-			context_window_tokens: 0,
 			max_turns_per_conversation: 25,
 			max_tool_calls_per_turn: 8,
 			daily_token_budget_per_user: 500_000,
@@ -229,7 +227,6 @@
 			auto_execute_read_tools: p.auto_execute_read_tools,
 			auto_approve_write_tools: p.auto_approve_write_tools,
 			max_output_tokens: p.max_output_tokens ?? 2048,
-			context_window_tokens: p.context_window_tokens ?? 0,
 			max_turns_per_conversation: p.max_turns_per_conversation,
 			max_tool_calls_per_turn: p.max_tool_calls_per_turn,
 			daily_token_budget_per_user: p.daily_token_budget_per_user,
@@ -765,10 +762,6 @@
 						</div>
 
 						<div class="flex flex-col gap-1">
-                            <label for="chatbot-context-window" class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">{irisT('Model context window (tokens; 0 = auto / unknown)', $irisLocale)}</label>
-                            <Input id="chatbot-context-window" type="number" min="0" max="2147483647" step="1" value={srvForm.chatbot_context_window_tokens ?? 0} disabled={srvSaving} oninput={(e) => (srvForm.chatbot_context_window_tokens = Number(e.currentTarget.value))} />
-                        </div>
-                        <div class="flex flex-col gap-1">
                             <label for="chatbot-max-output" class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">{irisT('Max output tokens / answer', $irisLocale)}</label>
                             <LimitInput id="chatbot-max-output" label={irisT('Max output tokens / answer', $irisLocale)} value={srvForm.chatbot_max_output_tokens} fallback={2048} disabled={srvSaving} onChange={(value) => (srvForm.chatbot_max_output_tokens = value)} />
                         </div>
@@ -1175,11 +1168,7 @@
 					placeholder={irisT("sk-…", $irisLocale)}
 				/>
 			</label>
-            <div class="flex flex-col gap-1">
-                <label for="policy-context-window" class="text-xs">{irisT('Model context window (tokens; 0 = auto / unknown)', $irisLocale)}</label>
-                <Input id="policy-context-window" type="number" min="0" max="2147483647" step="1" value={form.context_window_tokens ?? 0} oninput={(e) => (form.context_window_tokens = Number(e.currentTarget.value))} />
-            </div>
-            <div class="flex flex-col gap-1"><span>{irisT('Max output tokens / answer', $irisLocale)}</span>
+			<div class="flex flex-col gap-1"><span>{irisT('Max output tokens / answer', $irisLocale)}</span>
                 <LimitInput id="policy-max-output" label={irisT('Max output tokens / answer', $irisLocale)} value={form.max_output_tokens} fallback={2048} onChange={(value) => (form.max_output_tokens = value)} />
             </div>
             <p class="col-span-2 text-xs text-muted-foreground">{irisT('Zero disables a Yuki limit. Provider context, output and rate limits still apply. Anthropic requires a discoverable model maximum or an explicit output limit.', $irisLocale)}</p>

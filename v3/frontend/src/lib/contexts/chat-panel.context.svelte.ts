@@ -20,11 +20,6 @@ import type {
 	PendingToolCall
 } from '$lib/services/chat.service';
 import { ChatService, ChatSocketClient } from '$lib/services/chat.service';
-import {
-	AlertAnalysisService,
-	analysisActive,
-	type AlertAnalysisJob
-} from '$lib/services/alert-analysis.service';
 import { toast } from '$lib/components/ui/toast';
 
 export const CHAT_PANEL_CTX = Symbol('chat-panel');
@@ -71,8 +66,6 @@ export interface ChatFocusHint {
 
 export const createChatPanelContext = () => {
 	const state = $state<{
-		alertAnalysis: AlertAnalysisJob | null;
-		analysisError: string | null;
 		open: boolean;
 		revealRequest: number;
 		streamingConversationId: number | null;
@@ -97,8 +90,6 @@ export const createChatPanelContext = () => {
 		 */
 		usage: ChatUsage | null;
 	}>({
-		alertAnalysis: null,
-		analysisError: null,
 		open: false,
 		revealRequest: 0,
 		streamingConversationId: null,
@@ -117,38 +108,6 @@ export const createChatPanelContext = () => {
 
 	let socket: ChatSocketClient | null = null;
 	let conversationEpoch = 0;
-	let analysisEpoch = 0;
-	let analysisTimer: ReturnType<typeof setTimeout> | null = null;
-	const stopAnalysisPolling = () => {
-		analysisEpoch++;
-		if (analysisTimer != null) clearTimeout(analysisTimer);
-		analysisTimer = null;
-	};
-	const pollAnalysis = (job: AlertAnalysisJob, failures = 0) => {
-		const epoch = analysisEpoch;
-		analysisTimer = setTimeout(
-			async () => {
-				analysisTimer = null;
-				try {
-					const res = await AlertAnalysisService.get(job.alert_id, job.id);
-					if (epoch !== analysisEpoch) return;
-					if (!res.ok || !res.data || typeof res.data === 'string')
-						throw new Error(res.error?.message || 'Could not refresh alert analysis.');
-					state.alertAnalysis = res.data;
-					state.analysisError = null;
-					if (analysisActive(res.data)) pollAnalysis(res.data);
-					else if (state.currentConversation?.id === res.data.conversation_id)
-						await refresh(res.data.conversation_id);
-				} catch (error) {
-					if (epoch !== analysisEpoch) return;
-					state.analysisError =
-						error instanceof Error ? error.message : 'Could not refresh alert analysis.';
-					if (failures < 2) pollAnalysis(job, failures + 1);
-				}
-			},
-			2000 * (failures + 1)
-		);
-	};
 
 	// ---- Character-drip typing effect ----
 	// The socket delivers full-token SSE chunks (5-60 chars each). Painting
@@ -409,13 +368,8 @@ export const createChatPanelContext = () => {
 		state.open = !state.open;
 	};
 
-	const openConversation = async (conversationId: number, keepAnalysis = false) => {
-		if (!keepAnalysis) {
-			stopAnalysisPolling();
-			state.alertAnalysis = null;
-			state.analysisError = null;
-		}
-		const epoch = ++conversationEpoch;
+	const openConversation = async (conversationId: number) => {
+		conversationEpoch++;
 		_flushTyping();
 		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
@@ -429,26 +383,9 @@ export const createChatPanelContext = () => {
 		state.usage = null;
 		try {
 			await refresh(conversationId);
-			if (epoch !== conversationEpoch) return;
 			_ensureSocket().joinConversation(conversationId);
-			const alertId = state.currentConversation?.alert_id;
-			if (!keepAnalysis && alertId != null) {
-				const listing = await AlertAnalysisService.list(alertId);
-				if (epoch !== conversationEpoch) return;
-				if (listing.ok && listing.data && typeof listing.data !== 'string') {
-					const metadata = listing.data.analyses.find(job => job.conversation_id === conversationId);
-					if (metadata) {
-						const response = await AlertAnalysisService.get(alertId, metadata.id);
-						if (epoch !== conversationEpoch) return;
-						if (response.ok && response.data && typeof response.data !== 'string') {
-							state.alertAnalysis = response.data;
-							if (analysisActive(response.data)) pollAnalysis(response.data);
-						}
-					}
-				}
-			}
 		} finally {
-			if (epoch === conversationEpoch) state.loading = false;
+			state.loading = false;
 		}
 	};
 
@@ -468,11 +405,6 @@ export const createChatPanelContext = () => {
 			return body.conversations ?? [];
 		}
 		return [];
-	};
-
-	const listAlertConversations = async (alertId: number): Promise<ChatConversation[]> => {
-		const res = await ChatService.listAlertConversations(alertId);
-		return res.ok && res.data && typeof res.data !== 'string' ? res.data.conversations : [];
 	};
 
 	const renameConversation = async (conversationId: number, title: string): Promise<boolean> => {
@@ -705,80 +637,22 @@ export const createChatPanelContext = () => {
 
 	const canAnalyzeAlert = $derived(
 		!state.loading &&
-			!analysisActive(state.alertAnalysis) &&
 			state.streamingConversationId == null &&
 			state.pendingToolCalls.length === 0 &&
 			state.progress?.stage !== 'awaiting_approval'
 	);
 
-	const attachAnalysis = async (job: AlertAnalysisJob) => {
-		stopAnalysisPolling();
-		const epoch = analysisEpoch;
-		state.alertAnalysis = job;
-		state.analysisError = null;
-		await openConversation(job.conversation_id, true);
-		if (epoch === analysisEpoch && analysisActive(job)) pollAnalysis(job);
-	};
-	const analyzeAlert = async (alertId: number, _prompt?: string): Promise<boolean> => {
-		if (!canAnalyzeAlert) return false;
+	const analyzeAlert = async (alertId: number, prompt: string): Promise<boolean> => {
+		if (!canAnalyzeAlert || !prompt.trim()) return false;
 		openPanel();
-		const epoch = ++conversationEpoch;
-		state.loading = true;
-		state.error = null;
 		try {
-			const res = await AlertAnalysisService.start(alertId);
-			if (epoch !== conversationEpoch) return false;
-			if (!res.ok || !res.data || typeof res.data === 'string') {
-				state.error = res.error?.message || 'Could not start alert analysis. Please try again.';
-				return false;
-			}
-			await attachAnalysis(res.data);
+			const id = await startWithScope({ kind: 'currentAlert', alertId });
+			if (id == null || state.currentConversation?.id !== id) return false;
+			send(prompt);
 			return true;
 		} catch {
-			if (epoch === conversationEpoch)
-				state.error = 'Could not start alert analysis. Please try again.';
+			state.error = 'Could not start alert analysis. Please try again.';
 			return false;
-		} finally {
-			state.loading = false;
-		}
-	};
-	const loadAlertAnalysis = async (alertId: number, jobId: string | number) => {
-		if (state.loading || state.streamingConversationId != null || state.pendingToolCalls.length)
-			return;
-		const epoch = conversationEpoch;
-		openPanel();
-		state.loading = true;
-		try {
-			const res = await AlertAnalysisService.get(alertId, jobId);
-			if (epoch !== conversationEpoch) return;
-			if (res.ok && res.data && typeof res.data !== 'string') await attachAnalysis(res.data);
-			else {
-				state.analysisError = res.error?.message || 'Could not refresh alert analysis.';
-				state.error = state.analysisError;
-			}
-		} catch {
-			if (epoch === conversationEpoch) {
-				state.analysisError = 'Could not refresh alert analysis.';
-				state.error = state.analysisError;
-			}
-		} finally {
-			state.loading = false;
-		}
-	};
-	const updateAlertAnalysis = async (action: 'retry' | 'cancel') => {
-		const job = state.alertAnalysis;
-		if (!job || state.loading || (action === 'retry' && !canAnalyzeAlert)) return;
-		state.loading = true;
-		const epoch = analysisEpoch;
-		try {
-			const res = await AlertAnalysisService[action](job.alert_id, job.id);
-			if (epoch !== analysisEpoch) return;
-			if (res.ok && res.data && typeof res.data !== 'string') await attachAnalysis(res.data);
-			else state.analysisError = res.error?.message || 'Could not update alert analysis.';
-		} catch {
-			if (epoch === analysisEpoch) state.analysisError = 'Could not update alert analysis.';
-		} finally {
-			state.loading = false;
 		}
 	};
 
@@ -838,16 +712,12 @@ export const createChatPanelContext = () => {
 		listCaseConversations,
 		listWarRoomConversations,
 		listGlobalConversations,
-		listAlertConversations,
 		renameConversation,
 		archiveConversation,
 		send,
 		sendOrStart,
 		startWithScope,
 		analyzeAlert,
-		loadAlertAnalysis,
-		retryAlertAnalysis: () => updateAlertAnalysis('retry'),
-		cancelAlertAnalysis: () => updateAlertAnalysis('cancel'),
 		get canAnalyzeAlert() {
 			return canAnalyzeAlert;
 		},
@@ -858,10 +728,6 @@ export const createChatPanelContext = () => {
 		// Escape hatch for tests: drop the socket so a follow-up connect()
 		// picks up a fresh token.
 		disconnect: () => {
-			conversationEpoch++;
-			stopAnalysisPolling();
-			state.alertAnalysis = null;
-			state.analysisError = null;
 			_flushTyping();
 			state.progress = null;
 			state.streamingConversationId = null;

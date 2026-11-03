@@ -447,8 +447,6 @@ alerts_blueprint.register_blueprint(alerts_investigation_progress_blueprint)
 alerts_blueprint.register_blueprint(alerts_iocs_blueprint)
 alerts_blueprint.register_blueprint(alerts_artifacts_blueprint)
 alerts_blueprint.register_blueprint(alerts_assets_blueprint)
-from app.blueprints.rest.v2.alerts_routes.analysis import alerts_analysis_blueprint
-alerts_blueprint.register_blueprint(alerts_analysis_blueprint)
 
 alerts_operations = AlertsOperations()
 

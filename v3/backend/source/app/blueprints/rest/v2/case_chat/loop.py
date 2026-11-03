@@ -46,7 +46,6 @@ from app.blueprints.rest.v2.mcp.dispatch import (
 )
 from app.blueprints.rest.v2.mcp.registry import TOOL_REGISTRY
 from app.business import case_chat as case_chat_biz
-from app.business.alert_analysis import authorize_alert_conversation
 from app.db import db
 from app.iris_engine.llm.client import (
     ChatbotConfig,
@@ -68,10 +67,8 @@ from app.iris_engine.llm.providers.base import (
 from app.iris_engine.llm.redaction import redact_content_blocks
 from app.iris_engine.llm.diagnostics import provider_events
 from app.iris_engine.llm.system_prompt import system_prompt
-from app.iris_engine.llm.request_budget import check_chat_request_budget
 from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import CaseAccessLevel, WarRoomAccessLevel, User
-from app.models.errors import BusinessProcessingError, ObjectNotFoundError
 from app.models.case_chat import (
     ROLE_ASSISTANT,
     ROLE_TOOL,
@@ -80,8 +77,6 @@ from app.models.case_chat import (
 
 
 logger = logging.getLogger('iris.chatbot.loop')
-ALERT_READ_TOOLS = frozenset(('iris_alerts_get', 'iris_alerts_source_get',
-                              'iris_alerts_analyze_start', 'iris_alerts_analysis_get'))
 
 
 # ---- Event emitter --------------------------------------------------
@@ -171,12 +166,6 @@ def run_one_iteration(
         if user is None or not user.active or conversation.user_id != user.id:
             emit(ChatEvent('error', {'message': 'Conversation is no longer available.'}))
             return
-        if getattr(conversation, 'alert_id', None) is not None:
-            try:
-                _authorize_alert_scope(conversation)
-            except (ObjectNotFoundError, BusinessProcessingError):
-                emit(ChatEvent('error', {'message': 'Alert access is no longer available.'}))
-                return
 
         # Budget check — refuse before spending an LLM token.
         if cfg.daily_token_budget_per_user > 0:
@@ -224,32 +213,9 @@ def run_one_iteration(
             case_id=conversation.case_id,
             war_room_id=conversation.war_room_id,
             read_only_scope=read_only_scope,
-            alert_id=getattr(conversation, 'alert_id', None),
         )
 
-        context_window = getattr(cfg, 'context_window_tokens', 0)
-        decision = check_chat_request_budget(
-            provider, model=cfg.model, system=system, messages=history, tools=tools,
-            max_output_tokens=cfg.max_output_tokens,
-            context_window_tokens=context_window,
-            working_input_tokens=context_window or 32768,
-        )
-        logger.info('chatbot request budget fits=%s method=%s input_tokens=%s request_bytes=%d limit=%d',
-                    decision.fits, decision.method, decision.input_tokens,
-                    decision.request_bytes, decision.limit,
-                    extra={'event': 'llm_request_budget', 'metadata': {
-                        'fits': decision.fits, 'method': decision.method,
-                        'input_tokens': decision.input_tokens,
-                        'context_window_tokens': context_window,
-                        'tokenizer_verified': decision.input_tokens is not None,
-                        'request_bytes': decision.request_bytes, 'limit': decision.limit}})
-        if not decision.fits:
-            emit(ChatEvent('error', {
-                'code': 'context_budget_exceeded',
-                'message': 'Conversation exceeds the safe context budget. Start a background analysis from the alert to continue without discarding evidence.',
-            }))
-            return
-        request_bytes = decision.request_bytes
+        request_bytes = _estimate_request_bytes(system, history, tools)
         # Redaction toggles are checked inside `_load_history`, so the
         # `redacted` bit here reflects what was actually scrubbed.
         redacted = _history_was_redacted(history, cfg)
@@ -433,8 +399,6 @@ def _scope_is_read_only(conversation: CaseChatConversation) -> bool:
     actions the analyst can't take: the write tools are dropped from the
     list and the system prompt says why.
     """
-    if getattr(conversation, 'alert_id', None) is not None:
-        return True
     if conversation.case_id is not None and not \
             ac_fast_check_current_user_has_case_access(
                 conversation.case_id, [CaseAccessLevel.full_access]):
@@ -469,14 +433,8 @@ def _prepare_tools(
         strip_keys.append('case_identifier')
     if is_war_room_scoped:
         strip_keys.append('war_room_id')
-    if getattr(conversation, 'alert_id', None) is not None:
-        strip_keys.append('alert_identifier')
     out: list[ToolSpec] = []
     for entry in raw:
-        if getattr(conversation, 'alert_id', None) is not None and entry['name'] not in ALERT_READ_TOOLS:
-            continue
-        if getattr(conversation, 'alert_id', None) is not None and tool_classification.mutates(entry['name']):
-            continue
         if read_only_scope and _mutates_the_scope(
                 entry['name'], is_case_scoped, is_war_room_scoped):
             continue
@@ -636,8 +594,6 @@ def _finalise_turn(
     if stop_reason == 'error':
         content.append({'type': 'text', 'text': '\n\nЧастичный ответ: поток генерации прерван. Можно продолжить анализ.'})
     for tu in tool_uses:
-        if getattr(conversation, 'alert_id', None) is not None:
-            tu['input'] = {**dict(tu.get('input') or {}), 'alert_identifier': int(conversation.alert_id)}
         content.append({
             'type': 'tool_use',
             'id': tu['id'],
@@ -677,17 +633,6 @@ def _finalise_turn(
     writes_to_pend: list[dict[str, Any]] = []
     for tu in tool_uses:
         name = tu['name']
-        if getattr(conversation, 'alert_id', None) is not None and (
-                tool_classification.mutates(name) or name not in ALERT_READ_TOOLS):
-            message = 'Alert analysis conversations are read-only.'
-            case_chat_biz.append_message(
-                conversation=conversation, role=ROLE_TOOL,
-                content=[{'type': 'tool_result', 'tool_use_id': tu['id'],
-                          'content': message, 'is_error': True}],
-                tool_use_id=tu['id'],
-            )
-            emit(ChatEvent('error', {'message': message}))
-            continue
         if tool_classification.is_read_only(name):
             reads_to_execute.append(tu)
         elif tool_classification.is_write(name):
@@ -702,9 +647,6 @@ def _finalise_turn(
                 ),
             }))
             return _TurnResult(terminated=True)
-
-    if not reads_to_execute and not writes_to_pend:
-        return _TurnResult(terminated=True)
 
     # Auto-execute reads if allowed. Loads config through the
     # conversation's stamped policy so per-customer overrides for
@@ -825,17 +767,6 @@ def _dispatch_and_track(
     """
     name = tool_use['name']
     args = dict(tool_use.get('input') or {})
-    if getattr(conversation, 'alert_id', None) is not None:
-        try:
-            _authorize_alert_scope(conversation)
-        except (ObjectNotFoundError, BusinessProcessingError):
-            return {'error': 'Alert access is no longer available.'}
-        if tool_classification.mutates(name):
-            return {'error': 'Alert analysis conversations are read-only.'}
-        if name not in ALERT_READ_TOOLS:
-            return {'error': 'This tool is not available in an alert analysis conversation.'}
-        # The bound customer's provider must never receive another alert/case via a tool redirect.
-        args['alert_identifier'] = int(conversation.alert_id)
 
     # Scope override. See §7 of the plan.
     if conversation.case_id is not None:
@@ -913,15 +844,6 @@ def _dispatch_and_track(
     except Exception:
         logger.exception('chatbot: assistant_tool_result emit failed for %s', name)
     return result
-
-
-def _authorize_alert_scope(conversation: CaseChatConversation) -> None:
-    """Recheck the current persisted user and alert ACL, including during a stream."""
-    db.session.expire_all()
-    user = db.session.get(User, iris_current_user._get_current_object().id)
-    if user is None or not user.active or user.id != conversation.user_id:
-        raise ObjectNotFoundError()
-    authorize_alert_conversation(conversation, user)
 
 
 def _build_request_snapshot(

@@ -21,7 +21,6 @@ LLM on 2026-07-27" gap: one row per `provider.stream_completion` call
 with byte + token counts, surfaced through the admin egress-audit page.
 """
 
-from sqlalchemy import CheckConstraint
 from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
 from sqlalchemy import Column
@@ -81,8 +80,6 @@ class CaseChatConversation(db.Model):
         ForeignKey('war_room.war_room_id', ondelete='CASCADE'),
         nullable=True,
     )
-    alert_id = Column(BigInteger, ForeignKey('alerts.alert_id', ondelete='CASCADE'), nullable=True)
-    alert_customer_id = Column(BigInteger, ForeignKey('client.client_id'), nullable=True)
     user_id = Column(
         BigInteger,
         ForeignKey('user.id', ondelete='CASCADE'),
@@ -126,7 +123,6 @@ class CaseChatConversation(db.Model):
     )
 
     __table_args__ = (
-        CheckConstraint('alert_id IS NULL OR (case_id IS NULL AND war_room_id IS NULL AND alert_customer_id IS NOT NULL)', name='ck_case_chat_alert_scope'),
         Index('ix_case_chat_conversation_case_user_updated',
               'case_id', 'user_id', 'updated_at'),
         Index('ix_case_chat_conversation_user_updated',

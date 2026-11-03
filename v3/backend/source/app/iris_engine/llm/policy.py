@@ -27,7 +27,6 @@ from typing import Optional
 from app.db import db
 from app.models.case_chat import CaseChatConversation
 from app.models.cases import Cases
-from app.models.alerts import Alert
 from app.models.chatbot_policy import ChatbotPolicy
 from app.models.customers import Client
 from app.models.war_rooms import WarRoomCase
@@ -66,16 +65,6 @@ def resolve_for_case(case_id: Optional[int]) -> ResolvedPolicy:
     return ResolvedPolicy(row, int(row.restriction_level))
 
 
-def resolve_for_alert(alert_id: Optional[int]) -> ResolvedPolicy:
-    if alert_id is None:
-        return ResolvedPolicy(None, 0)
-    row = (db.session.query(ChatbotPolicy)
-           .join(Client, Client.chatbot_policy_id == ChatbotPolicy.id)
-           .join(Alert, Alert.alert_customer_id == Client.client_id)
-           .filter(Alert.alert_id == alert_id).first())
-    return ResolvedPolicy(row, int(row.restriction_level)) if row else ResolvedPolicy(None, 0)
-
-
 def resolve_for_war_room(war_room_id: Optional[int]) -> ResolvedPolicy:
     """Resolve the strictest policy across every customer touched by a
     war room's currently-attached cases.
@@ -104,13 +93,14 @@ def resolve_for_war_room(war_room_id: Optional[int]) -> ResolvedPolicy:
 
 def resolve_for_conversation(conv: CaseChatConversation) -> ResolvedPolicy:
     """Route a conversation to its owning scope-specific resolver."""
-    if getattr(conv, 'alert_id', None) is not None:
-        return resolve_for_alert(conv.alert_id)
     if conv.war_room_id is not None:
         return resolve_for_war_room(conv.war_room_id)
     if conv.case_id is not None:
         return resolve_for_case(conv.case_id)
-    # Unscoped conversations use the global default.
+    # Global (no case, no war-room) — no customer context, so the
+    # global default applies. If a customer-scoped feature (alert
+    # focus-hint) is layered on later, it stays global for policy
+    # purposes; the loop's audit trail still records `user_id`.
     return ResolvedPolicy(None, 0)
 
 
