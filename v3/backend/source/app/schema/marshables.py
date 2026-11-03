@@ -1642,7 +1642,6 @@ class ServerSettingsSchema(ma.SQLAlchemyAutoSchema):
         required=False, allow_none=True)
     chatbot_base_url: Optional[str] = fields.String(
         required=False, allow_none=True)
-    chatbot_context_window_tokens: Optional[int] = fields.Integer(required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_max_output_tokens: Optional[int] = fields.Integer(
         required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     chatbot_max_turns_per_conversation: Optional[int] = fields.Integer(
@@ -1699,7 +1698,6 @@ class ChatbotPolicySchema(ma.SQLAlchemyAutoSchema):
         'auto_execute_read_tools', required=False)
     auto_approve_write_tools: bool = auto_field(
         'auto_approve_write_tools', required=False)
-    context_window_tokens: int = auto_field('context_window_tokens', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     max_output_tokens: int = auto_field('max_output_tokens', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
     max_turns_per_conversation: int = auto_field(
         'max_turns_per_conversation', required=False, strict=True, validate=Range(min=0, max=2_147_483_647))
@@ -1734,7 +1732,6 @@ class CaseChatConversationSchema(ma.SQLAlchemyAutoSchema):
     id: int = auto_field('id', dump_only=True)
     case_id: Optional[int] = auto_field('case_id', dump_only=True)
     war_room_id: Optional[int] = auto_field('war_room_id', dump_only=True)
-    alert_id: Optional[int] = auto_field('alert_id', dump_only=True)
     user_id: int = auto_field('user_id', dump_only=True)
     model: str = auto_field('model', dump_only=True)
     title: str = auto_field('title', dump_only=True)
@@ -1750,7 +1747,6 @@ class CaseChatConversationSchema(ma.SQLAlchemyAutoSchema):
         model = CaseChatConversation
         load_instance = True
         unknown = EXCLUDE
-        exclude = ('alert_customer_id',)
 
 
 class CaseChatMessageSchema(ma.SQLAlchemyAutoSchema):

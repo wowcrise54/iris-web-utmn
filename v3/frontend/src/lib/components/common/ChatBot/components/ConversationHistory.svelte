@@ -26,20 +26,17 @@
 		chat,
 		currentCaseId,
 		currentWarRoomId = null,
-		currentAlertId = null,
 		onClose
 	}: {
 		chat: ChatPanelContext;
 		currentCaseId: number | null;
 		currentWarRoomId?: number | null;
-		currentAlertId?: number | null;
 		onClose: () => void;
 	} = $props();
 
 	let caseConvs = $state<ChatConversation[]>([]);
 	let warRoomConvs = $state<ChatConversation[]>([]);
 	let globalConvs = $state<ChatConversation[]>([]);
-	let alertConvs = $state<ChatConversation[]>([]);
 	let loading = $state(true);
 	let editingId = $state<number | null>(null);
 	let editingTitle = $state('');
@@ -47,22 +44,18 @@
 	async function load() {
 		loading = true;
 		try {
-			const [caseList, warRoomList, globalList, alertList] = await Promise.all([
+			const [caseList, warRoomList, globalList] = await Promise.all([
 				currentCaseId != null
 					? chat.listCaseConversations(currentCaseId)
 					: Promise.resolve<ChatConversation[]>([]),
 				currentWarRoomId != null
 					? chat.listWarRoomConversations(currentWarRoomId)
 					: Promise.resolve<ChatConversation[]>([]),
-				chat.listGlobalConversations(),
-				currentAlertId != null
-					? chat.listAlertConversations(currentAlertId)
-					: Promise.resolve<ChatConversation[]>([])
+				chat.listGlobalConversations()
 			]);
 			caseConvs = caseList;
 			warRoomConvs = warRoomList;
 			globalConvs = globalList;
-			alertConvs = alertList;
 		} finally {
 			loading = false;
 		}
@@ -97,7 +90,6 @@
 			// without a full reload.
 			caseConvs = caseConvs.map((c) => (c.id === id ? { ...c, title } : c));
 			globalConvs = globalConvs.map((c) => (c.id === id ? { ...c, title } : c));
-			alertConvs = alertConvs.map((c) => (c.id === id ? { ...c, title } : c));
 		}
 		cancelEdit();
 	}
@@ -118,7 +110,6 @@
 		if (ok) {
 			caseConvs = caseConvs.filter((c) => c.id !== conv.id);
 			globalConvs = globalConvs.filter((c) => c.id !== conv.id);
-			alertConvs = alertConvs.filter((c) => c.id !== conv.id);
 		}
 	}
 
@@ -136,50 +127,32 @@
 <div
 	class="absolute left-2 right-2 top-2 z-10 max-h-[70%] overflow-y-auto rounded-md border bg-background p-2 shadow-lg"
 	role="dialog"
-	aria-label={irisT('Conversation history', $irisLocale)}
+	aria-label={irisT("Conversation history", $irisLocale)}
 >
 	<div class="mb-2 flex items-center justify-between">
 		<span class="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-			{irisT('History', $irisLocale)}
+			{irisT("History", $irisLocale)}
 		</span>
 		<button
 			type="button"
 			class="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
 			onclick={onClose}
-			aria-label={irisT('Close history', $irisLocale)}
+			aria-label={irisT("Close history", $irisLocale)}
 		>
 			<XIcon size={14} />
 		</button>
 	</div>
 
 	{#if loading}
-		<p class="text-2xs text-muted-foreground">{irisT('Loading…', $irisLocale)}</p>
+		<p class="text-2xs text-muted-foreground">{irisT("Loading…", $irisLocale)}</p>
 	{:else}
-		{#if currentAlertId != null}
-			<div class="mb-2">
-				<div class="text-2xs font-medium text-muted-foreground">
-					{irisT('Alert conversations', $irisLocale)} #{currentAlertId}
-				</div>
-				{#if alertConvs.length === 0}
-					<p class="text-2xs text-muted-foreground">
-						{irisT('No prior chats on this alert.', $irisLocale)}
-					</p>
-				{:else}
-					<ul class="mt-1 flex flex-col gap-0.5">
-						{#each alertConvs as conv (conv.id)}{@render row(conv)}{/each}
-					</ul>
-				{/if}
-			</div>
-		{/if}
 		{#if currentWarRoomId != null}
 			<div class="mb-2">
 				<div class="text-2xs font-medium text-muted-foreground">
-					{irisT('In war-room #', $irisLocale)}{currentWarRoomId}
+					{irisT("In war-room #", $irisLocale)}{currentWarRoomId}
 				</div>
 				{#if warRoomConvs.length === 0}
-					<p class="text-2xs text-muted-foreground">
-						{irisT('No prior chats in this war-room.', $irisLocale)}
-					</p>
+					<p class="text-2xs text-muted-foreground">{irisT("No prior chats in this war-room.", $irisLocale)}</p>
 				{:else}
 					<ul class="mt-1 flex flex-col gap-0.5">
 						{#each warRoomConvs as conv (conv.id)}
@@ -193,12 +166,10 @@
 		{#if currentCaseId != null}
 			<div class="mb-2">
 				<div class="text-2xs font-medium text-muted-foreground">
-					{irisT('On case #', $irisLocale)}{currentCaseId}
+					{irisT("On case #", $irisLocale)}{currentCaseId}
 				</div>
 				{#if caseConvs.length === 0}
-					<p class="text-2xs text-muted-foreground">
-						{irisT('No prior chats on this case.', $irisLocale)}
-					</p>
+					<p class="text-2xs text-muted-foreground">{irisT("No prior chats on this case.", $irisLocale)}</p>
 				{:else}
 					<ul class="mt-1 flex flex-col gap-0.5">
 						{#each caseConvs as conv (conv.id)}
@@ -210,9 +181,9 @@
 		{/if}
 
 		<div>
-			<div class="text-2xs font-medium text-muted-foreground">{irisT('Global', $irisLocale)}</div>
+			<div class="text-2xs font-medium text-muted-foreground">{irisT("Global", $irisLocale)}</div>
 			{#if globalConvs.length === 0}
-				<p class="text-2xs text-muted-foreground">{irisT('No global chats yet.', $irisLocale)}</p>
+				<p class="text-2xs text-muted-foreground">{irisT("No global chats yet.", $irisLocale)}</p>
 			{:else}
 				<ul class="mt-1 flex flex-col gap-0.5">
 					{#each globalConvs as conv (conv.id)}
@@ -252,7 +223,7 @@
 						e.stopPropagation();
 						void saveEdit();
 					}}
-					aria-label={irisT('Save', $irisLocale)}
+					aria-label={irisT("Save", $irisLocale)}
 				>
 					<CheckIcon size={12} />
 				</button>
@@ -263,7 +234,7 @@
 						e.stopPropagation();
 						cancelEdit();
 					}}
-					aria-label={irisT('Cancel', $irisLocale)}
+					aria-label={irisT("Cancel", $irisLocale)}
 				>
 					<XIcon size={12} />
 				</button>
@@ -278,7 +249,7 @@
 					type="button"
 					class="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
 					onclick={(e) => startEdit(conv, e)}
-					aria-label={irisT('Rename', $irisLocale)}
+					aria-label={irisT("Rename", $irisLocale)}
 				>
 					<PencilIcon size={12} />
 				</button>
@@ -286,7 +257,7 @@
 					type="button"
 					class="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
 					onclick={(e) => archive(conv, e)}
-					aria-label={irisT('Archive', $irisLocale)}
+					aria-label={irisT("Archive", $irisLocale)}
 				>
 					<Trash2Icon size={12} />
 				</button>

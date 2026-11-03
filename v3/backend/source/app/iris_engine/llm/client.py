@@ -51,7 +51,6 @@ class ChatbotConfig:
     redact_emails: bool
     redact_hashes: bool
     max_output_tokens: int = 2048
-    context_window_tokens: int = 0
 
 
 class ChatbotDisabledError(Exception):
@@ -113,7 +112,6 @@ def load_config(policy=None) -> ChatbotConfig:
         api_key=api_key,
         model=_pick('model', 'chatbot_model', str, ''),
         base_url=_pick('base_url', 'chatbot_base_url', str, ''),
-        context_window_tokens=_pick('context_window_tokens', 'chatbot_context_window_tokens', int, 0),
         max_output_tokens=_pick('max_output_tokens', 'chatbot_max_output_tokens', int, 2048),
         max_turns_per_conversation=_pick(
             'max_turns_per_conversation',

@@ -73,7 +73,6 @@ export interface ChatConversationPolicy {
 }
 
 export interface ChatConversation {
-	alert_id?: number | null;
 	id: number;
 	case_id: number | null;
 	war_room_id: number | null;
@@ -173,13 +172,6 @@ export class ChatService {
 		options: ApiOptions = {}
 	): Promise<RequestResponse<{ conversations: ChatConversation[] }>> {
 		return ApiService.get('/case-chat/global/conversations', options);
-	}
-
-	static async listAlertConversations(
-		alertId: number,
-		options: ApiOptions = {}
-	): Promise<RequestResponse<{ conversations: ChatConversation[] }>> {
-		return ApiService.get(`/case-chat/alerts/${alertId}/conversations`, options);
 	}
 
 	static async listWarRoomConversations(
