@@ -291,6 +291,8 @@ class StorageTests(unittest.TestCase):
             raw_body = '{"Original": null}'
             source = {'incident': {'id': 'one', 'assigned': None},
                 'events': [{'uuid': '00000006-050d-0642-f000-0000255d3663',
+                    '_meta': {'id': '00000006-050d-0642-f000-0000255d3663'},
+                    '_whitelisting': {'enabled': True}, '_presentation': ['large'],
                     'subject.account.domain': None, 'body': raw_body,
                     'historical': False, 'count': 0, 'text': '',
                     'nested': {'empty': None, 'present': 'value'},
@@ -303,6 +305,8 @@ class StorageTests(unittest.TestCase):
             self.assertNotIn('incident_refresh_error', saved)
             row = saved['events'][0]
             self.assertNotIn('subject.account.domain', row)
+            for key in ('_meta', '_whitelisting', '_presentation'):
+                self.assertNotIn(key, row)
             self.assertEqual(row['nested'], {'present': 'value'})
             self.assertEqual(row['body'], raw_body)
             self.assertIs(row['historical'], False)
@@ -322,10 +326,10 @@ class StorageTests(unittest.TestCase):
             h.db.session.add(h.Alert(alert_uuid=alert_uuid, alert_title='Keep analyst title',
                 alert_customer_id=1, alert_source='MaxPatrol SIEM', alert_source_ref='one',
                 alert_source_content={'custom': {'old_null': None, 'keep': 0},
-                    'events': [{'uuid': uid, 'old_null': None, 'body': 'original'}],
+                    'events': [{'uuid': uid, 'old_null': None, 'body': 'original', '_meta': {'id': uid}, '_presentation': ['old']}],
                     'event_tree': [{'uuid': uid}], 'event_links': {uid: []}}))
             h.db.session.commit()
-            h.store.refresh_events('one', {'events': [{'uuid': uid, 'new_null': None, 'flag': False}],
+            h.store.refresh_events('one', {'events': [{'uuid': uid, 'new_null': None, 'flag': False, '_whitelisting': ['new']}],
                 'event_tree': [{'uuid': uid}], 'event_collection': {'version': 2, 'complete': False}})
             h.db.session.expire_all()
             saved = h.db.session.query(h.Alert).one()
@@ -334,9 +338,42 @@ class StorageTests(unittest.TestCase):
             row = saved.alert_source_content['events'][0]
             self.assertNotIn('old_null', row)
             self.assertNotIn('new_null', row)
+            for key in ('_meta', '_whitelisting', '_presentation'):
+                self.assertNotIn(key, row)
             self.assertEqual(row['body'], 'original')
             self.assertIs(row['flag'], False)
-            self.assertEqual(saved.alert_source_content['event_tree'][0]['event'], row)
+            self.assertEqual(saved.alert_source_content['event_tree'][0], {'uuid': uid, 'subevents': []})
+
+    def test_meta_only_uuid_survives_persistence_and_refresh_without_event_copies(self):
+        with harness() as h:
+            from iris_maxpatrol_module.collector import build_event_materials
+
+            def create(alert, **kwargs):
+                h.db.session.add(alert)
+                h.db.session.commit()
+
+            h.alerts.alerts_create = create
+            uid = '00000006-050d-0642-f000-0000255d3663'
+            child = '00000006-050d-0642-f000-0000255d3664'
+            materials = build_event_materials([
+                {'_meta': {'id': uid}, 'subevents': [child], 'body': 'root-raw'},
+                {'_meta': {'id': child}, '_presentation': ['large'], 'body': 'child-raw'}])
+            h.store.create('one', {'alert_title': 'One', 'alert_customer_id': 1,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
+                'alert_source_content': materials})
+            h.db.session.expire_all()
+            content = h.db.session.query(h.Alert).one().alert_source_content
+            self.assertEqual({row['uuid'] for row in content['events']}, {uid, child})
+            self.assertEqual(content['event_tree'], [
+                {'uuid': uid, 'subevents': [{'uuid': child, 'subevents': []}]}])
+            self.assertEqual(json.dumps(content).count('child-raw'), 1)
+            self.assertNotIn('_meta', json.dumps(content))
+            h.store.refresh_events('one', build_event_materials([
+                {'_meta': {'id': child}, 'body': 'child-new'}]))
+            h.db.session.expire_all()
+            rows = h.db.session.query(h.Alert).one().alert_source_content['events']
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(next(row['body'] for row in rows if row['uuid'] == child), 'child-new')
 
     def test_refresh_updates_only_source_materials_and_preserves_previous_events(self):
         with harness() as h:
