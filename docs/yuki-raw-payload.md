@@ -2,7 +2,8 @@
 
 ## Accepted design
 
-Keep the 40,000-byte MCP result guard. Add a read-only, default-visible
+Keep the 40,000-byte MCP result guard for other tools. Allow a 256,000-byte
+result specifically for `iris_alerts_source_get`. Add a read-only, default-visible
 `iris_alerts_source_get` tool that reads `alert_source_content` or `alert_context`
 in bounded text pages. Reuse the existing alert permission and customer ACL path.
 Point the alert tool description, truncation hint and Yuki prompt at this recovery
@@ -30,8 +31,8 @@ For each subsequent call, pass `offset=next_offset` and
 supplied; restart from zero instead of mixing versions. Permissions are checked
 again for every page.
 
-`limit` is an optional character ceiling, default/maximum 30,000. The tool
-shortens pages to fit escaped JSON under the MCP budget, reserving 1,024 bytes
+`limit` is an optional character ceiling, default/maximum 100,000. The tool
+shortens pages to fit escaped JSON under its 256,000-byte MCP budget, reserving 1,024 bytes
 for metadata. This accounts for Cyrillic, emoji, quotes and control characters.
 Normal MCP truncation must not alter any page.
 
@@ -62,3 +63,11 @@ backup requirements when deploying.
 - Full application/database/provider integration and a live read of alert 306
   are not verified. The local Docker Linux Engine pipe is unavailable, so no
   rebuild or deployment was performed.
+
+## Larger pages (3 November 2026)
+
+The dispatcher applies the larger budget only to `iris_alerts_source_get`; all
+other tools retain 40,000 bytes. Escaped JSON can reduce the actual character
+count below 100,000, especially for Cyrillic and emoji. Pagination, per-page ACL
+checks and source hash verification are unchanged. Larger pages reduce calls
+but consume more context per request; they do not expand the model context.
