@@ -56,7 +56,6 @@ def assert_type_mml(input_var: any, field_name: str, type: type, allow_none: boo
 
     except Exception as e:
         logger.error(e)
-        print(e)
 
     raise ValidationError('Invalid data type', field_name=field_name if field_name else 'type')
 

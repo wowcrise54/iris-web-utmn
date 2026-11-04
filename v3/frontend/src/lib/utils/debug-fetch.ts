@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { DEV } from 'esm-env';
 import type { LoadEvent } from '@sveltejs/kit';
 
@@ -16,31 +17,18 @@ export function createDebugFetch(event: LoadEvent) {
 		const url = input instanceof Request ? input.url : input.toString();
 		const method = init?.method || (input instanceof Request ? input.method : 'GET');
 
-		console.group(`[Load] 📤 ${method} ${url}`);
+		logger.debug(`[Load] 📤 ${method} ${url}`);
 
 		try {
 			const response = await originalFetch(input, init);
 			const duration = Date.now() - startTime;
 
-			console.log(`[Load] 📥 Response: ${response.status} (${duration}ms)`);
+			logger.debug(`[Load] 📥 Response: ${response.status} (${duration}ms)`);
 
-			// Clone to avoid consuming the response
-			const clonedResponse = response.clone();
-
-			if (response.headers.get('content-type')?.includes('application/json')) {
-				try {
-					const data = await clonedResponse.json();
-					console.log('[Load] 📦 Data:', data);
-				} catch (_e) {
-					console.log('[Load] ⚠️ Could not parse JSON response');
-				}
-			}
-
-			console.groupEnd();
 			return response;
 		} catch (error) {
-			console.log('[Load] ❌ Error:', error);
-			console.groupEnd();
+			logger.debug('[Load] ❌ Error:', error);
+
 			throw error;
 		}
 	};

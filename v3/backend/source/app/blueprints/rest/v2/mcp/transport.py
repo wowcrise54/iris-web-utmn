@@ -29,6 +29,7 @@ import json
 import logging
 import threading
 import time
+from app.observability_logging import observed_operation
 from typing import Any
 
 from app.web import Response, current_app, jsonify, request
@@ -267,7 +268,8 @@ def _handle_one(item: Any, settings) -> dict | None:
                     request_id, protocol.INVALID_PARAMS,
                     "'name' is required and must be a string.",
                 ))
-            result = dispatch_tool_call(tool_name, arguments)
+            with observed_operation('iris.mcp', 'tool_call'):
+                result = dispatch_tool_call(tool_name, arguments)
             return _reply(_rpc_result(request_id, {
                 'content': [{
                     'type': 'text',
@@ -298,7 +300,8 @@ def _handle_one(item: Any, settings) -> dict | None:
                     request_id, protocol.INVALID_PARAMS,
                     "'uri' is required and must be a string.",
                 ))
-            mime, payload = dispatch_resource_read(uri)
+            with observed_operation('iris.mcp', 'resource_read'):
+                mime, payload = dispatch_resource_read(uri)
             return _reply(_rpc_result(request_id, {
                 'contents': [{
                     'uri': uri,

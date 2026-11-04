@@ -217,6 +217,24 @@ def _resolve_slash(war_room_id, cmd, rest):
     row, or None if the command is unrecognised (the route layer then
     falls through to a normal message).
     """
+    if cmd == 'sandbox':
+        # The explicit flag is the operator's consent to send a file out of IRIS.
+        import shlex
+        from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
+        from app.models.authorization import CaseAccessLevel
+        from app.business.ptsandbox import start_scan
+        try:
+            parts = shlex.split(rest)
+        except ValueError:
+            parts = []
+        if len(parts) != 4 or parts[0] != 'check' or not parts[1].isdigit() or not parts[2].isdigit() or parts[3] != '--confirm':
+            raise BusinessProcessingError('Send file to PT Sandbox: /sandbox check <case_id> <file_id> --confirm. File IDs are shown in case PT Sandbox.')
+        case_id, file_id = int(parts[1]), int(parts[2])
+        if not ac_fast_check_current_user_has_case_access(case_id, [CaseAccessLevel.full_access]):
+            raise BusinessProcessingError('Full case access is required to submit a file')
+        check = start_scan(case_id, file_id, iris_current_user.id, confirmed=True, war_room_id=war_room_id)
+        return ('system', f'PT Sandbox: check #{check["id"]} queued. '
+                f'[Status and logs](/case/{case_id}/sandbox?scan={check["id"]})', None, None, case_id)
     if cmd == 'note':
         if not rest:
             raise BusinessProcessingError('Usage: /note <text>')
@@ -464,7 +482,8 @@ def _resolve_slash(war_room_id, cmd, rest):
     if cmd in ('help', '?'):
         body = (
             'Commands: /note /pin /decision /attach /detach /task /assign '
-            '/sitrep /summary /state /priority /thread /topic'
+            '/sitrep /summary /state /priority /thread /topic /sandbox\n'
+            'PT Sandbox: /sandbox check <case_id> <file_id> --confirm (sends the file to the appliance)'
         )
         return ('system', body, None, None, None)
 

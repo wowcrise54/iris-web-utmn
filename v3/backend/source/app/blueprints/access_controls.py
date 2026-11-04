@@ -18,8 +18,8 @@
 
 import ipaddress
 import json
-import logging as log
-import traceback
+import logging
+log = logging.getLogger(__name__)
 import uuid
 from functools import wraps
 
@@ -103,8 +103,7 @@ def _set_caseid_from_current_user():
 
 
 def _log_exception_and_error(e):
-    log.exception(e)
-    log.error(traceback.print_exc())
+    log.exception('access_control_failed')
 
 
 def _get_caseid_from_request_data(request_data, no_cid_required):
@@ -222,9 +221,14 @@ def _get_case_access(request_data, access_level, no_cid_required=False):
 
     _update_session(caseid, eaccess_level)
 
-    if caseid is not None and not get_case(caseid):
+    case = get_case(caseid) if caseid is not None else None
+    if caseid is not None and not case:
         log.warning('No case found. Using default case')
         return True, 1, True
+
+    if case is not None:
+        from app.observability_logging import bind_request_identity
+        bind_request_identity(case_id=case.case_id, customer_id=case.client_id)
 
     return redir, caseid, True
 
@@ -298,9 +302,14 @@ def get_case_access_from_api(request_data, access_level):
     if eaccess_level is None and access_level:
         return redir, caseid, False
 
-    if caseid is not None and not get_case(caseid):
+    case = get_case(caseid) if caseid is not None else None
+    if caseid is not None and not case:
         log.warning('No case found. Using default case')
         return True, 1, True
+
+    if case is not None:
+        from app.observability_logging import bind_request_identity
+        bind_request_identity(case_id=case.case_id, customer_id=case.client_id)
 
     return redir, caseid, True
 
@@ -385,7 +394,10 @@ def wrap_with_permission_checks(f, *permissions):
             if not _user_has_at_least_a_required_permission(permissions):
                 return response_error('Permission denied', status=403)
 
-        return f(*args, **kwargs)
+        from app.observability_logging import bind_request_identity, logging_context
+        bind_request_identity(user_id=iris_current_user.id)
+        with logging_context(user_id=iris_current_user.id):
+            return f(*args, **kwargs)
 
     return wrap
 

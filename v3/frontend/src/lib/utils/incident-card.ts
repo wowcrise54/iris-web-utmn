@@ -41,3 +41,54 @@ export function cardPayload(card: IncidentCard) {
 		selections: card.selections
 	};
 }
+
+export function deriveCard(fields: IncidentCard['fields']): IncidentCard['derived'] {
+	const value = (key: string) => fields[key]?.value;
+	const categories = Array.isArray(value('categories')) ? (value('categories') as number[]) : [];
+	const types = ['auxiliary', 'key', 'target'];
+	const column = types.indexOf(String(value('prioritization_type')));
+	const levels = ['low', 'medium', 'high'] as const;
+	const matrix = [
+		[1, 2, 2],
+		[2, 2, 2],
+		[1, 2, 2],
+		[0, 1, 1],
+		[0, 0, 1],
+		[0, 1, 1],
+		[0, 0, 0],
+		[0, 0, 0]
+	];
+	const ranks =
+		column < 0
+			? []
+			: categories
+					.filter((c) => Number.isInteger(c) && c >= 1 && c <= 8)
+					.map((c) => matrix[c - 1][column]);
+	const rank = ranks.length ? Math.max(...ranks) : null;
+	const importance = rank === null ? null : levels[rank];
+	const base =
+		rank === null
+			? null
+			: [
+					[9, 8, 6],
+					[7, 5, 3],
+					[4, 2, 1]
+				][column][rank];
+	const override = fields.priority_override;
+	const priority =
+		override?.mode === 'manual' && typeof override.value === 'number' ? override.value : base;
+	const start = value('occurred_at'),
+		end = value('incident_ended_at');
+	const seconds =
+		typeof start === 'string' && typeof end === 'string'
+			? (Date.parse(end) - Date.parse(start)) / 1000
+			: NaN;
+	return {
+		importance,
+		priority,
+		incident_duration_seconds:
+			value('completed') === true && Number.isFinite(seconds) && seconds >= 0
+				? Math.floor(seconds)
+				: null
+	};
+}

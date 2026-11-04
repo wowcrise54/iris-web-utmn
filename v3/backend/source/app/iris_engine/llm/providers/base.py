@@ -74,6 +74,7 @@ class Error:
     The loop surfaces this to the client as an error socket event."""
     message: str
     provider_code: str | None = None
+    http_status: int | None = None
 
 
 LLMEvent = TextDelta | ToolUseStart | ToolUseDelta | ToolUseEnd | MessageEnd | Error
@@ -119,6 +120,6 @@ class LLMProvider(Protocol):
         system: str,
         messages: list[ChatMessage],
         tools: list[ToolSpec],
-        max_tokens: int = 4096,
+        max_tokens: int | None = 4096,
     ) -> Iterator[LLMEvent]:
         ...

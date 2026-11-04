@@ -17,12 +17,40 @@
 	import AlertIocEditDialog from '../alert-ioc-edit-dialog.svelte';
 	import AlertAssetEditDialog from '../alert-asset-edit-dialog.svelte';
 	import { hasChanges, saveAlertAsset, saveAlertIoc } from '../../helpers/alert-observables';
+	import { getContext } from 'svelte';
+	import { USER_CTX, type UserCtx } from '$lib/contexts/user-context.context.svelte';
+	import { current_user } from '$lib/stores/auth.store';
+	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
+	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
+	import { toast } from '$lib/components/ui/toast';
+	const userCtx = getContext<UserCtx>(USER_CTX);
+	let creatingIoc = $state(false);
+	let deletingIoc = $state<Ioc | null>(null);
+	let confirmDeleteIoc = $state(false);
+	const addIoc = () => {
+		creatingIoc = true;
+		editedIoc = { ioc_id: 0, ioc_value: '', ioc_description: '', ioc_tags: '' } as Ioc;
+		iocDialogOpen = true;
+	};
+	const removeIoc = async () => {
+		if (!canManage || !deletingIoc || saving) return;
+		saving = true;
+		try {
+			const response = await AlertMaterialsService.removeIoc(alert.alert_id, deletingIoc.ioc_id);
+			if (!response.ok) throw new Error(response.error?.message ?? 'Could not remove IOC');
+			alert.iocs = alert.iocs.filter(row => row.ioc_id !== deletingIoc?.ioc_id);
+			deletingIoc = null;
+		} catch (e) { toast({ title: irisT(e instanceof Error ? e.message : 'Could not remove IOC', $irisLocale), variant: 'destructive' }); }
+		finally { saving = false; }
+	};
 
 	let {
 		alert
 	}: {
 		alert: Alert;
 	} = $props();
+	const canManage = $derived($current_user?.id != null && alert.alert_owner_id === $current_user.id && userCtx?.can('alerts_write') === true);
 
 	let showRawAlert = $state(false);
 
@@ -46,6 +74,7 @@
 	};
 
 	const editIoc = (ioc: Ioc) => {
+		creatingIoc = false;
 		editedIoc = ioc;
 		iocDialogOpen = true;
 	};
@@ -69,6 +98,18 @@
 	// what the tables render — nothing to refetch, and the other views
 	// on the same alert object see the edit too.
 	const saveIoc = async (ioc: Ioc, changes: Parameters<typeof saveAlertIoc>[2]) => {
+		if (!canManage || saving) return;
+		if (creatingIoc) {
+			saving = true;
+			try {
+				const response = await AlertMaterialsService.createIoc(alert.alert_id, changes);
+				if (!response.ok || !response.data || typeof response.data === 'string') throw new Error(response.error?.message ?? 'Could not add IOC');
+				alert.iocs = [...alert.iocs, response.data];
+				closeIocDialog();
+			} catch (e) { toast({ title: irisT(e instanceof Error ? e.message : 'Could not add IOC', $irisLocale), variant: 'destructive' }); }
+			finally { saving = false; }
+			return;
+		}
 		if (!hasChanges(changes)) {
 			closeIocDialog();
 			return;
@@ -212,18 +253,18 @@
 	</div>
 
 	<!-- IOCs -->
-	{#if alert.iocs.length}
 		<div class="rounded-lg border border-border/50 bg-muted/30 p-4">
-			<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{irisT("IOCs", $irisLocale)}</h4>
+			<div class="mb-3 flex items-center justify-between"><h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{irisT("IOCs", $irisLocale)} ({alert.iocs.length})</h4>{#if canManage}<Button size="sm" variant="outline" disabled={saving} onclick={addIoc}>{irisT('Add IOC', $irisLocale)}</Button>{/if}</div>
 			<IocDataTable
 				iocs={alert.iocs}
 				showDescription
 				showTags
 				onShowEnrichment={(ioc) => showEnrichment(ioc.ioc_value, ioc.ioc_enrichment)}
-				onEdit={editIoc}
+				onEdit={canManage ? editIoc : undefined}
+				onDelete={canManage ? (ioc) => { deletingIoc = ioc; confirmDeleteIoc = true; } : undefined}
 			/>
 		</div>
-	{/if}
+	<AlertArtifacts {alert} {canManage} />
 
 	<!-- Assets -->
 	{#if alert.assets.length}
@@ -282,10 +323,13 @@
 		bind:open={iocDialogOpen}
 		ioc={editedIoc}
 		{saving}
+		creating={creatingIoc}
 		onClose={closeIocDialog}
 		onSave={(changes) => editedIoc && saveIoc(editedIoc, changes)}
 	/>
 {/if}
+
+<ConfirmationDialog bind:open={confirmDeleteIoc} title={irisT('Remove IOC from alert', $irisLocale)} message={deletingIoc?.ioc_value ?? ''} onConfirm={removeIoc} />
 
 {#if editedAsset}
 	<AlertAssetEditDialog

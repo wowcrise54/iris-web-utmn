@@ -147,6 +147,7 @@ def approve_pending_tool_call(
         conv.id, row.assistant_message_id,
     )
     if remaining > 0:
+        emit(ChatEvent('assistant_progress', {'stage': 'awaiting_approval'}))
         return
 
     run_one_iteration(conversation=conv, emit=emit)
@@ -199,6 +200,7 @@ def deny_pending_tool_call(
         conv.id, row.assistant_message_id,
     )
     if remaining > 0:
+        emit(ChatEvent('assistant_progress', {'stage': 'awaiting_approval'}))
         return
 
     run_one_iteration(conversation=conv, emit=emit)

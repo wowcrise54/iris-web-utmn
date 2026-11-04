@@ -584,6 +584,8 @@ class ServerSettings(db.Model):
                            server_default=text("''"))
     chatbot_base_url = Column(String(500), nullable=False, default='',
                               server_default=text("''"))
+    chatbot_max_output_tokens = Column(
+        Integer, nullable=False, default=2048, server_default=text('2048'))
     chatbot_max_turns_per_conversation = Column(
         Integer, nullable=False, default=25, server_default=text('25'))
     chatbot_max_tool_calls_per_turn = Column(

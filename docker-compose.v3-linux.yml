@@ -1,0 +1,21 @@
+# Fresh, empty Linux v3 install. Pair with upgrade-validation + v3.yml;
+# never use this overlay with a saved/live data stack.
+services:
+  db:
+    # The inherited validation file builds PostgreSQL 12. On a fresh host use
+    # the PostgreSQL 18 image above and let Compose pull it if it is absent.
+    build: !reset null
+    pull_policy: missing
+    env_file: !override ["${V3_ENV_FILE:-.env.v3.validation}"]
+    environment: !override
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+volumes:
+  v3-db:
+    external: false
+  v3-downloads:
+    external: false
+  v3-templates:
+    external: false
+  v3-server-data:
+    external: false

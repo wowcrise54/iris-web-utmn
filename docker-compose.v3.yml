@@ -20,6 +20,9 @@ services:
       interval: 5s
       retries: 30
   app:
+    logging: &iris-logging
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
     image: iris-v3-fastapi:local
     build:
       context: ./v3/backend
@@ -44,6 +47,7 @@ services:
       db: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}
   worker:
+    logging: *iris-logging
     image: iris-v3-fastapi:local
     build:
       context: ./v3/backend
@@ -62,6 +66,7 @@ services:
     depends_on:
       app: {condition: service_healthy}
   frontend:
+    logging: *iris-logging
     image: iris-v3-frontend-ru:local
     build:
       context: ./v3/frontend
@@ -74,6 +79,9 @@ services:
       HOST_HEADER: x-forwarded-host
       BODY_SIZE_LIMIT: Infinity
       NODE_ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      IRIS_LOG_FORMAT: ${IRIS_LOG_FORMAT:-json}
+      IRIS_LOG_LEVELS: ${IRIS_LOG_LEVELS:-{}}
       IRIS_ALLOW_ORIGIN: https://localhost:${V3_HTTPS_PORT:-18545}
       IRIS_UI_SENTRY_DSN: ${IRIS_UI_SENTRY_DSN:-}
       IRIS_UI_ENVELOPE_ALLOW_PRIVATE: ${IRIS_UI_ENVELOPE_ALLOW_PRIVATE:-0}
@@ -85,6 +93,7 @@ services:
       retries: 60
       start_period: 30s
   nginx:
+    logging: *iris-logging
     image: iris-v3-nginx:local
     build:
       context: ./v3/backend/docker/nginx

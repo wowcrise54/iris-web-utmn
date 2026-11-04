@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { writable } from 'svelte/store';
 import { ApiService } from '$lib/services/api.service';
 import { ENDPOINTS } from '$lib/constants/endpoints';
@@ -23,7 +24,7 @@ function createTlpStore() {
 					}
 					initialized = true;
 				} catch (error) {
-					console.error('Error fetching tlp types:', error);
+					logger.error('Error fetching tlp types:', error);
 				} finally {
 					fetchPromise = null;
 					resolve();

@@ -9,6 +9,7 @@
 	import DataTable from '$lib/components/ui/data-table-tanstack/data-table.svelte';
 	import TlpBadge from '../tlp/TlpBadge.svelte';
 	import IocNameCell from './IocNameCell.svelte';
+	import OpenCTIStatus from '../OpenCTIStatus.svelte';
 	import RowCheckbox from '$lib/components/common/RowCheckbox.svelte';
 	import TagDisplay from '$lib/components/common/tag/TagDisplay.svelte';
 	import RowActionsCell from '$lib/components/common/table/RowActionsCell.svelte';
@@ -32,6 +33,7 @@
 	export let showTags: boolean = false;
 	export let onShowEnrichment: ((ioc: Ioc) => void) | undefined = undefined;
 	export let onEdit: ((ioc: Ioc) => void) | undefined = undefined;
+	export let onDelete: ((ioc: Ioc) => void) | undefined = undefined;
 
 	const dispatch = createEventDispatcher();
 
@@ -79,7 +81,7 @@
 		{
 			accessorKey: 'ioc_value',
 			header: () => 'Name',
-			meta: { tdClass: 'max-w-0' },
+			meta: { thClass: detailed ? 'w-[26%]' : 'w-[34%]', tdClass: 'max-w-0 align-top' },
 			cell: (cell) => {
 				const ioc = cell.row.original;
 				if (caseId != null) {
@@ -89,19 +91,20 @@
 						value: ioc.ioc_value
 					});
 				}
-				return ioc.ioc_value;
+				return renderComponent(IocNameCell, { value: ioc.ioc_value });
 			}
 		},
 		{
 			accessorKey: 'ioc_type.type_name',
 			header: () => 'Type',
-			meta: { thClass: detailed ? 'w-[14%]' : 'w-1/4' },
-			cell: (cell) => cell.getValue() || '-'
+			meta: { thClass: detailed ? 'w-[11%]' : 'w-[20%]', tdClass: 'max-w-0 align-top' },
+			cell: (cell) =>
+				renderComponent(TruncatedTextCell, { value: cell.getValue() as string | null })
 		},
 		{
 			accessorKey: 'tlp.tlp_name',
 			header: () => 'TLP',
-			meta: { thClass: detailed ? 'w-[12%]' : 'w-[30%]' },
+			meta: { thClass: 'w-36', tdClass: 'align-top' },
 			cell: (cell) => {
 				const tlpName = cell.getValue() as string;
 				return renderComponent(TlpBadge, { tlp_name: tlpName });
@@ -112,7 +115,7 @@
 					{
 						accessorKey: 'ioc_description',
 						header: () => 'Description',
-						meta: { thClass: 'w-[28%]', tdClass: 'max-w-0' },
+						meta: { thClass: 'w-[22%]', tdClass: 'max-w-0 align-top' },
 						cell: (cell) =>
 							renderComponent(TruncatedTextCell, { value: cell.getValue() as string | null })
 					} as ColumnDef<Ioc>
@@ -123,13 +126,27 @@
 					{
 						accessorKey: 'ioc_tags',
 						header: () => 'Tags',
-						meta: { thClass: 'w-[18%]', tdClass: 'max-w-0' },
+						meta: { thClass: 'w-[13%]', tdClass: 'max-w-0 align-top' },
 						cell: (cell) =>
-							renderComponent(TagDisplay, { tags: (cell.getValue() as string) ?? '', size: 'xs' })
+							renderComponent(TagDisplay, {
+								tags: (cell.getValue() as string) ?? '',
+								size: 'xs',
+								className: 'min-w-0 max-w-full [&>div]:min-w-0 [&>div]:max-w-full'
+							})
 					} as ColumnDef<Ioc>
 				]
 			: []),
-		...(onEdit || onShowEnrichment
+		{
+			id: 'opencti',
+			header: () => 'OpenCTI',
+			meta: {
+				thClass: detailed ? 'w-[18%]' : 'w-[28%]',
+				tdClass: 'align-top [overflow-wrap:anywhere]'
+			},
+			cell: (cell) =>
+				renderComponent(OpenCTIStatus, { enrichment: cell.row.original.ioc_enrichment })
+		},
+		...(onEdit || onDelete || onShowEnrichment
 			? [
 					{
 						id: '__actions__',
@@ -142,6 +159,7 @@
 								hasEnrichment: !!ioc.ioc_enrichment,
 								onShowEnrichment: onShowEnrichment && (() => onShowEnrichment?.(ioc)),
 								onEdit: onEdit && (() => onEdit?.(ioc)),
+								onDelete: onDelete && (() => onDelete?.(ioc)),
 								editLabel: 'Edit IOC',
 								enrichmentLabel: 'View IOC enrichment'
 							});
@@ -168,15 +186,15 @@
 		: dataColumns;
 </script>
 
-<div class="{className} flex overflow-auto">
+<div class="{className} flex w-full min-w-0 overflow-auto">
 	{#if !iocs || iocs.length === 0}
 		<div class="w-full p-4 text-center">
-			<p>{irisT("No IOCs to display.", $irisLocale)}</p>
+			<p>{irisT('No IOCs to display.', $irisLocale)}</p>
 		</div>
 	{:else}
 		<DataTable
 			columns={columns as ColumnDef<unknown>[]}
-			tableClass="w-full table-fixed text-sm"
+			tableClass="w-full table-fixed text-sm {detailed ? 'min-w-[1100px]' : 'min-w-[640px]'}"
 			data={iocs}
 			bind:page={currentPage}
 			bind:pageSize={currentPageSize}

@@ -37,6 +37,8 @@
 	import { toast } from '$lib/components/ui/toast';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
 	import ProviderCheck from '$lib/components/chat/ProviderCheck.svelte';
+	import LimitInput from '$lib/components/chat/LimitInput.svelte';
+	import { invalidChatbotLimits, CHATBOT_LIMIT_ERROR } from '$lib/utils/chatbot-limits';
 	import SearchSelect from '$lib/components/common/selects/SearchSelect.svelte';
 	import {
 		ChatbotAdminService,
@@ -99,6 +101,7 @@
 		'chatbot_api_key',
 		'chatbot_model',
 		'chatbot_base_url',
+		'chatbot_max_output_tokens',
 		'chatbot_max_turns_per_conversation',
 		'chatbot_max_tool_calls_per_turn',
 		'chatbot_auto_execute_read_tools',
@@ -131,6 +134,7 @@
 			}
 		}
 		if (Object.keys(patch).length === 0) return;
+		if (invalidChatbotLimits(patch)) { srvSaveError = irisT(CHATBOT_LIMIT_ERROR, $irisLocale); return; }
 		srvSaving = true;
 		srvSaveError = null;
 		try {
@@ -196,6 +200,7 @@
 			base_url: '',
 			auto_execute_read_tools: true,
 			auto_approve_write_tools: false,
+			max_output_tokens: 2048,
 			max_turns_per_conversation: 25,
 			max_tool_calls_per_turn: 8,
 			daily_token_budget_per_user: 500_000,
@@ -221,6 +226,7 @@
 			base_url: p.base_url,
 			auto_execute_read_tools: p.auto_execute_read_tools,
 			auto_approve_write_tools: p.auto_approve_write_tools,
+			max_output_tokens: p.max_output_tokens ?? 2048,
 			max_turns_per_conversation: p.max_turns_per_conversation,
 			max_tool_calls_per_turn: p.max_tool_calls_per_turn,
 			daily_token_budget_per_user: p.daily_token_budget_per_user,
@@ -239,6 +245,7 @@
 	}
 
 	async function submit() {
+		if (invalidChatbotLimits(form)) { toast({ title: irisT(CHATBOT_LIMIT_ERROR, $irisLocale), variant: 'destructive' }); return; }
 		submitting = true;
 		try {
 			const body: ChatbotPolicyBody = { ...form };
@@ -755,24 +762,20 @@
 						</div>
 
 						<div class="flex flex-col gap-1">
+                            <label for="chatbot-max-output" class="text-2xs font-medium uppercase tracking-wide text-muted-foreground">{irisT('Max output tokens / answer', $irisLocale)}</label>
+                            <LimitInput id="chatbot-max-output" label={irisT('Max output tokens / answer', $irisLocale)} value={srvForm.chatbot_max_output_tokens} fallback={2048} disabled={srvSaving} onChange={(value) => (srvForm.chatbot_max_output_tokens = value)} />
+                        </div>
+                        <p class="text-xs text-muted-foreground sm:col-span-2">{irisT('Zero disables a Yuki limit. Provider context, output and rate limits still apply. Anthropic requires a discoverable model maximum or an explicit output limit.', $irisLocale)}</p>
+                        <div class="flex flex-col gap-1">
 							<label
 								for="chatbot-max-turns"
 								class="text-2xs font-medium uppercase tracking-wide text-muted-foreground"
 							>
 								{irisT("Max turns / conversation", $irisLocale)}
 							</label>
-							<Input
-								id="chatbot-max-turns"
-								type="number"
-								min="1"
-								class="h-7 text-xs"
-								value={String(srvForm.chatbot_max_turns_per_conversation ?? '')}
-								disabled={srvSaving}
-								oninput={(e) => {
-									const raw = (e.currentTarget as HTMLInputElement).value;
-									srvForm.chatbot_max_turns_per_conversation = raw === '' ? 25 : Number(raw);
-								}}
-							/>
+							<LimitInput id="chatbot-max-turns" label={irisT('Max turns / conversation', $irisLocale)}
+                                value={srvForm.chatbot_max_turns_per_conversation} fallback={25} disabled={srvSaving}
+                                onChange={(value) => (srvForm.chatbot_max_turns_per_conversation = value)} />
 						</div>
 
 						<div class="flex flex-col gap-1">
@@ -782,18 +785,9 @@
 							>
 								{irisT("Max tool calls / turn", $irisLocale)}
 							</label>
-							<Input
-								id="chatbot-max-tool-calls"
-								type="number"
-								min="1"
-								class="h-7 text-xs"
-								value={String(srvForm.chatbot_max_tool_calls_per_turn ?? '')}
-								disabled={srvSaving}
-								oninput={(e) => {
-									const raw = (e.currentTarget as HTMLInputElement).value;
-									srvForm.chatbot_max_tool_calls_per_turn = raw === '' ? 8 : Number(raw);
-								}}
-							/>
+							<LimitInput id="chatbot-max-tool-calls" label={irisT('Max tool calls / turn', $irisLocale)}
+                                value={srvForm.chatbot_max_tool_calls_per_turn} fallback={8} disabled={srvSaving}
+                                onChange={(value) => (srvForm.chatbot_max_tool_calls_per_turn = value)} />
 						</div>
 
 						<div class="flex flex-col gap-1">
@@ -803,18 +797,9 @@
 							>
 								{irisT("Daily token budget / user", $irisLocale)}
 							</label>
-							<Input
-								id="chatbot-budget-user"
-								type="number"
-								min="0"
-								class="h-7 text-xs"
-								value={String(srvForm.chatbot_daily_token_budget_per_user ?? '')}
-								disabled={srvSaving}
-								oninput={(e) => {
-									const raw = (e.currentTarget as HTMLInputElement).value;
-									srvForm.chatbot_daily_token_budget_per_user = raw === '' ? 500000 : Number(raw);
-								}}
-							/>
+							<LimitInput id="chatbot-budget-user" label={irisT('Daily token budget / user', $irisLocale)}
+                                value={srvForm.chatbot_daily_token_budget_per_user} fallback={500000} disabled={srvSaving}
+                                onChange={(value) => (srvForm.chatbot_daily_token_budget_per_user = value)} />
 						</div>
 
 						<div class="flex flex-col gap-1">
@@ -824,18 +809,9 @@
 							>
 								{irisT("Daily token budget / org", $irisLocale)}
 							</label>
-							<Input
-								id="chatbot-budget-org"
-								type="number"
-								min="0"
-								class="h-7 text-xs"
-								value={String(srvForm.chatbot_daily_token_budget_org ?? '')}
-								disabled={srvSaving}
-								oninput={(e) => {
-									const raw = (e.currentTarget as HTMLInputElement).value;
-									srvForm.chatbot_daily_token_budget_org = raw === '' ? 10000000 : Number(raw);
-								}}
-							/>
+							<LimitInput id="chatbot-budget-org" label={irisT('Daily token budget / org', $irisLocale)}
+                                value={srvForm.chatbot_daily_token_budget_org} fallback={10000000} disabled={srvSaving}
+                                onChange={(value) => (srvForm.chatbot_daily_token_budget_org = value)} />
 						</div>
 
 						<label class="flex items-start gap-2 sm:col-span-2">
@@ -1192,22 +1168,22 @@
 					placeholder={irisT("sk-…", $irisLocale)}
 				/>
 			</label>
-			<label class="flex flex-col gap-1">
-				<span>{irisT("Max turns / conversation", $irisLocale)}</span>
-				<Input type="number" bind:value={form.max_turns_per_conversation} min="1" />
-			</label>
-			<label class="flex flex-col gap-1">
-				<span>{irisT("Max tool calls / turn", $irisLocale)}</span>
-				<Input type="number" bind:value={form.max_tool_calls_per_turn} min="1" />
-			</label>
-			<label class="flex flex-col gap-1">
-				<span>{irisT("Daily budget · user", $irisLocale)}</span>
-				<Input type="number" bind:value={form.daily_token_budget_per_user} min="0" />
-			</label>
-			<label class="flex flex-col gap-1">
-				<span>{irisT("Daily budget · org", $irisLocale)}</span>
-				<Input type="number" bind:value={form.daily_token_budget_org} min="0" />
-			</label>
+			<div class="flex flex-col gap-1"><span>{irisT('Max output tokens / answer', $irisLocale)}</span>
+                <LimitInput id="policy-max-output" label={irisT('Max output tokens / answer', $irisLocale)} value={form.max_output_tokens} fallback={2048} onChange={(value) => (form.max_output_tokens = value)} />
+            </div>
+            <p class="col-span-2 text-xs text-muted-foreground">{irisT('Zero disables a Yuki limit. Provider context, output and rate limits still apply. Anthropic requires a discoverable model maximum or an explicit output limit.', $irisLocale)}</p>
+            <div class="flex flex-col gap-1"><span>{irisT('Max turns / conversation', $irisLocale)}</span>
+                <LimitInput id="policy-max_turns_per_conversation" label={irisT('Max turns / conversation', $irisLocale)} value={form.max_turns_per_conversation} fallback={25} onChange={(value) => (form.max_turns_per_conversation = value)} />
+            </div>
+			<div class="flex flex-col gap-1"><span>{irisT('Max tool calls / turn', $irisLocale)}</span>
+                <LimitInput id="policy-max_tool_calls_per_turn" label={irisT('Max tool calls / turn', $irisLocale)} value={form.max_tool_calls_per_turn} fallback={8} onChange={(value) => (form.max_tool_calls_per_turn = value)} />
+            </div>
+			<div class="flex flex-col gap-1"><span>{irisT('Daily budget · user', $irisLocale)}</span>
+                <LimitInput id="policy-daily_token_budget_per_user" label={irisT('Daily budget · user', $irisLocale)} value={form.daily_token_budget_per_user} fallback={500000} onChange={(value) => (form.daily_token_budget_per_user = value)} />
+            </div>
+			<div class="flex flex-col gap-1"><span>{irisT('Daily budget · org', $irisLocale)}</span>
+                <LimitInput id="policy-daily_token_budget_org" label={irisT('Daily budget · org', $irisLocale)} value={form.daily_token_budget_org} fallback={10000000} onChange={(value) => (form.daily_token_budget_org = value)} />
+            </div>
 			<label class="col-span-2 flex items-center gap-2">
 				<Switch
 					checked={form.auto_execute_read_tools ?? true}

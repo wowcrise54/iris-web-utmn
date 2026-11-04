@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { writable, get } from 'svelte/store';
 import type { Asset } from '$lib/types/resources/asset';
 
@@ -41,7 +42,7 @@ function createAssetsStore() {
 					? { ...existingAsset, ...updatedAsset }
 					: { ...updatedAsset };
 
-				console.log('mergedAsset', mergedAsset);
+				logger.debug('mergedAsset', mergedAsset);
 				return {
 					...store,
 					assets: {

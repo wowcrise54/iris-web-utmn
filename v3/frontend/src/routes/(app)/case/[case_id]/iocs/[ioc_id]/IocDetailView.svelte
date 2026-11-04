@@ -11,6 +11,7 @@
 <script lang="ts">
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
+	import OpenCTIEnrichment from '$lib/components/common/OpenCTIEnrichment.svelte';
 
 	import { getContext } from 'svelte';
 	import { fade } from 'svelte/transition';
@@ -381,6 +382,7 @@
 					-->
 					<div class="min-h-0 flex-1 overflow-y-auto">
 						<TabsContent value="details" class="mt-0 min-h-full">
+							<OpenCTIEnrichment enrichment={ioc.ioc_enrichment} />
 							<DetailsTab
 								{ioc}
 								{isEditing}

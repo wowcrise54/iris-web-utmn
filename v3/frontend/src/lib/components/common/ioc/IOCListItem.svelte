@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -69,7 +71,7 @@
 				});
 			})
 			.catch((err) => {
-				console.error('Failed to copy:', err);
+				logger.error('Failed to copy:', err);
 				toast({
 					title: irisT("Copy failed", $irisLocale),
 					description: irisT("Could not copy to clipboard", $irisLocale),

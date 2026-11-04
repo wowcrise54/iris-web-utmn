@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { auth } from './auth.store';
 import { goto } from '$app/navigation';
 import { page } from '$app/stores';
@@ -8,7 +9,7 @@ const publicPaths = ['/login', '/register', '/forgot-password'];
 
 export const navigation = derived([page], ([$page]) => {
 	const path = $page.url.pathname;
-	console.log('Navigation guard:', path, auth.isAuthenticated());
+	logger.debug('Navigation guard:', path, auth.isAuthenticated());
 
 	if (protectedPaths.some((p) => path.startsWith(p)) && !auth.isAuthenticated()) {
 		goto(`/login?redirect=${encodeURIComponent(path)}`);

@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 /**
  * Markdown stored in IRIS often embeds links/images that point at
  * datastore files, e.g.
@@ -193,7 +194,7 @@ const openOrDownload = async (
 		// Best-effort signal. Surface a console error here rather than
 		// a toast — the helper has no Svelte/toast context to pull from
 		// and the calling MarkDownPreview is a leaf component.
-		console.error('[datastore] failed to fetch file', { caseId, fileId });
+		logger.error('[datastore] failed to fetch file', { caseId, fileId });
 		return;
 	}
 
@@ -214,6 +215,6 @@ const openOrDownload = async (
 	const w = window.open(fetched.url, '_blank', 'noopener');
 	setTimeout(() => URL.revokeObjectURL(fetched.url), 60_000);
 	if (!w) {
-		console.warn('[datastore] pop-up blocked');
+		logger.warn('[datastore] pop-up blocked');
 	}
 };

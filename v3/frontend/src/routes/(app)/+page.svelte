@@ -12,6 +12,8 @@
   immediately, no tab switching required.
 -->
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translateActivity } from "$lib/i18n/activity";
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
@@ -312,7 +314,7 @@
 			const rows = (res.data as { data?: unknown[] })?.data ?? (res.data as unknown[]);
 			const list = Array.isArray(rows) ? (rows as RawTask[]) : [];
 			if (list.length > 0) {
-				console.log('[dashboard] tasks sample row →', list[0]);
+				logger.debug('[dashboard] tasks sample row →', list[0]);
 			}
 			const items: UserTask[] = list.map((t) => ({
 				task_id: t.task_id,

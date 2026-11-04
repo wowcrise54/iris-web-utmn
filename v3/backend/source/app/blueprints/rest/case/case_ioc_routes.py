@@ -19,7 +19,8 @@
 from datetime import datetime
 
 import csv
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import marshmallow
 from app.web import Blueprint
 from app.web import request
@@ -195,7 +196,7 @@ def case_upload_ioc(caseid):
 
             if not ioc:
                 errors.append(f'{ioc.ioc_value} (internal reasons)')
-                log.error(f'Unable to create IOC {ioc.ioc_value} for internal reasons')
+                log.error('Unable to create IOC for internal reasons')
                 continue
 
             add_ioc(ioc, iris_current_user.id, caseid)

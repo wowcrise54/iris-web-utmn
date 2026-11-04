@@ -17,15 +17,23 @@
 		toolName,
 		argsData = {},
 		result = undefined,
-		error = undefined
+		error = undefined,
+		status = undefined
 	}: {
 		toolUseId: string;
 		toolName: string;
 		argsData?: Record<string, unknown>;
 		result?: unknown;
 		error?: string;
+		status?: 'executing_tool' | 'awaiting_approval' | 'completed' | 'failed';
 	} = $props();
 
+	const statusLabels = {
+		executing_tool: 'Running',
+		awaiting_approval: 'Waiting for approval',
+		completed: 'Done',
+		failed: 'Request failed'
+	};
 	let expanded = $state(false);
 </script>
 
@@ -47,13 +55,17 @@
 		{/if}
 		<WrenchIcon size={10} class="text-muted-foreground" />
 		<code class="font-mono text-2xs">{toolName}</code>
-		{#if error}
-			<span class="ml-auto text-destructive">{irisT("error", $irisLocale)}</span>
+		{#if status}
+			<span class="ml-auto text-muted-foreground" class:text-destructive={status === 'failed'}
+				>{irisT(statusLabels[status], $irisLocale)}</span
+			>
+		{:else if error}
+			<span class="ml-auto text-destructive">{irisT('error', $irisLocale)}</span>
 		{/if}
 	</button>
 	{#if expanded}
 		<div class="border-t px-2 py-1">
-			<div class="mb-1 text-muted-foreground">{irisT("args", $irisLocale)}</div>
+			<div class="mb-1 text-muted-foreground">{irisT('args', $irisLocale)}</div>
 			<pre
 				class="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs">{JSON.stringify(
 					argsData,
@@ -61,9 +73,9 @@
 					2
 				)}</pre>
 			{#if error}
-				<div class="mt-1 text-destructive">{irisT("error:", $irisLocale)} {error}</div>
+				<div class="mt-1 text-destructive">{irisT('error:', $irisLocale)} {error}</div>
 			{:else if result !== undefined}
-				<div class="mt-1 text-muted-foreground">{irisT("result", $irisLocale)}</div>
+				<div class="mt-1 text-muted-foreground">{irisT('result', $irisLocale)}</div>
 				<pre
 					class="max-h-40 overflow-auto whitespace-pre-wrap break-all font-mono text-2xs">{typeof result ===
 					'string'

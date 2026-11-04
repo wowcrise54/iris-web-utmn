@@ -51,6 +51,7 @@
 	import { toast } from '$lib/components/ui/toast';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
 	import JsonEditor from '$lib/components/common/editors/JsonEditor.svelte';
+	import PTSandboxSettings from '$lib/components/common/PTSandboxSettings.svelte';
 	import { mediumDateTimeFormatter } from '$lib/utils/time-formatter';
 	import {
 		ModulesService,
@@ -832,6 +833,9 @@
 			</div>
 		{:else}
 			<!-- Metadata strip + actions -->
+			{#if configModule.module_name === 'iris_ptsandbox_module'}
+				<PTSandboxSettings module={configModule} />
+			{/if}
 			<div class="flex flex-wrap items-center gap-x-4 gap-y-2 border-y py-2 text-2xs">
 				<span class="text-muted-foreground">
 					{irisT("Package", $irisLocale)} <span class="ml-1 font-mono text-foreground">{configModule.module_name}</span>

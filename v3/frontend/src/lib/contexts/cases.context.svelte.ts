@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { CaseService } from '$lib/services/case.service';
 import type {
 	CaseIdentifier,
@@ -334,7 +335,7 @@ export const createCasesContext = (getId: (c: Case) => number, app: AppContext) 
 		try {
 			const res = await CaseStatesService.list(options);
 			if (!res.ok || res.error) {
-				console.error('[cases] failed to load case states', res);
+				logger.error('[cases] failed to load case states', res);
 				return null;
 			}
 			// Legacy /manage endpoints wrap the payload in { status, message, data }.
@@ -344,7 +345,7 @@ export const createCasesContext = (getId: (c: Case) => number, app: AppContext) 
 				? (body as CaseState[])
 				: ((body as { data?: CaseState[] })?.data ?? null);
 			if (!Array.isArray(list)) {
-				console.error('[cases] case-states response missing data array', res);
+				logger.error('[cases] case-states response missing data array', res);
 				return null;
 			}
 			stateStore.list = list;
@@ -358,7 +359,7 @@ export const createCasesContext = (getId: (c: Case) => number, app: AppContext) 
 		const list = await loadStates(options);
 		if (!list) return null;
 		const stateId = findStateIdByName(list, name);
-		if (stateId == null) console.error(`[cases] state "${name}" not found in`, list);
+		if (stateId == null) logger.error(`[cases] state "${name}" not found in`, list);
 		return stateId;
 	};
 
@@ -374,7 +375,7 @@ export const createCasesContext = (getId: (c: Case) => number, app: AppContext) 
 	): Promise<Case | null> => {
 		const stateId = await resolveStateId(targetName, options);
 		if (stateId == null) {
-			console.error(`[cases] cannot resolve state id for "${targetName}"; skipping update`);
+			logger.error(`[cases] cannot resolve state id for "${targetName}"; skipping update`);
 			return await get(id, options);
 		}
 		return await patch(id, { state_id: stateId, ...extra }, options);

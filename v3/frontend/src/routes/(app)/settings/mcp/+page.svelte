@@ -7,9 +7,8 @@
   Reporting section of /settings/server: local `form` snapshot, diff
   against `payload` on save so only changed keys hit the wire.
 
-  The "Available tools" reveal fetches `POST /api/v2/mcp` with a
-  `tools/list` request so admins can pick names for the allow/deny lists
-  without needing to grep the source.
+  The "Available tools" reveal reads the admin catalogue, which shares
+  discovery rules with the MCP endpoint and accepts the browser session.
 -->
 <script lang="ts">
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
@@ -24,6 +23,7 @@
 	import { toast } from '$lib/components/ui/toast';
 	import {
 		ServerSettingsService,
+		type McpToolDescriptor,
 		type ServerSettings,
 		type ServerSettingsResponse,
 		type ServerSettingsUpdateBody
@@ -51,14 +51,14 @@
 	// Working copy the form binds to.
 	let form = $state<Partial<ServerSettings>>({});
 
-	// Tool listing state (populated on demand via a real JSON-RPC call
-	// to /api/v2/mcp — we go through the transport rather than an admin
-	// side channel so admins see exactly the tool set clients see).
-	type ToolDescriptor = { name: string; description: string };
-	let toolsList = $state<ToolDescriptor[] | null>(null);
+	let toolsList = $state<McpToolDescriptor[] | null>(null);
 	let toolsListLoading = $state(false);
 	let toolsListError = $state<string | null>(null);
 	let toolsListOpen = $state(false);
+	let toolSearch = $state('');
+	const filteredTools = $derived((toolsList ?? []).filter((tool) =>
+		`${tool.name} ${tool.description}`.toLowerCase().includes(toolSearch.toLowerCase())
+	));
 
 	const showError = (msg: string, fallback = 'Operation failed') =>
 		toast({ title: msg || fallback, variant: 'destructive' });
@@ -116,6 +116,8 @@
 				}
 				form = { ...(res.data as ServerSettings) };
 				showSuccess('MCP settings updated');
+				toolsList = null;
+				if (toolsListOpen) await fetchToolsList();
 			} else {
 				const data = res.data as { message?: string } | null;
 				saveError = data?.message ?? res.error?.message ?? 'Save failed';
@@ -137,18 +139,12 @@
 		toolsListLoading = true;
 		toolsListError = null;
 		try {
-			// Cookie auth is fine here — the SPA is on the same origin
-			// and has an established session; the transport-level "API
-			// key required" gate applies to *external* MCP clients.
-			// Wait — the transport requires X-IRIS-AUTH or Authorization
-			// per module docstring; the SPA doesn't have either. Fall
-			// back to reading the tool set via a dedicated admin-only
-			// side channel would be cleaner. For v1 we surface just the
-			// user-supplied allow/deny CSV without the interactive pick
-			// list; the reveal button remains but tells the admin to
-			// use the JSON-RPC endpoint directly.
-			toolsListError =
-				'Interactive tool picker is out of scope for v1 — configure the allow/deny lists as comma-separated tool names. Point an MCP client at /api/v2/mcp to see the tools/list response.';
+			const res = await ServerSettingsService.getMcpTools();
+			if (res.ok && res.data && typeof res.data !== 'string') {
+				toolsList = res.data.tools;
+			} else {
+				toolsListError = res.error?.message ?? irisT('Failed to load MCP tools', $irisLocale);
+			}
 		} catch (e) {
 			toolsListError = (e as Error).message;
 		} finally {
@@ -358,13 +354,32 @@
 								<p class="whitespace-pre-wrap text-2xs text-muted-foreground">
 									{toolsListError}
 								</p>
+								<Button size="sm" variant="ghost" onclick={fetchToolsList}>
+									{irisT('Retry', $irisLocale)}
+								</Button>
 							{:else if toolsList && toolsList.length}
-								<ul class="flex flex-col gap-1 text-2xs">
-									{#each toolsList as tool (tool.name)}
-										<li>
-											<code class="font-mono">{tool.name}</code>
-											<span class="text-muted-foreground"> — {tool.description}</span>
+								<p class="mb-2 text-2xs text-muted-foreground">
+									{irisT('Tools available with saved MCP settings and your permissions', $irisLocale)}: {toolsList.length}
+								</p>
+								<Input class="mb-3 h-7 text-xs" bind:value={toolSearch}
+									aria-label={irisT('Search tools', $irisLocale)} placeholder={irisT('Search tools', $irisLocale)} />
+								<ul class="flex max-h-96 flex-col gap-3 overflow-y-auto text-2xs">
+									{#each filteredTools as tool (tool.name)}
+										<li class="border-b pb-3 last:border-b-0">
+											<div class="flex flex-wrap items-center gap-2">
+												<code class="break-all font-mono">{tool.name}</code>
+												<span class="rounded border px-1.5 py-0.5">
+													{irisT(tool.read_only ? 'Read only' : 'Changes data', $irisLocale)}
+												</span>
+											</div>
+											<p class="mt-1 whitespace-pre-wrap text-muted-foreground">{tool.description}</p>
+											<details class="mt-1">
+												<summary class="cursor-pointer">{irisT('Tool parameters', $irisLocale)}</summary>
+												<pre class="mt-2 overflow-x-auto">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+											</details>
 										</li>
+									{:else}
+										<li>{irisT('No matching tools', $irisLocale)}</li>
 									{/each}
 								</ul>
 							{:else}

@@ -42,6 +42,7 @@ from app.models.models import IrisModuleHook
 from app.util import hmac_sign
 from app.util import hmac_verify
 from iris_interface import IrisInterfaceStatus as IStatus
+from app.iris_engine.module_handler.hook_data import reload_hook_data
 
 
 def check_module_compatibility(module_version):
@@ -286,6 +287,10 @@ def register_module(module_name):
         if module is None:
             return None, "Unable to register module"
 
+        if not getattr(mod_inst, '_default_enabled', True):
+            module.is_active = False
+            db.session.commit()
+
         if mod_inst.get_module_type() == 'module_processor':
             mod_inst.register_hooks(module_id=module.id)
 
@@ -443,27 +448,7 @@ def task_hook_wrapper(self, module_name, hook_name, hook_ui_name, data, init_use
 
     try:
 
-        _obj = None
-        # The received object will most likely be cleared when handled by the task,
-        # so we need to attach it to the session in the task
-        _obj = []
-        if isinstance(deser_data, list):
-            _obj = []
-            for dse_data in deser_data:
-                obj = db.session.merge(dse_data)
-                db.session.commit()
-                _obj.append(obj)
-
-        elif isinstance(deser_data, str) or isinstance(deser_data, int):
-            _obj = [deser_data]
-
-        elif isinstance(deser_data, dict):
-            _obj = [deser_data]
-
-        else:
-            _obj_a = db.session.merge(deser_data)
-            db.session.commit()
-            _obj.append(_obj_a)
+        _obj = reload_hook_data(deser_data, db.session)
 
     except Exception as e:
         logger.exception(e)
@@ -542,12 +527,17 @@ def call_modules_hook(hook_name: str, data: any, caseid: int = None, hook_ui_nam
             # So pass a dumped instance and then rebuild on the task side
             ser_data = base64.b64encode(dumps(data))
             ser_data_auth = hmac_sign(ser_data) + b" " + ser_data
-            task_hook_wrapper.delay(module_name=module.module_name, hook_name=hook_name,
-                                    hook_ui_name=module.manual_hook_ui_name, data=ser_data_auth.decode("utf8"),
-                                    # No user outside a request (Celery, CLI): a module
-                                    # task calling `notify()` still has to dispatch.
-                                    init_user=iris_current_user.name if iris_current_user else 'system',
-                                    caseid=caseid)
+            try:
+                task_hook_wrapper.delay(module_name=module.module_name, hook_name=hook_name,
+                                        hook_ui_name=module.manual_hook_ui_name, data=ser_data_auth.decode("utf8"),
+                                        # A worker/CLI call has no request user.
+                                        init_user=iris_current_user.name if iris_current_user else 'system',
+                                        caseid=caseid)
+            except Exception:
+                if hook_name.startswith('on_manual_trigger_'):
+                    raise
+                # A broker outage must not fail the save that already committed.
+                logger.exception('Unable to enqueue hook %s for module %s', hook_name, module.module_name)
 
         else:
             # Direct call. Should be fast

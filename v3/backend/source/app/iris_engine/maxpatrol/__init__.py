@@ -1,0 +1,1 @@
+"""MaxPatrol worker integration."""

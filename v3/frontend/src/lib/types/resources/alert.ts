@@ -4,6 +4,7 @@ import type { Asset } from './asset';
 import type { Classification, ResolutionStatus, Severity, Status } from './common';
 import type { Customer } from './customer';
 import type { Ioc } from './ioc';
+import type { AlertArtifact } from '$lib/services/alert-materials.service';
 
 export interface Alert {
 	alert_id: number;
@@ -55,6 +56,7 @@ export interface Alert {
 	alert_source_event_time: string;
 
 	iocs: Ioc[];
+	artifacts?: AlertArtifact[];
 
 	modification_history: HistoryData;
 }

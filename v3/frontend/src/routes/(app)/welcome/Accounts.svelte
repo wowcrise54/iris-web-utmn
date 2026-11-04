@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -14,7 +16,7 @@
 			const settings = await AuthService.getAuthSettings();
 			accounts = settings?.demo_accounts ?? [];
 		} catch (e) {
-			console.error('Failed to load demo accounts:', e);
+			logger.error('Failed to load demo accounts:', e);
 			loadError = true;
 		}
 	});

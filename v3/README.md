@@ -1,5 +1,8 @@
 # IRIS v3.0.0-beta.6 — FastAPI и EN/RU
 
+Для новой установки на Linux используйте [отдельный standalone Compose](LINUX-QUICKSTART.md):
+`docker compose -p iris-standalone -f docker-compose.standalone.yml up -d --build`.
+
 Рабочий адрес: https://localhost:18543. Backend: http://127.0.0.1:18082.
 Проект: `iris-upgrade-2-4-29-fastapi`.
 

@@ -35,12 +35,18 @@
 	import { toast } from '$lib/stores/toast.store';
 	import { callAlertHook, hookOptionKey } from '$lib/utils/hooks';
 	import EnrichmentDialog from '$lib/components/common/EnrichmentDialog.svelte';
+	import OpenCTIStatus from '$lib/components/common/OpenCTIStatus.svelte';
+	import { readOpenCTI, startOpenCTIRefresh } from '$lib/utils/opencti';
 	import { MarkDownPreview } from '$lib/components/common/MarkDown';
 	import { CommentsThread } from '$lib/components/common/Comments';
 	import InvestigationFlowSteps from '$lib/components/common/InvestigationFlow/InvestigationFlowSteps.svelte';
 	import AlertRelatedGraph from '../AlertRelatedGraph/AlertRelatedGraph.svelte';
 	import { defaultAlertRelationshipsFilters } from '../AlertRelatedGraph';
 	import AlertIocEditDialog from '../alert-ioc-edit-dialog.svelte';
+	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
+	import { current_user } from '$lib/stores/auth.store';
+	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
 	import AlertAssetEditDialog from '../alert-asset-edit-dialog.svelte';
 	import { hasChanges, saveAlertAsset, saveAlertIoc } from '../../helpers/alert-observables';
 	import { getClosedAlertStatusId } from '../../helpers/alert-status';
@@ -167,6 +173,7 @@
 		 * refresh the alert and keep the tab's count honest.
 		 */
 		onCommentsChanged?: (alert: Alert) => void;
+		onEnrichmentRefresh?: (alertId: number) => Promise<void>;
 		onOpenCluster: (clusterId: number) => void;
 		onPageChange: (page: number) => void;
 		onQueueTabChange: (tab: 'mine' | 'unassigned' | 'escalated' | null) => void;
@@ -210,6 +217,7 @@
 		onEdit,
 		onDelete,
 		onCommentsChanged,
+		onEnrichmentRefresh,
 		onOpenCluster,
 		onPageChange,
 		onQueueTabChange,
@@ -218,6 +226,7 @@
 	}: Props = $props();
 
 	type Tab =
+		| 'artifacts'
 		| 'overview'
 		| 'flow'
 		| 'assets'
@@ -274,9 +283,18 @@
 		alertHooks.options.length > 0 && userCtx?.can('alerts_write') === true
 	);
 
+	let queuedEnrichment = $state<{ alertId: number; checks: Record<number, string> } | null>(null);
 	const triggerHook = async (alert: Alert, hookOption: HookOption) => {
 		showModulesMenu = false;
 		const result = await callAlertHook([alert.alert_id], hookOption);
+		if (result.status === 'success' && hookOption.module_name === 'IRIS OpenCTI' && alert.iocs.length) {
+			queuedEnrichment = {
+				alertId: alert.alert_id,
+				checks: Object.fromEntries(alert.iocs.map(ioc => [
+					ioc.ioc_id, readOpenCTI(ioc.ioc_enrichment)?.checkedAt ?? ''
+				]))
+			};
+		}
 		toast({
 			title: result.message,
 			variant: result.status === 'error' ? 'destructive' : 'success'
@@ -627,6 +645,20 @@
 	// ---- derived detail data -----------------------------------------
 
 	const iocs = $derived(focused?.iocs ?? []);
+	const enrichmentQueued = $derived(
+		queuedEnrichment?.alertId === focusedId && iocs.some(ioc =>
+			ioc.ioc_id in (queuedEnrichment?.checks ?? {}) &&
+			(readOpenCTI(ioc.ioc_enrichment)?.checkedAt ?? '') === queuedEnrichment?.checks[ioc.ioc_id]
+		)
+	);
+
+	$effect(() => {
+		const id = focusedId;
+		const refresh = onEnrichmentRefresh;
+		if (!id || !refresh || (activeTab !== 'iocs' && !enrichmentQueued) ||
+			!alertHooks.options.some(hook => hook.module_name === 'IRIS OpenCTI')) return;
+		return startOpenCTIRefresh(() => refresh(id));
+	});
 	const rawEvent = $derived(formatRawEvent(focused?.alert_source_content));
 
 	// ---- observable details ------------------------------------------
@@ -637,8 +669,31 @@
 	let enrichmentOpen = $state(false);
 	let enrichmentSubject = $state('');
 	let enrichmentValue = $state<unknown>(null);
+	let enrichmentIocId = $state<number | null>(null);
+	const currentEnrichment = $derived(
+		iocs.find(ioc => ioc.ioc_id === enrichmentIocId)?.ioc_enrichment ?? enrichmentValue
+	);
 
 	let editedIoc = $state<Ioc | null>(null);
+	let creatingIoc = $state(false);
+	let deletingIoc = $state<Ioc | null>(null);
+	let confirmIocRemoval = $state(false);
+	const canManageMaterials = $derived($current_user?.id != null && focused?.alert_owner_id === $current_user.id && userCtx?.can('alerts_write') === true);
+	const addIoc = () => {
+		creatingIoc = true;
+		editedIoc = { ioc_id: 0, ioc_value: '', ioc_description: '', ioc_tags: '' } as Ioc;
+		iocDialogOpen = true;
+	};
+	const removeIoc = async () => {
+		if (!focused || !deletingIoc || !canManageMaterials || savingObservable) return;
+		savingObservable = true;
+		try {
+			const response = await AlertMaterialsService.removeIoc(focused.alert_id, deletingIoc.ioc_id);
+			if (!response.ok) throw new Error(response.error?.message ?? 'Could not remove IOC');
+			focused.iocs = focused.iocs.filter(row => row.ioc_id !== deletingIoc?.ioc_id);
+		} catch (e) { toast({ title: irisT(e instanceof Error ? e.message : 'Could not remove IOC', $irisLocale), variant: 'destructive' }); }
+		finally { savingObservable = false; }
+	};
 	let iocDialogOpen = $state(false);
 	let editedAsset = $state<Asset | null>(null);
 	let assetDialogOpen = $state(false);
@@ -648,13 +703,15 @@
 	// only covers the fields, not the buttons between them.
 	const observableDialogOpen = $derived(enrichmentOpen || iocDialogOpen || assetDialogOpen);
 
-	const showEnrichment = (subject: string, enrichment: unknown) => {
+	const showEnrichment = (subject: string, enrichment: unknown, iocId: number | null = null) => {
 		enrichmentSubject = subject;
 		enrichmentValue = enrichment;
+		enrichmentIocId = iocId;
 		enrichmentOpen = true;
 	};
 
 	const editIoc = (ioc: Ioc) => {
+		creatingIoc = false;
 		editedIoc = ioc;
 		iocDialogOpen = true;
 	};
@@ -675,7 +732,18 @@
 	};
 
 	const saveIoc = async (ioc: Ioc, changes: UpdateAlertIocBody) => {
-		if (!focused) return;
+		if (!focused || !canManageMaterials || savingObservable) return;
+		if (creatingIoc) {
+			savingObservable = true;
+			try {
+				const response = await AlertMaterialsService.createIoc(focused.alert_id, changes);
+				if (!response.ok || !response.data || typeof response.data === 'string') throw new Error(response.error?.message ?? 'Could not add IOC');
+				focused.iocs = [...focused.iocs, response.data];
+				closeIocDialog();
+			} catch (e) { toast({ title: irisT(e instanceof Error ? e.message : 'Could not add IOC', $irisLocale), variant: 'destructive' }); }
+			finally { savingObservable = false; }
+			return;
+		}
 
 		if (!hasChanges(changes)) {
 			closeIocDialog();
@@ -748,6 +816,7 @@
 			dot: cluster != null
 		},
 		{ id: 'iocs' as Tab, label: irisT("IOCs", $irisLocale), count: iocs.length },
+		{ id: 'artifacts' as Tab, label: irisT('Artifacts', $irisLocale), count: focused?.artifacts?.length ?? 0 },
 		{ id: 'raw' as Tab, label: irisT("Raw event", $irisLocale), count: undefined },
 		{ id: 'timeline' as Tab, label: irisT("Timeline", $irisLocale), count: undefined },
 		{ id: 'notes' as Tab, label: irisT("Notes", $irisLocale), count: notes ? 1 : undefined },
@@ -1447,6 +1516,8 @@
 				<div class="graph-pane">
 					<AlertRelatedGraph alertId={f.alert_id} />
 				</div>
+			{:else if activeTab === 'artifacts'}
+				<div class="flow-pane">{#key f.alert_id}<AlertArtifacts alert={f} canManage={canManageMaterials} />{/key}</div>
 			{:else if activeTab === 'flow'}
 				<!--
 				  Full-width like the graph rather than a column of
@@ -1753,6 +1824,10 @@
 						{/if}
 
 						{#if activeTab === 'iocs'}
+							{#if canManageMaterials}<button type="button" class="obs-btn" disabled={savingObservable} onclick={addIoc}>{irisT('Add IOC', $irisLocale)}</button>{/if}
+							{#if enrichmentQueued}
+								<p role="status" class="mb-3 text-xs text-muted-foreground">{irisT('OpenCTI enrichment queued. Results update automatically.', $irisLocale)}</p>
+							{/if}
 							<section class="section">
 								<h3 class="section-title">{irisT("Observables", $irisLocale)}</h3>
 								{#if iocs.length === 0}
@@ -1781,6 +1856,7 @@
 															)}
 														</div>
 														{@render metaLine(iocFields(ioc), `ioc-${ioc.ioc_id}`)}
+														<OpenCTIStatus enrichment={ioc.ioc_enrichment} />
 													</div>
 
 													<div class="obs-actions">
@@ -1789,15 +1865,15 @@
 															class="obs-btn"
 															disabled={!ioc.ioc_enrichment}
 															title={ioc.ioc_enrichment ? irisT("View enrichment", $irisLocale) : irisT("No enrichment", $irisLocale)}
-															onclick={() => showEnrichment(ioc.ioc_value, ioc.ioc_enrichment)}
+															onclick={() => showEnrichment(ioc.ioc_value, ioc.ioc_enrichment, ioc.ioc_id)}
 															>{irisT("Enrichment", $irisLocale)}</button
 														>
-														<button
+														{#if canManageMaterials}<button
 															type="button"
 															class="obs-btn"
 															title={irisT("Edit IOC", $irisLocale)}
 															onclick={() => editIoc(ioc)}>{irisT("Edit", $irisLocale)}</button
-														>
+														><button type="button" class="obs-btn" disabled={savingObservable} onclick={() => { deletingIoc = ioc; confirmIocRemoval = true; }}>{irisT('Remove IOC from alert', $irisLocale)}</button>{/if}
 													</div>
 												</div>
 
@@ -2011,7 +2087,7 @@
 <EnrichmentDialog
 	bind:open={enrichmentOpen}
 	subject={enrichmentSubject}
-	enrichment={enrichmentValue}
+	enrichment={currentEnrichment}
 />
 
 {#if editedIoc}
@@ -2019,6 +2095,7 @@
 		bind:open={iocDialogOpen}
 		ioc={editedIoc}
 		saving={savingObservable}
+		creating={creatingIoc}
 		onClose={closeIocDialog}
 		onSave={(changes) => editedIoc && saveIoc(editedIoc, changes)}
 	/>
@@ -2033,6 +2110,8 @@
 		onSave={(changes) => editedAsset && saveAsset(editedAsset, changes)}
 	/>
 {/if}
+
+<ConfirmationDialog bind:open={confirmIocRemoval} title={irisT("Remove IOC from alert", $irisLocale)} message={deletingIoc?.ioc_value ?? ""} onConfirm={removeIoc} />
 
 <style>
 	/*

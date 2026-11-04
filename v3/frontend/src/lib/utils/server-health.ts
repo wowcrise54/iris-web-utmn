@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { browser } from '$app/environment';
 import { ApiService } from '$lib/services/api.service';
 
@@ -30,19 +31,19 @@ export async function isServerReachable(timeout = 3000): Promise<boolean> {
 				// If we get any response, consider the server reachable
 				if (response.status == 200 || response.status === 401) {
 					// 401 means server is up but requires auth
-					console.log(`Server is reachable at ${endpoint}`);
+					logger.debug(`Server is reachable at ${endpoint}`);
 					return true;
 				}
 			} catch (err: unknown) {
 				// Continue to the next endpoint
-				console.warn(`Endpoint ${endpoint} is not reachable:`, (err as Error).message);
+				logger.warn(`Endpoint ${endpoint} is not reachable:`, (err as Error).message);
 			}
 		}
 
 		clearTimeout(timeoutId);
 		return false;
 	} catch (err: unknown) {
-		console.error('Server health check failed:', err);
+		logger.error('Server health check failed:', err);
 		return false;
 	}
 }

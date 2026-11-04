@@ -12,6 +12,7 @@
  */
 
 import type {
+	ChatProgress,
 	ChatContentBlock,
 	ChatConversation,
 	ChatMessage,
@@ -44,6 +45,7 @@ export interface StreamingAssistant {
 		is_write: boolean;
 		pending: boolean;
 		pending_tool_call_id?: number;
+		finished?: boolean;
 		result?: unknown;
 		error?: string;
 	}[];
@@ -65,11 +67,13 @@ export interface ChatFocusHint {
 export const createChatPanelContext = () => {
 	const state = $state<{
 		open: boolean;
+		revealRequest: number;
 		streamingConversationId: number | null;
 		currentConversation: ChatConversation | null;
 		messages: ChatMessage[];
 		pendingToolCalls: PendingToolCall[];
 		streamingAssistant: StreamingAssistant | null;
+		progress: ChatProgress | null;
 		error: string | null;
 		loading: boolean;
 		/**
@@ -87,11 +91,13 @@ export const createChatPanelContext = () => {
 		usage: ChatUsage | null;
 	}>({
 		open: false,
+		revealRequest: 0,
 		streamingConversationId: null,
 		currentConversation: null,
 		messages: [],
 		pendingToolCalls: [],
 		streamingAssistant: null,
+		progress: null,
 		error: null,
 		loading: false,
 		focusHint: null,
@@ -101,6 +107,7 @@ export const createChatPanelContext = () => {
 	const mutation = $state<{ error: string | null }>({ error: null });
 
 	let socket: ChatSocketClient | null = null;
+	let conversationEpoch = 0;
 
 	// ---- Character-drip typing effect ----
 	// The socket delivers full-token SSE chunks (5-60 chars each). Painting
@@ -165,7 +172,39 @@ export const createChatPanelContext = () => {
 	const _ensureSocket = () => {
 		if (socket) return socket;
 		socket = new ChatSocketClient({
+			onAnalysisUpdated: (payload) => {
+				if (payload.conversation_id === state.currentConversation?.id)
+					void refresh(payload.conversation_id);
+			},
+			onAssistantProgress: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
+				if (
+					![
+						'waiting_model',
+						'responding',
+						'executing_tool',
+						'processing_result',
+						'awaiting_approval',
+						'completed',
+						'failed'
+					].includes(payload.stage)
+				)
+					return;
+				state.progress = payload;
+				if (payload.stage === 'awaiting_approval') state.streamingConversationId = null;
+				else if (!['completed', 'failed'].includes(payload.stage))
+					state.streamingConversationId = payload.conversation_id;
+			},
+			onDisconnect: () => {
+				_flushTyping();
+				state.progress = null;
+				state.streamingAssistant = null;
+				if (state.streamingConversationId != null)
+					state.error = 'Chat connection lost. Reopen the conversation to load saved messages.';
+				state.streamingConversationId = null;
+			},
 			onAssistantDelta: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
 				if (!state.streamingAssistant) {
 					state.streamingAssistant = { text: '', pending: '', toolUses: [] };
 				}
@@ -173,12 +212,19 @@ export const createChatPanelContext = () => {
 					...state.streamingAssistant,
 					pending: state.streamingAssistant.pending + (payload.text ?? '')
 				};
+				state.progress = { stage: 'responding' };
 				_startTypingTimer();
 			},
 			onAssistantToolStart: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
 				if (!state.streamingAssistant) {
 					state.streamingAssistant = { text: '', pending: '', toolUses: [] };
 				}
+				state.progress = {
+					stage: payload.pending ? 'awaiting_approval' : 'executing_tool',
+					tool_name: payload.tool_name
+				};
+				if (payload.pending) state.streamingConversationId = null;
 				const nextToolUses = [
 					...state.streamingAssistant.toolUses,
 					{
@@ -202,17 +248,29 @@ export const createChatPanelContext = () => {
 				}
 			},
 			onAssistantToolResult: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
+				state.progress = {
+					stage: state.pendingToolCalls.length ? 'awaiting_approval' : 'processing_result'
+				};
+				if (state.pendingToolCalls.length) state.streamingConversationId = null;
 				if (!state.streamingAssistant) return;
 				state.streamingAssistant = {
 					...state.streamingAssistant,
 					toolUses: state.streamingAssistant.toolUses.map((tu) =>
 						tu.tool_use_id === payload.tool_use_id
-							? { ...tu, result: payload.result, error: payload.error }
+							? {
+									...tu,
+									pending: false,
+									finished: true,
+									result: payload.result,
+									error: payload.error
+								}
 							: tu
 					)
 				};
 			},
 			onAssistantEnd: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
 				// Flush any un-dripped characters so the final rendered
 				// message matches what the model actually sent (no lost
 				// tail if the socket closed while pending had data).
@@ -231,27 +289,37 @@ export const createChatPanelContext = () => {
 				}
 				state.streamingAssistant = null;
 				state.streamingConversationId = null;
+				state.progress = { stage: 'completed' };
 			},
-			onUserMessagePersisted: () => {
+			onUserMessagePersisted: (payload) => {
+				if (payload.conversation_id !== state.currentConversation?.id) return;
 				// Refresh to pick up the newly-persisted user turn.
 				if (state.currentConversation) {
 					void refresh(state.currentConversation.id);
 				}
 			},
 			onError: (payload) => {
+				if (
+					payload.conversation_id != null &&
+					payload.conversation_id !== state.currentConversation?.id
+				)
+					return;
 				_flushTyping();
 				state.error = payload.message || 'Chatbot error';
 				state.streamingAssistant = null;
+				state.progress = null;
 				state.streamingConversationId = null;
 				toast({ title: state.error, variant: 'destructive' });
 			},
 			onConnectFailure: () => {
+				_flushTyping();
 				state.error = 'Could not connect to the chatbot socket. Reload the page to retry.';
 				// Unlock the composer so the user can at least see the
 				// error and try a fresh conversation instead of typing
 				// into a paralysed textarea.
 				state.streamingConversationId = null;
 				state.streamingAssistant = null;
+				state.progress = null;
 			}
 		});
 		socket.connect();
@@ -259,8 +327,9 @@ export const createChatPanelContext = () => {
 	};
 
 	const refresh = async (conversationId: number) => {
+		const epoch = conversationEpoch;
 		const res = await ChatService.getConversation(conversationId);
-		if (res.ok && res.data && typeof res.data !== 'string') {
+		if (epoch === conversationEpoch && res.ok && res.data && typeof res.data !== 'string') {
 			const data = res.data as ChatMessage[] extends unknown[] ? never : never;
 			void data;
 			const conv = res.data as unknown as {
@@ -272,6 +341,8 @@ export const createChatPanelContext = () => {
 			state.currentConversation = conv;
 			state.messages = conv.messages ?? [];
 			state.pendingToolCalls = conv.pending_tool_calls ?? [];
+			if (state.pendingToolCalls.length && state.streamingConversationId == null)
+				state.progress = { stage: 'awaiting_approval' };
 			// `usage` is absent on very old conversations that were
 			// persisted before the aggregate was added — keep the last
 			// known value in that case rather than blanking the footer.
@@ -288,6 +359,7 @@ export const createChatPanelContext = () => {
 
 	const openPanel = () => {
 		state.open = true;
+		state.revealRequest++;
 	};
 	const closePanel = () => {
 		state.open = false;
@@ -297,6 +369,9 @@ export const createChatPanelContext = () => {
 	};
 
 	const openConversation = async (conversationId: number) => {
+		conversationEpoch++;
+		_flushTyping();
+		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
 		state.error = null;
 		// Opening a previously-persisted conversation is also a reset
@@ -304,6 +379,7 @@ export const createChatPanelContext = () => {
 		// the flag could still be set from the last session.
 		state.streamingConversationId = null;
 		state.streamingAssistant = null;
+		state.progress = null;
 		state.usage = null;
 		try {
 			await refresh(conversationId);
@@ -357,6 +433,9 @@ export const createChatPanelContext = () => {
 		}
 		if (state.currentConversation?.id === conversationId) {
 			state.currentConversation = null;
+			state.progress = null;
+			state.streamingAssistant = null;
+			state.streamingConversationId = null;
 			state.messages = [];
 			state.pendingToolCalls = [];
 			state.usage = null;
@@ -365,6 +444,9 @@ export const createChatPanelContext = () => {
 	};
 
 	const startCaseConversation = async (caseId: number, title = '') => {
+		conversationEpoch++;
+		_flushTyping();
+		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
 		state.error = null;
 		// A previous conversation may have left the composer locked
@@ -372,6 +454,7 @@ export const createChatPanelContext = () => {
 		// Starting a fresh chat is an explicit reset moment.
 		state.streamingConversationId = null;
 		state.streamingAssistant = null;
+		state.progress = null;
 		state.usage = null;
 		try {
 			const res = await ChatService.createCaseConversation(caseId, { title });
@@ -391,10 +474,14 @@ export const createChatPanelContext = () => {
 	};
 
 	const startWarRoomConversation = async (warRoomId: number, title = '') => {
+		conversationEpoch++;
+		_flushTyping();
+		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
 		state.error = null;
 		state.streamingConversationId = null;
 		state.streamingAssistant = null;
+		state.progress = null;
 		state.usage = null;
 		try {
 			const res = await ChatService.createWarRoomConversation(warRoomId, { title });
@@ -423,13 +510,18 @@ export const createChatPanelContext = () => {
 	};
 
 	const startGlobalConversation = async (title = '') => {
+		const epoch = ++conversationEpoch;
+		_flushTyping();
+		if (state.currentConversation) socket?.leaveConversation(state.currentConversation.id);
 		state.loading = true;
 		state.error = null;
 		state.streamingConversationId = null;
 		state.streamingAssistant = null;
+		state.progress = null;
 		state.usage = null;
 		try {
 			const res = await ChatService.createGlobalConversation({ title });
+			if (epoch !== conversationEpoch) return null;
 			if (res.ok && res.data && typeof res.data !== 'string') {
 				const conv = res.data as ChatConversation;
 				state.currentConversation = conv;
@@ -441,13 +533,14 @@ export const createChatPanelContext = () => {
 			state.error = (res.error?.message as string) || 'Could not create conversation';
 			return null;
 		} finally {
-			state.loading = false;
+			if (epoch === conversationEpoch) state.loading = false;
 		}
 	};
 
 	const send = (text: string) => {
 		if (!state.currentConversation) return;
 		state.error = null;
+		state.progress = { stage: 'waiting_model' };
 		state.streamingAssistant = { text: '', pending: '', toolUses: [] };
 		state.streamingConversationId = state.currentConversation.id;
 		// Prepend a one-line focus hint on the FIRST send of a
@@ -542,6 +635,27 @@ export const createChatPanelContext = () => {
 		return convId;
 	};
 
+	const canAnalyzeAlert = $derived(
+		!state.loading &&
+			state.streamingConversationId == null &&
+			state.pendingToolCalls.length === 0 &&
+			state.progress?.stage !== 'awaiting_approval'
+	);
+
+	const analyzeAlert = async (alertId: number, prompt: string): Promise<boolean> => {
+		if (!canAnalyzeAlert || !prompt.trim()) return false;
+		openPanel();
+		try {
+			const id = await startWithScope({ kind: 'currentAlert', alertId });
+			if (id == null || state.currentConversation?.id !== id) return false;
+			send(prompt);
+			return true;
+		} catch {
+			state.error = 'Could not start alert analysis. Please try again.';
+			return false;
+		}
+	};
+
 	const approveTool = (pendingToolCallId: number) => {
 		if (!state.currentConversation) return;
 		// Optimistically drop the row so the Approve card disappears the
@@ -551,6 +665,7 @@ export const createChatPanelContext = () => {
 		// canonical pending list. If dispatch errors, the refresh
 		// re-hydrates the row from the DB so nothing is silently lost.
 		state.pendingToolCalls = state.pendingToolCalls.filter((p) => p.id !== pendingToolCallId);
+		state.progress = { stage: 'waiting_model' };
 		state.streamingAssistant = { text: '', pending: '', toolUses: [] };
 		state.streamingConversationId = state.currentConversation.id;
 		_ensureSocket().approveTool(pendingToolCallId, state.currentConversation.id);
@@ -559,6 +674,7 @@ export const createChatPanelContext = () => {
 	const denyTool = (pendingToolCallId: number) => {
 		if (!state.currentConversation) return;
 		state.pendingToolCalls = state.pendingToolCalls.filter((p) => p.id !== pendingToolCallId);
+		state.progress = { stage: 'waiting_model' };
 		state.streamingAssistant = { text: '', pending: '', toolUses: [] };
 		state.streamingConversationId = state.currentConversation.id;
 		_ensureSocket().denyTool(pendingToolCallId, state.currentConversation.id);
@@ -573,6 +689,9 @@ export const createChatPanelContext = () => {
 		if (!state.currentConversation) return;
 		const snapshot = [...state.pendingToolCalls];
 		state.pendingToolCalls = [];
+		if (!snapshot.length) return;
+		state.progress = { stage: 'waiting_model' };
+		state.streamingConversationId = state.currentConversation.id;
 		for (const pending of snapshot) {
 			_ensureSocket().denyTool(pending.id, state.currentConversation.id);
 		}
@@ -598,6 +717,10 @@ export const createChatPanelContext = () => {
 		send,
 		sendOrStart,
 		startWithScope,
+		analyzeAlert,
+		get canAnalyzeAlert() {
+			return canAnalyzeAlert;
+		},
 		approveTool,
 		denyTool,
 		denyAllPending,
@@ -605,6 +728,10 @@ export const createChatPanelContext = () => {
 		// Escape hatch for tests: drop the socket so a follow-up connect()
 		// picks up a fresh token.
 		disconnect: () => {
+			_flushTyping();
+			state.progress = null;
+			state.streamingConversationId = null;
+			state.streamingAssistant = null;
 			socket?.disconnect();
 			socket = null;
 		}

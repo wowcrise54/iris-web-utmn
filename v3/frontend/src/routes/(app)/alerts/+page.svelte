@@ -763,6 +763,24 @@
 		}
 	};
 
+	const refreshEnrichment = async (alertId: number) => {
+		const response = await AlertService.get(alertId);
+		const current = getAlertFromPage(alertId);
+		if (response.ok && response.data && typeof response.data !== 'string' && current) {
+			const incoming = normalizeAlert(response.data);
+			applyUpdatedAlert({
+				...current,
+				iocs: current.iocs.map(ioc => {
+					const fresh = incoming.iocs.find(item =>
+						item.ioc_id === ioc.ioc_id && item.ioc_value === ioc.ioc_value &&
+						item.ioc_type_id === ioc.ioc_type_id
+					);
+					return fresh ? { ...ioc, ioc_enrichment: fresh.ioc_enrichment } : ioc;
+				})
+			});
+		}
+	};
+
 	const applyRemovedAlerts = (ids: number[]) => {
 		const idSet = new Set(ids);
 		const alertsList = Array.isArray(alertsData.data) ? alertsData.data : [];
@@ -1678,6 +1696,7 @@
 					selected = { [alert.alert_id]: true };
 					showConfirmDelete = true;
 				}}
+				onEnrichmentRefresh={refreshEnrichment}
 				onCommentsChanged={async (alert) => {
 					// Keeps the Comments tab's count in step with the thread the
 					// user just wrote in — the alert payload carries the comment

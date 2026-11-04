@@ -26,6 +26,28 @@ import type { HandleClientError } from '@sveltejs/kit';
 import { initSentry } from '$lib/observability/init';
 import { fetchRuntimeConfig } from '$lib/observability/runtime-config';
 import { runtimeConfig } from '$lib/stores/runtime-config.store.svelte';
+import { startClientLogging, logger } from '$lib/observability/logger';
+import { auth } from '$lib/stores/auth.store';
+
+let loggingSession: number | null = null;
+let loggingGeneration = 0;
+let loggingUser: unknown;
+auth.subscribe((state) => {
+	if (!state.user || !state.tokens?.accessToken || (state.mfaEnabled && !state.mfaVerified)) {
+		loggingSession = null;
+		loggingUser = undefined;
+		return;
+	}
+	if (state.user !== loggingUser) {
+		loggingGeneration += 1;
+		loggingUser = state.user;
+	}
+	loggingSession = loggingGeneration;
+});
+startClientLogging(
+	() => auth.getAccessToken(),
+	() => loggingSession
+);
 
 void (async () => {
 	const config = await fetchRuntimeConfig();
@@ -38,6 +60,7 @@ void (async () => {
 })();
 
 const fallbackHandleError: HandleClientError = ({ error, event }) => {
+	logger.error('client_route_failed', error);
 	const message = error instanceof Error ? error.message : 'Client error';
 	// Return the shape SvelteKit expects on `App.Error`.
 	return {

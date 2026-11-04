@@ -24,7 +24,7 @@ reporter init. Adds negligible overhead per request.
 """
 from __future__ import annotations
 
-import uuid
+from app.observability_logging import request_id
 
 from app.web import Response
 from app.web import current_app
@@ -50,9 +50,9 @@ def _sentry_set_tag(name: str, value: str) -> None:
 
 def _before_request() -> None:
     incoming = request.headers.get(_HEADER)
-    request_id = incoming if incoming and len(incoming) <= 128 else uuid.uuid4().hex
-    g.request_id = request_id
-    _sentry_set_tag('request_id', request_id)
+    identifier = request_id(incoming)
+    g.request_id = identifier
+    _sentry_set_tag('request_id', identifier)
     if request.endpoint:
         _sentry_set_tag('iris_endpoint', request.endpoint)
 

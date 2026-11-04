@@ -38,6 +38,7 @@ from app.blueprints.rest.v2.alerts_routes.comments import alerts_comments_bluepr
 from app.blueprints.rest.v2.alerts_routes.dim_hooks import alerts_dim_hooks_blueprint
 from app.blueprints.rest.v2.alerts_routes.investigation_progress import alerts_investigation_progress_blueprint
 from app.blueprints.rest.v2.alerts_routes.iocs import alerts_iocs_blueprint
+from app.blueprints.rest.v2.alerts_routes.artifacts import alerts_artifacts_blueprint
 from app.blueprints.iris_user import iris_current_user
 from app.business.access_controls import check_ua_case_client
 from app.business.alerts import ALERT_SORT_COLUMNS
@@ -83,6 +84,9 @@ _ALERT_READONLY_UPDATE_FIELDS = frozenset({
     'alert_id',
     'alert_customer_id',
     'alert_creation_time',
+    'iocs',
+    'alert_iocs',
+    'artifacts',
 })
 
 
@@ -441,6 +445,7 @@ alerts_blueprint.register_blueprint(alerts_comments_blueprint)
 alerts_blueprint.register_blueprint(alerts_dim_hooks_blueprint)
 alerts_blueprint.register_blueprint(alerts_investigation_progress_blueprint)
 alerts_blueprint.register_blueprint(alerts_iocs_blueprint)
+alerts_blueprint.register_blueprint(alerts_artifacts_blueprint)
 alerts_blueprint.register_blueprint(alerts_assets_blueprint)
 
 alerts_operations = AlertsOperations()

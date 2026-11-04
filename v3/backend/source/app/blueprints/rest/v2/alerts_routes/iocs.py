@@ -38,6 +38,9 @@ from app.models.authorization import Permissions
 from app.models.errors import BusinessProcessingError
 from app.models.errors import ObjectNotFoundError
 from app.schema.marshables import IocSchema
+from app.business.alert_materials_validation import is_alert_owner
+from app.business.alert_materials import material_history
+from app.db import db
 
 
 # The details an analyst documents on an alert's IOC. Everything else an
@@ -112,6 +115,8 @@ class AlertIocsOperations:
                 alert_identifier,
                 fallback_customer_access=ac_current_user_has_customer_access
             )
+            if not is_alert_owner(alert, iris_current_user.id):
+                return ac_api_return_access_denied()
             ioc = alerts_get_ioc(alert, identifier)
 
         except ObjectNotFoundError:
@@ -161,3 +166,48 @@ alert_iocs_operations = AlertIocsOperations()
          summary='Update the details of an IOC attached to an alert')
 def update_alert_ioc(alert_identifier, identifier):
     return alert_iocs_operations.update(alert_identifier, identifier)
+
+
+def _owned_alert(identifier):
+    alert = alerts_get(iris_current_user, session.get('permissions') or 0, identifier,
+                       fallback_customer_access=ac_current_user_has_customer_access)
+    return alert if is_alert_owner(alert, iris_current_user.id) else None
+
+
+@alerts_iocs_blueprint.post('')
+@ac_api_requires(Permissions.alerts_write)
+def create_alert_ioc(alert_identifier):
+    try:
+        alert = _owned_alert(alert_identifier)
+        if alert is None:
+            return ac_api_return_access_denied()
+        data = _editable_fields_only(request.get_json())
+        if not data.get('ioc_type_id') or not data.get('ioc_tlp_id'):
+            return response_api_error('IOC type and TLP are required')
+        ioc = IocSchema().load(data)
+        ioc.user_id = iris_current_user.id
+        alert.iocs.append(ioc)
+        db.session.add(ioc)
+        db.session.flush()
+        material_history(alert, f'added IOC #{ioc.ioc_id}')
+        return response_api_success(IocSchema().dump(ioc))
+    except ObjectNotFoundError:
+        return response_api_not_found()
+    except ValidationError as exc:
+        db.session.rollback()
+        return response_api_error('Data error', data=exc.messages)
+
+
+@alerts_iocs_blueprint.delete('/<int:identifier>')
+@ac_api_requires(Permissions.alerts_write)
+def remove_alert_ioc(alert_identifier, identifier):
+    try:
+        alert = _owned_alert(alert_identifier)
+        if alert is None:
+            return ac_api_return_access_denied()
+        ioc = alerts_get_ioc(alert, identifier)
+        alert.iocs.remove(ioc)
+        material_history(alert, f'removed IOC #{ioc.ioc_id}')
+        return response_api_success(None)
+    except ObjectNotFoundError:
+        return response_api_not_found()

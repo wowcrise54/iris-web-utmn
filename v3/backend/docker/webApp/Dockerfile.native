@@ -1,4 +1,5 @@
 FROM iris-upgrade-2-4-29-fastapi:local
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tshark libseccomp2 && rm -rf /var/lib/apt/lists/*
 COPY source/requirements.txt /tmp/requirements-v3.txt
 COPY source/dependencies /dependencies
 RUN cd / && pip install -r /tmp/requirements-v3.txt

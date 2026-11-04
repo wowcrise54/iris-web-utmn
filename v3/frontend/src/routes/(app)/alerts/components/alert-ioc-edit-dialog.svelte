@@ -35,9 +35,10 @@
 		saving?: boolean;
 		onClose: () => void;
 		onSave: (changes: UpdateAlertIocBody) => void;
+		creating?: boolean;
 	};
 
-	let { open = $bindable(), ioc, saving = false, onClose, onSave }: Props = $props();
+	let { open = $bindable(), ioc, saving = false, onClose, onSave, creating = false }: Props = $props();
 
 	// Seeded here as well as in the effect below: the effect only runs
 	// after the first render, and the dialog is mounted already open.
@@ -84,7 +85,7 @@
 
 	const valueIsValid = $derived(form.ioc_value.trim().length > 0);
 	const enrichment = $derived(parseEnrichment(form.ioc_enrichment));
-	const canSave = $derived(valueIsValid && enrichment.ok && !saving);
+	const canSave = $derived(valueIsValid && enrichment.ok && !saving && (!creating || (form.ioc_type_id != null && form.ioc_tlp_id != null)));
 
 	const save = () => {
 		if (!enrichment.ok) return;
@@ -109,7 +110,7 @@
 >
 	<Dialog.Content class="flex max-h-[85vh] max-w-[900px] flex-col p-0">
 		<Dialog.Header class="border-b px-6 py-4">
-			<Dialog.Title class="text-base font-medium">{irisT("Edit IOC #", $irisLocale)}{ioc.ioc_id}</Dialog.Title>
+			<Dialog.Title class="text-base font-medium">{creating ? irisT('Add IOC', $irisLocale) : `${irisT('Edit IOC #', $irisLocale)}${ioc.ioc_id}`}</Dialog.Title>
 		</Dialog.Header>
 
 		<div class="flex-1 overflow-auto px-6 py-5">

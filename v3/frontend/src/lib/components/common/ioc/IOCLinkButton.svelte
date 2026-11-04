@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -118,7 +120,7 @@
 
 			initialFetchDone = true;
 		} catch (err) {
-			console.error('Error fetching IOCs:', err);
+			logger.error('Error fetching IOCs:', err);
 			error = 'Failed to load IOCs. Please try again.';
 		} finally {
 			isLoading = false;
@@ -175,7 +177,7 @@
 				variant: 'success'
 			});
 		} catch (err) {
-			console.error('Error linking IOC:', err);
+			logger.error('Error linking IOC:', err);
 			error = 'Failed to link IOC. Please try again.';
 
 			toast({

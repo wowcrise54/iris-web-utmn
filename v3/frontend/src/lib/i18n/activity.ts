@@ -2,7 +2,7 @@ import { translate, type Locale } from './translate';
 
 // Translate only audit actions; preserve the user-authored resource name.
 const actions = ['Created', 'Updated', 'Deleted', 'Added', 'Removed'];
-const resources = ['note', 'war room', 'case', 'task', 'asset', 'IOC'];
+const resources = ['note', 'war room', 'case', 'task', 'asset', 'IOC', 'artifact'];
 
 export function translateActivity(source: string, locale: Locale): string {
 	if (locale === 'en') return source;

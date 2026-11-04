@@ -1262,6 +1262,7 @@
 	};
 
 	const SLASH_COMMANDS = [
+		{ cmd: '/sandbox check <case_id> <file_id> --confirm', desc: 'Send a case file to PT Sandbox' },
 		{ cmd: '/note', desc: 'Create a war-room note' },
 		{ cmd: '/pin', desc: 'Highlight a message' },
 		{ cmd: '/decision', desc: 'Log a command decision' },

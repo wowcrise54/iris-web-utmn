@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -16,12 +18,15 @@
 		MessagesSquareIcon,
 		PencilIcon,
 		RotateCcwIcon,
+		SparklesIcon,
 		TrashIcon
 	} from 'lucide-svelte';
 	import { Collapsible } from 'bits-ui';
 	import { getContext, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { USER_CTX, type UserCtx } from '$lib/contexts/user-context.context.svelte';
+	import { CHAT_PANEL_CTX, type ChatPanelContext } from '$lib/contexts/chat-panel.context.svelte';
+	import { runtimeConfig } from '$lib/stores/runtime-config.store.svelte';
 	import { alertHooks } from '$lib/stores/alert-hooks.store.svelte';
 	import { callAlertHook, hookOptionKey } from '$lib/utils/hooks';
 	import type { HookOption } from '$lib/services/hooks.service';
@@ -60,7 +65,8 @@
 		onShowClose,
 		onUnlinkCase,
 		onDelete,
-		onShowInvestigationFlow
+		onShowInvestigationFlow,
+		onOpenYuki
 	}: {
 		alert: Alert;
 		alertStatuses: AlertStatus[];
@@ -82,6 +88,7 @@
 		// other AlertCard call sites (which don't know about flows) don't
 		// need to be touched.
 		onShowInvestigationFlow?: () => void;
+		onOpenYuki?: () => void;
 	} = $props();
 
 	const getBackgroundBySeverity = (severity: string): string => {
@@ -133,6 +140,17 @@
 	// writes to the alert, so the items are hidden without alerts_write
 	// rather than left to fail with a 403 on click.
 	const userCtx = getContext<UserCtx>(USER_CTX);
+	const chat = getContext<ChatPanelContext | undefined>(CHAT_PANEL_CTX);
+
+	const analyzeInYuki = () => {
+		if (!chat?.canAnalyzeAlert) return;
+		onOpenYuki?.();
+		const prompt = irisT(
+			'Analyze alert #{id}: examine the source events, related assets and IOCs. Assess TP/FP, provide evidence and recommend next steps. Read large source events completely; if data is incomplete, explicitly state the gaps and avoid an unsupported verdict. Do not modify the alert automatically. At the end of your response, propose a rule exception using PCRE2 regular expressions. Put each condition on a separate line in the format: event taxonomy field - PCRE2 regex (for example, correlation_name - ^ExactRuleName$). Multiple lines are combined with AND. Build exceptions exclusively from the fields and values of events received by the correlation rule. Do not use IRIS metadata, asset attributes, IOC enrichment or inferred fields. If you cannot establish which event fields are available to the correlation rule, state that gap instead of proposing an exception. Escape literal regex metacharacters and keep the exception narrowly scoped. If the evidence is insufficient to propose an exception, explain what is missing instead of inventing one.',
+			$irisLocale
+		).replace('{id}', String(alert.alert_id));
+		void chat.analyzeAlert(alert.alert_id, prompt);
+	};
 	const canTriggerHooks = $derived(
 		alertHooks.options.length > 0 && userCtx?.can('alerts_write') === true
 	);
@@ -239,6 +257,20 @@
 			</div>
 
 			<div class="flex min-w-0 flex-wrap items-center gap-3 sm:gap-6">
+				{#if runtimeConfig.chatbot.enabled && chat}
+					<Button
+						variant="outline"
+						size="xs"
+						disabled={!chat.canAnalyzeAlert}
+						onclick={(e) => {
+							e.stopPropagation();
+							analyzeInYuki();
+						}}
+					>
+						<SparklesIcon class="mr-1 h-3.5 w-3.5" />
+						{irisT('Analyze in Yuki', $irisLocale)}
+					</Button>
+				{/if}
 				<!--
 				  Investigation-flow trigger — always visible when a flow
 				  is attached (unlike the neighbouring actions row it does
@@ -369,7 +401,7 @@
 											});
 										})
 										.catch((e) => {
-											console.error('Clipboard copy error:', e);
+											logger.error('Clipboard copy error:', e);
 
 											toast({
 												title: 'Could not copy link',
@@ -390,7 +422,7 @@
 											});
 										})
 										.catch((e) => {
-											console.error('Clipboard copy error:', e);
+											logger.error('Clipboard copy error:', e);
 
 											toast({
 												title: 'Could not copy link',

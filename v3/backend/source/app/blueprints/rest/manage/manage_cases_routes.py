@@ -15,9 +15,9 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import os
-import traceback
 import urllib.parse
 
 from app.web import Blueprint
@@ -361,8 +361,8 @@ def update_case_files(caseid):
         return response_error(status.get_message(), data=status.get_data())
 
     except Exception as _:
-        traceback.print_exc()
-        return response_error('Fail to update case', data=traceback.print_exc())
+        log.exception('operation_failed')
+        return response_error('Fail to update case', data=None)
 
 
 @manage_cases_rest_blueprint.route('/manage/cases/upload_files', methods=['POST'])

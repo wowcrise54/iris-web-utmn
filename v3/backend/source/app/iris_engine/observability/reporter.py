@@ -106,6 +106,9 @@ def _do_init(dsn: Optional[str], *, environment: Optional[str],
         import sentry_sdk
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.logging import ignore_logger
+        ignore_logger('iris.browser')
+        ignore_logger('celery.app.trace')
         from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
     except ImportError:
         logger.warning('sentry-sdk not installed; error reporter disabled')

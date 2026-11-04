@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -85,7 +87,7 @@
 	});
 
 	const addTaskLog = () => {
-		console.log('Add Task Log');
+		logger.debug('Add Task Log');
 	};
 
 	const createCase = () => {
@@ -106,6 +108,7 @@
 	const caseButtons = [
 		{ label: irisT("Summary", $irisLocale), path: '' },
 		{ label: $irisLocale === "ru" ? "Карточка инцидента" : "Incident card", path: 'incident-card' },
+		{ label: 'PT Sandbox', path: 'sandbox' },
 		{ label: irisT("Notes", $irisLocale), path: 'notes' },
 		{ label: irisT("Assets", $irisLocale), path: 'assets' },
 		{ label: irisT("IOC", $irisLocale), path: 'iocs' },
