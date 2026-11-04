@@ -386,3 +386,19 @@ docker logs --since 15m --timestamps -f IRIS_CONTAINER 2>&1 | grep --line-buffer
 
 Изменения вступают в силу после обновления образа и перезапуска worker;
 старые строки в `docker logs` не переписываются.
+
+
+## Compact source JSON
+
+Before persisting newly created or refreshed MaxPatrol alerts, the connector
+removes null object fields and recursively removes `_whitelisting`, `_meta`
+and `_presentation`. Raw strings such as `body` are not parsed or rewritten;
+false, zero, empty strings and array positions are preserved. An event identified
+only by `_meta.id` receives a top-level `uuid` before metadata is discarded.
+
+Full event records are stored in `alert_source_content.events` only. The
+`event_tree` retains UUIDs, `subevents` relationships and `reference`/`missing`
+markers without embedded `event` copies. `event_links` remains unchanged.
+Existing alerts are compacted when refreshed; this change does not perform a
+bulk rewrite or migration of saved payloads. Removed service metadata will no
+longer be available from the saved source JSON.
