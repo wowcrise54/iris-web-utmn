@@ -37,23 +37,36 @@ def error_details(error):
     return {'reason': error_reason(error), **(error.diagnostic if isinstance(error, SIEMError) else {})}
 
 
-def without_null_fields(value, _memo=None):
+def without_null_fields(value, _memo=None, *, excluded_fields=()):
     """Drop null object fields; preserve scalar values, array positions and raw strings."""
     if not isinstance(value, (dict, list)):
         return value
     memo = {} if _memo is None else _memo
     if id(value) in memo:
         return memo[id(value)]
-    # Events appear in both the flat list and the tree; clean each object only once.
+    # Preserve shared objects without allocating another cleaned copy.
     if isinstance(value, dict):
         cleaned = {}
         memo[id(value)] = cleaned
-        cleaned.update((key, without_null_fields(item, memo)) for key, item in value.items() if item is not None)
+        cleaned.update((key, without_null_fields(item, memo, excluded_fields=excluded_fields))
+                       for key, item in value.items() if item is not None and key not in excluded_fields)
     else:
         cleaned = []
         memo[id(value)] = cleaned
-        cleaned.extend(without_null_fields(item, memo) for item in value)
+        cleaned.extend(without_null_fields(item, memo, excluded_fields=excluded_fields) for item in value)
     return cleaned
+
+
+def compact_alert_source(content):
+    """Strip SIEM service fields at persistence, retaining IDs used by event links."""
+    if isinstance(content, dict) and isinstance(content.get('events'), list):
+        content = dict(content)
+        events = []
+        for row in content['events']:
+            uid = event_uuid(row) if isinstance(row, dict) else None
+            events.append({**row, 'uuid': uid} if uid and not row.get('uuid') else row)
+        content['events'] = events
+    return without_null_fields(content, excluded_fields=('_whitelisting', '_meta', '_presentation'))
 
 
 def request_diagnostic(method, path, body, response_text, token):
@@ -329,8 +342,7 @@ def render_event_tree(root_ids, events, edges):
         if uid in rendered or depth >= 64:
             return {**node, 'reference': True}
         rendered.add(uid)
-        return {**node, 'event': events[uid],
-                'subevents': [branch(child, depth + 1) for child in edges.get(uid, [])]}
+        return {**node, 'subevents': [branch(child, depth + 1) for child in edges.get(uid, [])]}
 
     result = [branch(uid) for uid in dict.fromkeys(root_ids) if uid]
     # Keep disconnected cyclic components visible as well as ordinary roots.

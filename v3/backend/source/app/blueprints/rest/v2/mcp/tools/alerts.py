@@ -16,7 +16,7 @@ from app.blueprints.iris_user import iris_current_user
 from app.blueprints.rest.v2.mcp import protocol
 from app.blueprints.rest.v2.mcp.dispatch import MCPError
 from app.blueprints.rest.v2.mcp.registry import mcp_tool
-from app.blueprints.rest.v2.mcp.result_budget import MAX_RESULT_BYTES
+from app.blueprints.rest.v2.mcp.result_budget import ALERT_SOURCE_RESULT_BYTES
 from app.blueprints.rest.v2.mcp.tools._common import (
     DEFAULT_PER_PAGE,
     MAX_PER_PAGE,
@@ -298,7 +298,7 @@ def iris_alerts_get(args: dict) -> dict:
             'field': {'type': 'string', 'enum': ['alert_source_content', 'alert_context'],
                       'default': 'alert_source_content'},
             'offset': {'type': 'integer', 'minimum': 0, 'default': 0},
-            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 30_000, 'default': 30_000,
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100_000, 'default': 100_000,
                       'description': 'Maximum characters; escaped JSON size can shorten the page.'},
             'expected_sha256': {'type': 'string',
                                 'description': 'source_sha256 from the first page; detects changes between reads.'},
@@ -314,10 +314,10 @@ def iris_alerts_source_get(args: dict) -> dict:
     if field not in ('alert_source_content', 'alert_context'):
         raise MCPError(protocol.INVALID_PARAMS, 'field must be alert_source_content or alert_context.')
     offset = args.get('offset', 0)
-    limit = args.get('limit', 30_000)
+    limit = args.get('limit', 100_000)
     # Dispatch validates types, but does not enforce JSON Schema ranges or enums.
-    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 30_000:
-        raise MCPError(protocol.INVALID_PARAMS, 'offset must be >= 0 and limit must be in 1..30000.')
+    if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 100_000:
+        raise MCPError(protocol.INVALID_PARAMS, 'offset must be >= 0 and limit must be in 1..100000.')
 
     alert = _get_alert(args['alert_identifier'])
     value = getattr(alert, field)
@@ -334,7 +334,7 @@ def iris_alerts_source_get(args: dict) -> dict:
     low, high = 0, min(limit, len(text) - offset)
     while low < high:
         mid = (low + high + 1) // 2
-        if len(json.dumps(text[offset:offset + mid])) <= MAX_RESULT_BYTES - 1024:
+        if len(json.dumps(text[offset:offset + mid])) <= ALERT_SOURCE_RESULT_BYTES - 1024:
             low = mid
         else:
             high = mid - 1

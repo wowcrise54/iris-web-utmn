@@ -34,7 +34,11 @@ from app.blueprints.rest.v2.mcp.registry import (
     ToolSpec,
     active_tool_names,
 )
-from app.blueprints.rest.v2.mcp.result_budget import apply_result_budget
+from app.blueprints.rest.v2.mcp.result_budget import (
+    ALERT_SOURCE_RESULT_BYTES,
+    MAX_RESULT_BYTES,
+    apply_result_budget,
+)
 from app.business.server_settings import get_srv_settings
 from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import CaseAccessLevel, Permissions, WarRoomAccessLevel
@@ -243,7 +247,8 @@ def dispatch_tool_call(tool_name: str, raw_args: dict) -> Any:
     # Bound the payload before it reaches the caller. Tool bodies choose
     # their own projections; this is the floor that applies even to the
     # ones that don't, and to any `view=full` request.
-    result, truncation = apply_result_budget(result)
+    max_bytes = ALERT_SOURCE_RESULT_BYTES if tool_name == 'iris_alerts_source_get' else MAX_RESULT_BYTES
+    result, truncation = apply_result_budget(result, max_bytes=max_bytes)
     if truncation is not None:
         log.info('MCP tool %s result truncated: %s', tool_name, truncation)
 

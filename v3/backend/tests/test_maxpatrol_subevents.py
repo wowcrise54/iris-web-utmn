@@ -97,7 +97,8 @@ class SubeventTests(unittest.TestCase):
         self.assertEqual(self.m.collect(self.config, self.client, store), 1)
         content = store.create.call_args.args[1]['alert_source_content']
         self.assertEqual(len(content['events']), 2)
-        child = content['event_tree'][0]['subevents'][0]['event']
+        self.assertNotIn('event', content['event_tree'][0]['subevents'][0])
+        child = next(row for row in content['events'] if row['uuid'] == B)
         self.assertEqual(child['body'], '<Event>original</Event>')
         self.assertEqual(child['custom']['process']['name'], 'example')
         self.assertTrue(content['event_collection']['complete'])
@@ -114,7 +115,8 @@ class SubeventTests(unittest.TestCase):
         self.assertTrue(result['event_collection']['complete'])
         self.assertEqual(len(result['event_tree']), 1)
         self.assertEqual(result['event_tree'][0]['uuid'], A)
-        child = result['event_tree'][0]['subevents'][0]['event']
+        self.assertNotIn('event', result['event_tree'][0]['subevents'][0])
+        child = next(row for row in result['events'] if row['uuid'] == B)
         self.assertEqual(child['_presentation'], [])
         self.assertIsNone(child['_whitelisting'])
         self.assertEqual(child['body'], rows[0]['body'])
@@ -204,3 +206,31 @@ class SubeventTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CompactSourceTests(unittest.TestCase):
+    def test_tree_contains_only_relationships_and_events_appear_once_in_json(self):
+        import json
+        m = base_tests.MaxPatrolTests().core()
+        result = m.build_event_materials([event(A, [B]), event(B, [A], body='unique-raw-event')])
+        self.assertEqual(result['event_tree'][0], {
+            'uuid': A, 'subevents': [{'uuid': B, 'subevents': [{'uuid': A, 'reference': True}]}]})
+        self.assertEqual(json.dumps(result).count('unique-raw-event'), 1)
+
+    def test_metadata_cleanup_preserves_uuid_raw_evidence_and_input(self):
+        m = base_tests.MaxPatrolTests().core()
+        raw = '{"_meta":{"keep":"raw"},"field":null}'
+        row = {'_meta': {'id': B}, '_presentation': {'large': 'x' * 10000},
+               '_whitelisting': False, 'body': raw, 'count': 0, 'flag': False,
+               'empty': None, 'nested': {'_meta': {'service': True}, 'keep': ''},
+               'items': [None, {'_presentation': [], 'keep': 1}]}
+        content = {'incident': {'_whitelisting': {'large': 'x' * 10000}}, 'events': [row]}
+        cleaned = m.compact_alert_source(content)
+        self.assertEqual(cleaned['events'][0], {
+            'uuid': B, 'body': raw, 'count': 0, 'flag': False,
+            'nested': {'keep': ''}, 'items': [None, {'keep': 1}]})
+        self.assertEqual(cleaned['incident'], {})
+        self.assertEqual(m.event_uuid(cleaned['events'][0]), B)
+        self.assertIn('_meta', row)
+        self.assertNotIn('uuid', row)
+        self.assertEqual(m.compact_alert_source(cleaned), cleaned)

@@ -44,6 +44,7 @@ def runtime():
                  protocol=SimpleNamespace(INVALID_PARAMS=-32602, INTERNAL_ERROR=-32603,
                                           METHOD_NOT_FOUND=-32601, IRIS_ACCESS_DENIED=-32001),
                  MAX_RESULT_BYTES=BUDGET['MAX_RESULT_BYTES'],
+                 ALERT_SOURCE_RESULT_BYTES=BUDGET['ALERT_SOURCE_RESULT_BYTES'],
                  iris_current_user=SimpleNamespace(id=7, mcp_allowed=True),
                  ac_current_user_permissions_mask=Mock(return_value=1),
                  ac_current_user_has_customer_access=Mock(),
@@ -80,8 +81,8 @@ def test_large_payload_survives_dispatch_and_reassembles_exactly(runtime, value)
     while True:
         page = runtime.call(args)
         assert '_truncated' not in page
-        assert len(json.dumps(page).encode('utf-8')) <= BUDGET['MAX_RESULT_BYTES']
-        assert len(json.dumps(page, ensure_ascii=False).encode('utf-8')) <= BUDGET['MAX_RESULT_BYTES']
+        assert len(json.dumps(page).encode('utf-8')) <= 256_000
+        assert len(json.dumps(page, ensure_ascii=False).encode('utf-8')) <= 256_000
         assert page['offset'] == sum(map(len, parts))
         assert page['total_chars'] == len(expected)
         assert page['source_sha256'] == hashlib.sha256(expected.encode('utf-8')).hexdigest()
@@ -116,7 +117,7 @@ def test_context_field_and_requested_page_length(runtime):
 @pytest.mark.parametrize('args', [
     {'offset': -1}, {'offset': True}, {'offset': 1.5}, {'offset': '0'},
     {'offset': None}, {'offset': 1_000_000}, {'limit': 0}, {'limit': -1},
-    {'limit': True}, {'limit': 30_001}, {'field': 'alert_customer_id'},
+    {'limit': True}, {'limit': 100_001}, {'field': 'alert_customer_id'},
     {'field': '__dict__'}, {'field': None},
 ])
 def test_invalid_ranges_and_fields_are_rejected(runtime, args):
@@ -158,3 +159,23 @@ def test_prompt_and_truncation_hint_point_to_recoverable_reads():
     assert TOOL in prompt and 'next_offset' in prompt
     _, report = BUDGET['apply_result_budget']({'alert_source_content': {'x': 'x' * 100_000}})
     assert TOOL in report['hint']
+
+
+@pytest.mark.parametrize('limit', [None, 100_000])
+def test_large_ascii_page_survives_dispatch_without_truncation(runtime, limit):
+    runtime.scope['alerts_get'].return_value.alert_source_content = 'x' * 120_000
+    args = {'alert_identifier': 306}
+    if limit is not None:
+        args['limit'] = limit
+    page = runtime.call(args)
+    assert page['text'] == 'x' * 100_000
+    assert page['next_offset'] == 100_000
+    assert '_truncated' not in page
+
+
+def test_other_tools_keep_standard_response_budget(runtime):
+    runtime.scope['TOOL_REGISTRY']['iris_alerts_get'] = SimpleNamespace(
+        **{**vars(runtime.spec), 'handler': lambda _args: {'text': 'x' * 100_000}})
+    page = runtime.scope['dispatch_tool_call']('iris_alerts_get', {'alert_identifier': 306})
+    assert '_truncated' in page
+    assert len(json.dumps(page).encode('utf-8')) <= 40_000
