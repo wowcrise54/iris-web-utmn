@@ -70,21 +70,31 @@ def get_case_root_directory(case_id):
 
 
 def delete_directory(directory: NoteDirectory):
-    # Proceed to delete directory, but remove all associated notes and subdirectories recursively
-    if directory:
-        # Delete all notes in the directory
-        for note in directory.notes:
-            delete_note(note.note_id, directory.case_id)
+    if not directory:
+        return False
 
-        # Delete all subdirectories
-        for subdirectory in directory.subdirectories:
-            delete_directory(subdirectory)
+    # Check the entire tree before delete_note or db_delete commits anything.
+    case_id = directory.case_id
+    pending = [directory]
+    directories = []
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if current.id in visited or current.case_id != case_id:
+            return False
+        if any(note.note_case_id != case_id for note in current.notes):
+            return False
 
-        db_delete(directory)
+        visited.add(current.id)
+        directories.append(current)
+        pending.extend(current.subdirectories)
 
-        return True
+    for current in reversed(directories):
+        for note in current.notes:
+            delete_note(note.note_id, case_id)
+        db_delete(current)
 
-    return False
+    return True
 
 
 def get_note_raw(note_id, caseid) -> Notes:

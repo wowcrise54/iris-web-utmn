@@ -22,6 +22,7 @@
 	import { current_user } from '$lib/stores/auth.store';
 	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
 	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import AlertEvents from './AlertEvents.svelte';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
 	import { toast } from '$lib/components/ui/toast';
 	const userCtx = getContext<UserCtx>(USER_CTX);
@@ -280,6 +281,13 @@
 			/>
 		</div>
 	{/if}
+
+	<section class="space-y-2">
+		<h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{irisT('Events', $irisLocale)}</h4>
+		{#key alert.alert_id}
+			<AlertEvents source={alert.alert_source_content} />
+		{/key}
+	</section>
 
 	<!-- Raw Alert -->
 	<div class="rounded-lg border border-border/50 bg-muted/30 p-4">

@@ -44,6 +44,7 @@
 	import { defaultAlertRelationshipsFilters } from '../AlertRelatedGraph';
 	import AlertIocEditDialog from '../alert-ioc-edit-dialog.svelte';
 	import AlertArtifacts from '../AlertArtifacts.svelte';
+	import AlertEvents from '../AlertCard/AlertEvents.svelte';
 	import { AlertMaterialsService } from '$lib/services/alert-materials.service';
 	import { current_user } from '$lib/stores/auth.store';
 	import ConfirmationDialog from '$lib/components/ui/dialog/ConfirmationDialog.svelte';
@@ -233,6 +234,7 @@
 		| 'cluster'
 		| 'iocs'
 		| 'raw'
+		| 'events'
 		| 'timeline'
 		| 'notes'
 		| 'comments'
@@ -818,6 +820,7 @@
 		{ id: 'iocs' as Tab, label: irisT("IOCs", $irisLocale), count: iocs.length },
 		{ id: 'artifacts' as Tab, label: irisT('Artifacts', $irisLocale), count: focused?.artifacts?.length ?? 0 },
 		{ id: 'raw' as Tab, label: irisT("Raw event", $irisLocale), count: undefined },
+		{ id: 'events' as Tab, label: irisT('Events', $irisLocale), count: undefined },
 		{ id: 'timeline' as Tab, label: irisT("Timeline", $irisLocale), count: undefined },
 		{ id: 'notes' as Tab, label: irisT("Notes", $irisLocale), count: notes ? 1 : undefined },
 		{
@@ -1518,6 +1521,10 @@
 				</div>
 			{:else if activeTab === 'artifacts'}
 				<div class="flow-pane">{#key f.alert_id}<AlertArtifacts alert={f} canManage={canManageMaterials} />{/key}</div>
+			{:else if activeTab === 'events'}
+				<div class="min-h-0 flex-1 overflow-auto p-3">
+					{#key f.alert_id}<AlertEvents source={f.alert_source_content} />{/key}
+				</div>
 			{:else if activeTab === 'flow'}
 				<!--
 				  Full-width like the graph rather than a column of

@@ -94,7 +94,7 @@ def case_get_tasks_state(caseid: int):
 @ac_api_requires()
 def case_task_status_update(cur_id: int, caseid: int):
     task = get_task(task_id=cur_id)
-    if not task:
+    if not task or task.task_case_id != caseid:
         return response_error("Invalid task ID for this case")
 
     if request.is_json:
@@ -123,6 +123,8 @@ def deprecated_case_add_task(caseid: int):
         task_assignee_list = request_data['task_assignees_id']
         del request_data['task_assignees_id']
 
+        request_data.pop('id', None)
+        request_data.pop('case', None)
         task = task_schema.load(request_data)
         task.task_case_id = caseid
         task = tasks_create(task, task_assignee_list)
@@ -141,7 +143,7 @@ def deprecated_case_add_task(caseid: int):
 @ac_api_requires()
 def deprecated_case_task_view(cur_id: int, caseid: int):
     task = get_task(task_id=cur_id)
-    if not task:
+    if not task or task.task_case_id != caseid:
         return response_error('Invalid task ID for this case')
 
     task_schema = CaseTaskSchema()
@@ -157,7 +159,7 @@ def deprecated_case_edit_task(cur_id: int, caseid: int):
     task_schema = CaseTaskSchema()
     try:
         task = get_task(task_id=cur_id)
-        if not task:
+        if not task or task.task_case_id != caseid:
             return response_error(msg='Invalid task ID for this case')
 
         case_identifier = task.task_case_id
@@ -170,6 +172,8 @@ def deprecated_case_edit_task(cur_id: int, caseid: int):
         del request_data['task_assignees_id']
 
         request_data['id'] = task.id
+        request_data.pop('case', None)
+        request_data['task_case_id'] = caseid
         task = task_schema.load(request_data, instance=task)
 
         task = tasks_update(task, task_assignee_list)
@@ -186,6 +190,9 @@ def deprecated_case_edit_task(cur_id: int, caseid: int):
 def deprecated_case_delete_task(cur_id: int, caseid: int):
     try:
         task = tasks_get(identifier=cur_id)
+        if task.task_case_id != caseid:
+            return response_error("Invalid task ID for this case")
+
         tasks_delete(task)
         return response_success('Task deleted')
     except BusinessProcessingError as e:
@@ -286,6 +293,10 @@ def case_comment_task_delete(cur_id: int, com_id: int, caseid: int):
 
     task = get_task(task_id=cur_id)
     if not task or task.task_case_id != caseid:
+        return response_error("Invalid comment ID")
+
+    comment = get_case_task_comment(cur_id, com_id)
+    if not comment or comment.comment_case_id != caseid:
         return response_error("Invalid comment ID")
 
     success, msg = delete_task_comment(iris_current_user.id, cur_id, com_id)

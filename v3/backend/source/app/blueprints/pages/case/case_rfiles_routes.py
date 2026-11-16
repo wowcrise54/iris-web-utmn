@@ -56,7 +56,7 @@ def case_edit_rfile_modal(cur_id, caseid, url_redir):
         return redirect(url_for('case_rfiles.case_rfile', cid=caseid, redirect=True))
 
     crf = get_rfile(cur_id)
-    if not crf:
+    if not crf or crf.case_id != caseid:
         return response_error("Invalid evidence ID for this case")
 
     comments_map = get_case_evidence_comments_count([cur_id])
@@ -81,7 +81,7 @@ def case_comment_evidence_modal(cur_id, caseid, url_redir):
         return redirect(url_for('case_task.case_task', cid=caseid, redirect=True))
 
     evidence = get_rfile(cur_id)
-    if not evidence:
+    if not evidence or evidence.case_id != caseid:
         return response_error('Invalid evidence ID')
 
     return render_template("modal_conversation.html", element_id=cur_id, element_type='evidences',

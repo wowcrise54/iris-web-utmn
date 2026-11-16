@@ -74,7 +74,7 @@ def case_comment_modal(cur_id, caseid, url_redir):
         return redirect(url_for('case_timeline.case_timeline', cid=caseid, redirect=True))
 
     event = get_case_event(cur_id)
-    if not event:
+    if not event or event.case_id != caseid:
         return response_error('Invalid event ID')
 
     return render_template("modal_conversation.html", element_id=cur_id, element_type='timeline/events',
@@ -88,7 +88,7 @@ def event_view_modal(cur_id, caseid, url_redir):
         return redirect(url_for('case_timeline.case_timeline', cid=caseid, redirect=True))
 
     event = get_case_event(cur_id)
-    if not event:
+    if not event or event.case_id != caseid:
         return response_error("Invalid event ID for this case")
 
     form = CaseEventForm()

@@ -104,7 +104,11 @@ def case_comment_delete(cur_id, com_id, caseid):
     if not event or event.case_id != caseid:
         return response_error("Invalid comment ID")
 
-    success, msg = delete_event_comment(iris_current_user, cur_id, com_id)
+    comment = get_case_event_comment(cur_id, com_id)
+    if not comment or comment.comment_case_id != caseid:
+        return response_error("Invalid comment ID")
+
+    success, msg = delete_event_comment(iris_current_user.id, cur_id, com_id)
     if not success:
         return response_error(msg)
 
@@ -429,12 +433,11 @@ def case_filter_timeline(caseid):
 @ac_requires_case_identifier(CaseAccessLevel.full_access)
 @ac_api_requires()
 def case_delete_event(cur_id, caseid):
-    call_modules_hook('on_preload_event_delete', cur_id, caseid=caseid)
-
     event = get_case_event(cur_id)
-    if not event:
+    if not event or event.case_id != caseid:
         return response_error('Not a valid event ID for this case')
 
+    call_modules_hook('on_preload_event_delete', cur_id, caseid=caseid)
     events_delete(iris_current_user, event)
 
     return response_success(f'Event ID {cur_id} deleted')
@@ -448,7 +451,7 @@ def case_delete_event(cur_id, caseid):
 @ac_api_requires()
 def event_flag(cur_id, caseid):
     event = get_case_event(cur_id)
-    if not event:
+    if not event or event.case_id != caseid:
         return response_error("Invalid event ID for this case")
 
     event.event_is_flagged = not event.event_is_flagged
@@ -465,7 +468,7 @@ def event_flag(cur_id, caseid):
 @ac_api_requires()
 def event_view(cur_id, caseid):
     event = get_case_event(cur_id)
-    if not event:
+    if not event or event.case_id != caseid:
         return response_error('Invalid event ID for this case')
 
     event_schema = EventSchema()
@@ -489,13 +492,14 @@ def event_view(cur_id, caseid):
 def case_edit_event(cur_id, caseid):
     try:
         event = get_case_event(cur_id)
-        if not event:
+        if not event or event.case_id != caseid:
             return response_error("Invalid event ID for this case")
 
         request_data = call_deprecated_on_preload_modules_hook('event_update', request.get_json(), caseid)
 
         request_data['event_id'] = event.event_id
-        event = _load(request_data, instance=event)
+        request_data['case_id'] = caseid
+        event = _load(request_data, caseid, instance=event)
         event_category_id = request_data.get('event_category_id')
         event_assets = request_data.get('event_assets')
         event_iocs = request_data.get('event_iocs')
@@ -514,7 +518,7 @@ def case_edit_event(cur_id, caseid):
         return response_success("Event updated", data=event_dump)
 
     except ValidationError as e:
-        return response_error(e.get_message(), data=e.get_data())
+        return response_error('Data error', data=e.normalized_messages())
     except BusinessProcessingError as e:
         return response_error(e.get_message(), data=e.get_data())
 
@@ -527,7 +531,8 @@ def case_add_event(caseid):
     try:
         request_data = call_deprecated_on_preload_modules_hook('event_create', request.get_json(), caseid)
 
-        event = _load(request_data)
+        request_data.pop('event_id', None)
+        event = _load(request_data, caseid)
 
         event_category_id = request_data.get('event_category_id')
         event_assets = request_data.get('event_assets')
@@ -559,23 +564,25 @@ def case_add_event(caseid):
 @ac_requires_case_identifier(CaseAccessLevel.full_access)
 @ac_api_requires()
 def case_duplicate_event(cur_id, caseid):
-    call_modules_hook('on_preload_event_duplicate', cur_id, caseid=caseid)
-
     try:
         event_schema = EventSchema()
         old_event = get_case_event(cur_id)
-        if not old_event:
+        if not old_event or old_event.case_id != caseid:
             return response_error("Invalid event ID for this case")
+
+        call_modules_hook('on_preload_event_duplicate', cur_id, caseid=caseid)
 
         # Create new Event
         event = CasesEvent()
         orig_event_id = event.event_id
         # Transfer duplicated event's attributes to new event
         for key in dir(old_event):
-            if not key.startswith('_') and key not in ['query', 'query_class', 'registry', 'metadata']:
+            if not key.startswith('_') and key not in ['query', 'query_class', 'registry', 'metadata', 'children', 'parent']:
                 setattr(event, key, getattr(old_event, key))
 
         event.event_id = orig_event_id
+        if old_event.parent_event_id and not old_event.parent:
+            event.parent_event_id = None
 
         # Override event_added and user_id
         event.event_added = datetime.utcnow()
@@ -814,8 +821,17 @@ def case_events_upload_csv(caseid):
     return response_success(msg="Events added (CSV File)")
 
 
-def _load(request_data, **kwargs):
-    schema = EventSchema()
+def _load(request_data, caseid, **kwargs):
+    parent_id = request_data.get('parent_event_id')
+    if parent_id is not None:
+        try:
+            parent = get_case_event(int(parent_id))
+        except (ValueError, TypeError, OverflowError):
+            parent = None
+        if not parent or parent.case_id != caseid:
+            raise ValidationError('Invalid parent event ID for this case')
+
+    schema = EventSchema(exclude=('children',))
     event = schema.load(request_data, **kwargs)
     event.event_date, event.event_date_wtz = schema.validate_date(request_data.get(u'event_date'),
                                                                   request_data.get(u'event_tz'))
