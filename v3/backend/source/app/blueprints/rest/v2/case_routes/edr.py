@@ -102,21 +102,22 @@ def preview(case_identifier, alert_id, event_id):
     try:
         config, event = candidate(case_identifier, alert_id, event_id)
         with closing(EdrClient(config)) as client:
-            target = client.discover(event)
+            targets = client.discover(event)
     except SIEMError as exc:
         return response_api_error(f'MaxPatrol discovery failed ({exc.code})')
     except ValueError as exc:
         return response_api_error(str(exc))
-    if target is None:
-        return response_api_success({'action': None})
-    token = serializer().dumps([
-        case_identifier, iris_current_user.id, alert_id, event_id,
-        fingerprint(target, config), uuid4().hex,
-    ])
-    return response_api_success({
-        'action': 'remove_file', 'agent': target.agent, 'hostname': target.hostname,
-        'path': target.path, 'confirmation': token,
-    })
+    return response_api_success({'actions': [
+        {
+            'module': target.module, 'action': target.action, 'title': target.title,
+            'agent': target.agent, 'hostname': target.hostname, 'parameters': target.parameters,
+            'confirmation': serializer().dumps([
+                case_identifier, iris_current_user.id, alert_id, event_id,
+                fingerprint(target, config), uuid4().hex,
+            ]),
+        }
+        for target in targets
+    ]})
 
 
 @case_edr_blueprint.post('')
@@ -141,10 +142,11 @@ def execute(case_identifier):
     try:
         config, event = candidate(case_id, alert_id, uid)
         with closing(EdrClient(config)) as client:
-            target = client.discover(event)
-            if target is None or fingerprint(target, config) != expected:
+            target = next((item for item in client.discover(event) if fingerprint(item, config) == expected), None)
+            if target is None:
                 return response_api_error('The EDR target or available action changed. Review it again.')
-            attempt = f'EDR file removal requested for alert #{alert_id}, event {uid}, agent {target.agent} ({nonce})'
+            attempt = (f'EDR {target.module}/{target.action} requested for alert #{alert_id}, '
+                       f'event {uid}, agent {target.agent} ({nonce})')
             # Serialize claims of the same confirmation across web workers.
             lock = int.from_bytes(bytes.fromhex(nonce)[:8], 'big', signed=True)
             db.session.execute(text('SELECT pg_advisory_xact_lock(:lock)'), {'lock': lock})
@@ -157,7 +159,7 @@ def execute(case_identifier):
             except SIEMError as exc:
                 result = {'status': 'unknown', 'reason': exc.code}
             track_activity(
-                f'EDR file removal result for activity #{activity.id}: {result["status"]}',
+                f'EDR action result for activity #{activity.id}: {result["status"]}',
                 caseid=case_id,
             )
             return response_api_success(result)
