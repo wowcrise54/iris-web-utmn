@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { getContext, untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { ChevronRightIcon, SearchIcon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { CASE_ACCESS_CTX, type CaseAccessContext } from '$lib/contexts/case-access.context.svelte';
 	import { useLocale } from '$lib/i18n/context';
 	import { ApiService } from '$lib/services/api.service';
@@ -27,6 +29,32 @@
 	let selection = $state('');
 	let actions = $state<Action[] | null>(null);
 	let actionIndex = $state('');
+	let pickerOpen = $state(false);
+	let query = $state('');
+	const modules: Record<string, [string, string]> = {
+		proc_terminator: ['Завершение процессов', 'Process termination'],
+		file_remover: ['Удаление файлов', 'File removal'],
+		host_isolator: ['Изоляция узла', 'Host isolation'],
+		ip_blocker: ['Блокировка IP-адресов', 'IP blocking'],
+		domain_sinkholer: ['Блокировка доменов', 'Domain blocking']
+	};
+	const groups = $derived.by(() => {
+		const term = query.trim().toLocaleLowerCase();
+		const byModule = new Map<string, { index: string; action: Action; values: string }[]>();
+		for (const [index, action] of (actions ?? []).entries()) {
+			const values = Object.values(action.parameters).map(String).join(' · ');
+			const label = modules[action.module] ? t(...modules[action.module]) : action.module;
+			if (!`${label} ${action.title} ${values}`.toLocaleLowerCase().includes(term)) continue;
+			const row = { index: String(index), action, values };
+			const group = byModule.get(action.module);
+			if (group) group.push(row);
+			else byModule.set(action.module, [row]);
+		}
+		return [...new Set([...Object.keys(modules), ...byModule.keys()])].flatMap(module => {
+			const rows = byModule.get(module);
+			return rows ? [{ module, title: modules[module] ? t(...modules[module]) : module, rows }] : [];
+		});
+	});
 	const preview = $derived(actionIndex === '' ? undefined : actions?.[Number(actionIndex)]);
 	let result = $state<Result | null>(null);
 	let confirmed = $state(false);
@@ -42,6 +70,8 @@
 		selection = '';
 		actions = null;
 		actionIndex = '';
+		pickerOpen = false;
+		query = '';
 		result = null;
 		error = '';
 		confirmed = false;
@@ -71,12 +101,16 @@
 		error = '';
 		actions = null;
 		actionIndex = '';
+		query = '';
 		result = null;
 		confirmed = false;
 		try {
 			const res = await ApiService.get<{ actions: Action[] }>(`${url}/${key(selected)}`);
 			if (url !== endpoint) return;
-			if (res.ok && res.data && typeof res.data === 'object') actions = res.data.actions ?? [];
+			if (res.ok && res.data && typeof res.data === 'object') {
+				actions = res.data.actions ?? [];
+				pickerOpen = actions.length > 0;
+			}
 			else error = res.error?.message ?? t('Не удалось получить действия EDR', 'Could not load EDR actions');
 		} finally {
 			if (url === endpoint) busy = false;
@@ -143,16 +177,51 @@
 	{/if}
 
 	{#if actions?.length}
-		<div class="space-y-2">
-			<label class="block text-sm font-medium" for="edr-action">{t('Действие EDR', 'EDR action')}</label>
-			<select id="edr-action" class="w-full rounded-md border bg-background p-2 text-sm"
-				bind:value={actionIndex} disabled={busy} onchange={() => { confirmed = false; }}>
-				<option value="">{t('Выберите действие', 'Select an action')}</option>
-				{#each actions as action, index}
-					<option value={String(index)}>{action.title} · {action.module}/{action.action}</option>
+		<Dialog.Root bind:open={pickerOpen}>
+			<Dialog.Trigger class="ml-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
+				onclick={() => { query = ''; }}>
+				{t('Выбрать действие', 'Select an action')}
+			</Dialog.Trigger>
+			<Dialog.Content class="max-h-[90dvh] w-[calc(100%_-_1rem)] max-w-3xl grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+				<Dialog.Header class="border-b px-4 py-4 pr-12 text-left">
+					<Dialog.Title class="text-xl font-bold">{t('Реагирование', 'Response')}</Dialog.Title>
+					<Dialog.Description class="sr-only">
+						{t('Выберите доступную команду EDR для события.', 'Choose an available EDR action for the event.')}
+					</Dialog.Description>
+				</Dialog.Header>
+				<div class="border-b px-4 py-3">
+					<label class="flex items-center gap-2 rounded-md border bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
+						<SearchIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+						<span class="sr-only">{t('Название действия', 'Action name')}</span>
+						<input type="search" bind:value={query} class="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none"
+							placeholder={t('Название действия', 'Action name')} />
+					</label>
+				</div>
+				<div class="min-h-0 overflow-y-auto pb-3">
+				{#each groups as group (group.module)}
+					<h3 class="px-4 pb-1 pt-3 text-base font-semibold">{group.title}</h3>
+					<ul>
+						{#each group.rows as row (row.index)}
+							<li>
+								<button type="button" aria-pressed={actionIndex === row.index}
+									class="group flex w-full items-start gap-2 px-4 py-2 text-left text-sm leading-6 hover:bg-blue-500/10 focus-visible:bg-blue-500/15 focus-visible:outline-none aria-pressed:bg-blue-500/15"
+									onclick={() => { actionIndex = row.index; confirmed = false; pickerOpen = false; }}>
+									<ChevronRightIcon class="mt-1 size-4 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-aria-pressed:opacity-100" aria-hidden="true" />
+									<span class="min-w-0 break-words">{row.action.title}
+										<span class="text-muted-foreground">{row.values}</span>
+									</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<p role="status" class="px-4 py-4 text-sm text-muted-foreground">
+						{t('Действия не найдены.', 'No matching actions.')}
+					</p>
 				{/each}
-			</select>
-		</div>
+				</div>
+			</Dialog.Content>
+		</Dialog.Root>
 	{:else if actions}
 		<p role="status">{t('Для этого события агент не предоставил применимых действий.', 'The agent returned no applicable actions for this event.')}</p>
 	{/if}
