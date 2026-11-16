@@ -4,7 +4,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 import re
 from uuid import UUID
 
-from .collector import Client, SIEMError
+from .collector import Client, SIEMError, event_uuid
 
 
 MODULES = ['file_remover', 'host_isolator', 'proc_terminator', 'ip_blocker', 'domain_sinkholer']
@@ -35,6 +35,27 @@ def event_target(event):
     if not windows.name or not posix.name:
         return None
     return asset, path
+
+
+def eligible_events(events):
+    if isinstance(events, list):
+        for event in events:
+            if isinstance(event, dict) and event_target(event) is not None:
+                uid = event_uuid(event)
+                if uid:
+                    yield uid, event
+
+
+def summarize_events(alerts):
+    events = []
+    counts = {'matched_alerts': 0, 'saved_events': 0}
+    for alert_id, title, saved in alerts:
+        counts['matched_alerts'] += 1
+        if isinstance(saved, list):
+            counts['saved_events'] += len(saved)
+        events.extend({'alert_id': alert_id, 'alert_title': title, 'event_id': uid, 'path': event[FIELD]}
+                      for uid, event in eligible_events(saved))
+    return events, counts
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@ from contextlib import closing
 from dataclasses import asdict
 from hashlib import sha256
 import json
+import logging
 from os import getenv
 from uuid import uuid4
 
@@ -20,11 +21,12 @@ from app.models.alerts import Alert, AlertCaseAssociation
 from app.models.maxpatrol import MaxPatrolReceipt
 from app.models.models import IrisModule, UserActivity
 from app.web import Blueprint, current_app, request
-from iris_maxpatrol_module.collector import SIEMError, event_uuid
-from iris_maxpatrol_module.edr import EdrClient, event_target
+from iris_maxpatrol_module.collector import SIEMError
+from iris_maxpatrol_module.edr import EdrClient, eligible_events, summarize_events
 
 
 case_edr_blueprint = Blueprint('case_edr', __name__, url_prefix='/<int:case_identifier>/edr')
+log = logging.getLogger('iris.edr')
 
 
 def execution_enabled():
@@ -43,14 +45,7 @@ def sources(case_id, config, alert_id=None):
     )
     if alert_id is not None:
         query = query.filter(Alert.alert_id == alert_id)
-    for identifier, title, events in query.order_by(Alert.alert_id.desc()).yield_per(10):
-        if not isinstance(events, list):
-            continue
-        for event in events:
-            if isinstance(event, dict) and event_target(event) is not None:
-                uid = event_uuid(event)
-                if uid:
-                    yield identifier, title, uid, event
+    return query.order_by(Alert.alert_id.desc()).yield_per(10)
 
 
 def module_configuration():
@@ -75,19 +70,25 @@ def list_events(case_identifier):
         config = module_configuration()
     except ValueError:
         return response_api_error('MaxPatrol SIEM configuration is invalid')
-    events = [] if config is None else [
-        {'alert_id': identifier, 'alert_title': title, 'event_id': uid,
-         'path': event['object.fullpath']}
-        for identifier, title, uid, event in sources(case_identifier, config)
-    ]
-    return response_api_success({'events': events, 'execution_enabled': execution_enabled()})
+    linked_alerts = db.session.query(AlertCaseAssociation).filter_by(case_id=case_identifier).count()
+    events, counts = summarize_events(sources(case_identifier, config) if config else ())
+    log.info('EDR case=%s module_active=%s linked_alerts=%s matched_alerts=%s saved_events=%s eligible_events=%s',
+             case_identifier, config is not None, linked_alerts, counts['matched_alerts'],
+             counts['saved_events'], len(events))
+    return response_api_success({
+        'events': events, 'execution_enabled': execution_enabled(),
+        'module_active': config is not None, 'linked_alerts': linked_alerts, **counts,
+    })
 
 
 def candidate(case_id, alert_id, uid):
     config = module_configuration()
     if config is None:
         raise ValueError('MaxPatrol SIEM module is disabled')
-    matches = [event for _, _, event_id, event in sources(case_id, config, alert_id) if event_id == uid]
+    matches = [
+        event for _, _, saved in sources(case_id, config, alert_id)
+        for event_id, event in eligible_events(saved) if event_id == uid
+    ]
     if len(matches) != 1:
         raise ValueError('The event is unavailable or ambiguous in this case')
     return config, matches[0]

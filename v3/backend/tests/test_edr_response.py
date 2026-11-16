@@ -4,7 +4,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'source'))
-from iris_maxpatrol_module.edr import EdrClient, event_target
+from iris_maxpatrol_module.edr import EdrClient, event_target, summarize_events
 
 
 ASSET = 'd6a044ca-e05e-46e2-b3be-8afad6c3ec86'
@@ -13,6 +13,16 @@ SERVICE = 'b' * 32
 PATH = r'C:\Temp\sample.exe'
 EVENT = {'event_src.asset': ASSET, 'asset_ids': [ASSET], 'object.fullpath': PATH}
 ACTION = {'module': 'file_remover', 'action': 'fr_remove_object_file', 'fields': ['object.fullpath']}
+
+
+def test_listing_counts_saved_events_even_when_they_cannot_be_used_for_removal():
+    uid = 'd6a044ca-e05e-46e2-b3be-8afad6c3ec87'
+    events, counts = summarize_events([
+        (7, 'Alert', [{**EVENT, 'uuid': uid}, {'uuid': uid}, EVENT]),
+        (8, 'Empty alert', None),
+    ])
+    assert counts == {'matched_alerts': 2, 'saved_events': 3}
+    assert events == [{'alert_id': 7, 'alert_title': 'Alert', 'event_id': uid, 'path': PATH}]
 
 
 @pytest.mark.parametrize('event', [

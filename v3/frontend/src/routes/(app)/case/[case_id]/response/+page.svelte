@@ -7,6 +7,10 @@
 	import { ApiService } from '$lib/services/api.service';
 
 	type Event = { alert_id: number; alert_title: string; event_id: string; path: string };
+	type EventList = {
+		events: Event[]; execution_enabled: boolean; module_active: boolean;
+		linked_alerts: number; matched_alerts: number; saved_events: number;
+	};
 	type Preview = { action: null } | {
 		action: 'remove_file'; agent: string; hostname: string; path: string; confirmation: string;
 	};
@@ -17,6 +21,7 @@
 	const access = getContext<CaseAccessContext>(CASE_ACCESS_CTX);
 	const endpoint = $derived(`/cases/${page.params.case_id}/edr`);
 	let events = $state<Event[]>([]);
+	let summary = $state<EventList | null>(null);
 	let enabled = $state(false);
 	let selection = $state('');
 	let preview = $state<Preview | null>(null);
@@ -29,6 +34,7 @@
 
 	async function list(url: string) {
 		events = [];
+		summary = null;
 		enabled = false;
 		selection = '';
 		preview = null;
@@ -37,10 +43,11 @@
 		confirmed = false;
 		busy = true;
 		try {
-			const res = await ApiService.get<{ events: Event[]; execution_enabled: boolean }>(url);
+			const res = await ApiService.get<EventList>(url);
 			if (url !== endpoint) return;
 			if (res.ok && res.data && typeof res.data === 'object') {
 				events = res.data.events;
+				if (typeof res.data.linked_alerts === 'number') summary = res.data;
 				enabled = res.data.execution_enabled;
 			} else error = res.error?.message ?? t('Не удалось загрузить события', 'Could not load events');
 		} finally {
@@ -92,6 +99,14 @@
 
 <section class="mx-auto max-w-4xl space-y-5 p-6" aria-busy={busy}>
 	<h1 class="text-xl font-semibold">{t('Реагирование', 'Response')}</h1>
+	{#if summary}
+		<dl class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+			<div><dt>{t('Связанные алёрты', 'Linked alerts')}</dt><dd>{summary.linked_alerts}</dd></div>
+			<div><dt>{t('Алёрты из текущего MaxPatrol', 'Alerts from the current MaxPatrol source')}</dt><dd>{summary.matched_alerts}</dd></div>
+			<div><dt>{t('Сохранённые события MaxPatrol', 'Saved MaxPatrol events')}</dt><dd>{summary.saved_events}</dd></div>
+			<div><dt>{t('Кандидаты на удаление файла', 'File removal candidates')}</dt><dd>{events.length}</dd></div>
+		</dl>
+	{/if}
 	{#if events.length}
 		<div class="space-y-2">
 			<label class="block text-sm font-medium" for="edr-event">{t('Событие MaxPatrol', 'MaxPatrol event')}</label>
@@ -106,10 +121,19 @@
 		</div>
 		<Button disabled={!selected || busy} onclick={discover}>{t('Проверить доступные действия', 'Check available actions')}</Button>
 	{:else if !busy && !error}
-		<p class="text-sm text-muted-foreground">{t(
-			'В кейсе нет привязанных событий MaxPatrol с однозначным активом и путём к файлу.',
-			'This case has no linked MaxPatrol events with a matching asset and file path.'
-		)}</p>
+		<p class="text-sm text-muted-foreground">
+			{#if summary && !summary.linked_alerts}
+				{t('К кейсу не привязаны алёрты.', 'No alerts are linked to this case.')}
+			{:else if summary && !summary.module_active}
+				{t('Модуль MaxPatrol SIEM выключен.', 'The MaxPatrol SIEM module is disabled.')}
+			{:else if summary && !summary.matched_alerts}
+				{t('Среди привязанных алёртов нет импортированных из текущего источника MaxPatrol SIEM.', 'None of the linked alerts were imported from the current MaxPatrol SIEM source.')}
+			{:else if summary && !summary.saved_events}
+				{t('В алёртах MaxPatrol ещё нет сохранённых событий.', 'The MaxPatrol alerts have no saved events yet.')}
+			{:else}
+				{t('Для удаления файла нужны ID события, сопоставленный актив и абсолютный путь к файлу.', 'File removal requires an event ID, a matching asset, and an absolute file path.')}
+			{/if}
+		</p>
 	{/if}
 
 	{#if preview?.action}
