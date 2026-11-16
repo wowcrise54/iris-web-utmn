@@ -1,5 +1,6 @@
 from iris_interface.IrisModuleInterface import IrisModuleInterface, IrisModuleTypes
 from iris_maxpatrol_module.collector import LOOKBACK_DESCRIPTION
+from iris_maxpatrol_module.edr import EDR_RESPONSE_PARAMETER
 
 
 def parameter(name, label, default, description='', mandatory=True, kind='string'):
@@ -28,6 +29,7 @@ class IrisMaxPatrolInterface(IrisModuleInterface):
         parameter('status_id', 'IRIS alert status ID', '5', 'Default matches the supplied exporter.'),
         parameter('verify_tls', 'Проверять TLS-сертификат (true / false)', True,
                   'Disable only for appliances whose certificate cannot be verified.', mandatory=False, kind='bool'),
+        EDR_RESPONSE_PARAMETER,
     ]
 
     def register_hooks(self, module_id):

@@ -5,6 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'source'))
 from iris_maxpatrol_module.edr import EdrClient, event_asset, valid_file_path, summarize_events, catalog_targets
+from iris_maxpatrol_module.edr import execution_enabled
 
 
 ASSET = 'd6a044ca-e05e-46e2-b3be-8afad6c3ec86'
@@ -13,6 +14,17 @@ SERVICE = 'b' * 32
 PATH = r'C:\Temp\sample.exe'
 EVENT = {'event_src.asset': ASSET, 'asset_ids': [ASSET], 'object.fullpath': PATH}
 ACTION = {'module': 'file_remover', 'action': 'fr_remove_object_file', 'fields': ['object.fullpath']}
+
+
+def test_edr_module_setting_overrides_legacy_environment(monkeypatch):
+    monkeypatch.delenv('IRIS_EDR_RESPONSE_ENABLED', raising=False)
+    parameter = {'param_name': 'edr_response_enabled', 'default': False}
+    assert not execution_enabled([parameter])
+    assert execution_enabled([{**parameter, 'value': True}])
+    monkeypatch.setenv('IRIS_EDR_RESPONSE_ENABLED', 'true')
+    assert execution_enabled([])
+    assert execution_enabled([parameter])
+    assert not execution_enabled([{**parameter, 'value': False}])
 
 
 def test_catalog_offers_host_and_process_actions_without_a_file_path():
@@ -53,12 +65,18 @@ def test_execute_sends_only_the_selected_catalog_action(monkeypatch):
 
 def test_listing_counts_saved_events_even_when_they_cannot_be_used_for_removal():
     uid = 'd6a044ca-e05e-46e2-b3be-8afad6c3ec87'
+    row = {**EVENT, 'uuid': uid, 'time': '2026-11-16T05:36:48Z', 'text': 'Process started',
+           'event_src.host': 'endpoint', 'subject.process.name': 'sample.exe', 'body': 'raw data'}
     events, counts = summarize_events([
-        (7, 'Alert', [{**EVENT, 'uuid': uid}, {'uuid': uid}, EVENT]),
+        (7, 'Alert', [row, {'uuid': uid}, EVENT]),
         (8, 'Empty alert', None),
     ])
     assert counts == {'matched_alerts': 2, 'saved_events': 3}
-    assert events == [{'alert_id': 7, 'alert_title': 'Alert', 'event_id': uid, 'asset': ASSET}]
+    assert events == [{
+        'alert_id': 7, 'alert_title': 'Alert', 'event_id': uid, 'asset': ASSET,
+        'time': row['time'], 'host': 'endpoint', 'text': 'Process started',
+        'details': {'subject.process.name': 'sample.exe', 'object.fullpath': PATH},
+    }]
 
 
 def test_unmapped_event_is_not_actionable():

@@ -1,5 +1,6 @@
 """Resolve and run actions advertised by a MaxPatrol EDR agent."""
 from dataclasses import dataclass
+from os import getenv
 from pathlib import PurePosixPath, PureWindowsPath
 import re
 from uuid import UUID
@@ -12,6 +13,22 @@ EDR = '/app/mpx/api/edr/v1/agents'
 GRID = '/api/assets_temporal_readmodel/v1/assets_grid'
 HASH = re.compile(r'[a-fA-F0-9]{32}')
 IDENTIFIER = re.compile(r'[a-zA-Z][a-zA-Z0-9_]{0,127}')
+ENABLED_PARAMETER = 'edr_response_enabled'
+EDR_RESPONSE_PARAMETER = {
+    'param_name': ENABLED_PARAMETER,
+    'param_human_name': 'Выполнение действий MaxPatrol EDR',
+    'param_description': 'Разрешает запуск выбранного действия EDR из кейса после подтверждения.',
+    'default': False,
+    'mandatory': False,
+    'type': 'bool',
+}
+
+
+def execution_enabled(parameters):
+    for parameter in parameters or ():
+        if parameter['param_name'] == ENABLED_PARAMETER and 'value' in parameter:
+            return parameter['value'] is True
+    return getenv('IRIS_EDR_RESPONSE_ENABLED', '').lower() == 'true'
 
 
 def event_asset(event):
@@ -46,6 +63,29 @@ def eligible_events(events):
                     yield uid, event
 
 
+EVENT_DETAIL_FIELDS = (
+    'subject.account.name', 'subject.process.name', 'subject.process.id', 'subject.process.fullpath',
+    'action', 'object.account.name', 'object.process.name', 'object.process.id',
+    'object.process.fullpath', 'object.name', 'object.fullpath', 'status',
+    'event_src.ip', 'event_src.title', 'event_src.subsys', 'msgid',
+)
+
+
+def event_display(event):
+    fields = ('time', 'text', 'event_src.host', 'event_src.fqdn', 'event_src.hostname', *EVENT_DETAIL_FIELDS)
+    values = {
+        key: value[:2048] if isinstance(value, str) else value
+        for key in fields if (value := event.get(key)) is not None
+        and (isinstance(value, str) and value.strip() or type(value) in (int, bool))
+    }
+    return {
+        'time': values.get('time'),
+        'host': values.get('event_src.host') or values.get('event_src.fqdn') or values.get('event_src.hostname'),
+        'text': values.get('text'),
+        'details': {key: values[key] for key in EVENT_DETAIL_FIELDS if key in values},
+    }
+
+
 def summarize_events(alerts):
     events = []
     counts = {'matched_alerts': 0, 'saved_events': 0}
@@ -54,7 +94,7 @@ def summarize_events(alerts):
         if isinstance(saved, list):
             counts['saved_events'] += len(saved)
         events.extend({'alert_id': alert_id, 'alert_title': title, 'event_id': uid,
-                       'asset': event['event_src.asset']}
+                       'asset': event['event_src.asset'], **event_display(event)}
                       for uid, event in eligible_events(saved))
     return events, counts
 

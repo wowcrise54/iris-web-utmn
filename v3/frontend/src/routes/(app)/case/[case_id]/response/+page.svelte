@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { getContext, untrack } from 'svelte';
 	import { page } from '$app/state';
-	import { ChevronRightIcon, SearchIcon } from 'lucide-svelte';
+	import { ChevronRightIcon, SearchIcon, ZapIcon } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { CASE_ACCESS_CTX, type CaseAccessContext } from '$lib/contexts/case-access.context.svelte';
 	import { useLocale } from '$lib/i18n/context';
 	import { ApiService } from '$lib/services/api.service';
+	import { formatDateTime } from '$lib/utils/time-formatter';
 
-	type Event = { alert_id: number; alert_title: string; event_id: string; asset: string };
+	type Event = {
+		alert_id: number; alert_title: string; event_id: string; asset: string;
+		time?: string | number | null; host?: string | null; text?: string | null;
+		details?: Record<string, string | number | boolean>;
+	};
 	type EventList = {
 		events: Event[]; execution_enabled: boolean; module_active: boolean;
 		linked_alerts: number; matched_alerts: number; saved_events: number;
@@ -62,6 +67,26 @@
 	let error = $state('');
 	const selected = $derived(events.find(event => key(event) === selection));
 	const key = (event: Event) => `${event.alert_id}/${event.event_id}`;
+	const timestamp = (event: Event) => typeof event.time === 'number'
+		? event.time : Date.parse(event.time ?? '') || 0;
+	const detailGroups: { label: [string, string]; fields: string[] }[] = [
+		{ label: ['Субъект', 'Subject'], fields: ['subject.account.name', 'subject.process.name', 'subject.process.id', 'subject.process.fullpath'] },
+		{ label: ['Действие', 'Action'], fields: ['action'] },
+		{ label: ['Объект', 'Object'], fields: ['object.account.name', 'object.process.name', 'object.process.id', 'object.process.fullpath', 'object.name', 'object.fullpath'] },
+		{ label: ['Статус', 'Status'], fields: ['status'] },
+		{ label: ['Источник', 'Source'], fields: ['event_src.ip', 'event_src.title', 'event_src.subsys', 'msgid'] }
+	];
+
+	function selectEvent(event: Event) {
+		if (selection === key(event)) return;
+		selection = key(event);
+		actions = null;
+		actionIndex = '';
+		pickerOpen = false;
+		confirmed = false;
+		result = null;
+		error = '';
+	}
 
 	async function list(url: string) {
 		events = [];
@@ -80,7 +105,8 @@
 			const res = await ApiService.get<EventList>(url);
 			if (url !== endpoint) return;
 			if (res.ok && res.data && typeof res.data === 'object') {
-				events = res.data.events;
+				events = [...res.data.events].sort((a, b) => timestamp(b) - timestamp(a));
+				selection = events.length ? key(events[0]) : '';
 				if (typeof res.data.linked_alerts === 'number') summary = res.data;
 				enabled = res.data.execution_enabled;
 			} else error = res.error?.message ?? t('Не удалось загрузить события', 'Could not load events');
@@ -137,7 +163,7 @@
 	}
 </script>
 
-<section class="mx-auto max-w-4xl space-y-5 p-6" aria-busy={busy}>
+<section class="mx-auto max-w-screen-2xl space-y-5 p-4 sm:p-6" aria-busy={busy}>
 	<h1 class="text-xl font-semibold">{t('Реагирование', 'Response')}</h1>
 	{#if summary}
 		<dl class="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
@@ -148,18 +174,70 @@
 		</dl>
 	{/if}
 	{#if events.length}
-		<div class="space-y-2">
-			<label class="block text-sm font-medium" for="edr-event">{t('Событие MaxPatrol', 'MaxPatrol event')}</label>
-			<select id="edr-event" class="w-full rounded-md border bg-background p-2 text-sm"
-				bind:value={selection} disabled={busy}
-				onchange={() => { actions = null; actionIndex = ''; confirmed = false; result = null; error = ''; }}>
-				<option value="">{t('Выберите событие', 'Select an event')}</option>
-				{#each events as event (key(event))}
-					<option value={key(event)}>#{event.alert_id} · {event.alert_title} · {event.asset} · {event.event_id}</option>
-				{/each}
-			</select>
+		<div class="grid overflow-hidden rounded-md border lg:grid-cols-[minmax(0,1fr)_19rem]">
+			<div class="max-h-[60vh] overflow-auto">
+				<table class="w-full min-w-[32rem] table-fixed text-left text-xs" aria-label={t('События MaxPatrol', 'MaxPatrol events')}>
+					<thead class="sticky top-0 z-10 border-b bg-muted text-muted-foreground">
+						<tr>
+							<th class="w-36 px-3 py-2 font-medium" scope="col" aria-sort="descending">{t('Время', 'Time')}</th>
+							<th class="w-44 px-3 py-2 font-medium" scope="col">{t('Узел', 'Host')}</th>
+							<th class="px-3 py-2 font-medium" scope="col">{t('Описание', 'Description')}</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each events as event (key(event))}
+							<tr class={`relative border-b last:border-b-0 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring hover:bg-muted/70 ${selection === key(event) ? 'bg-blue-500/10' : ''}`}>
+								<td class="whitespace-nowrap px-3 py-2 tabular-nums">{formatDateTime(event.time) || '—'}</td>
+								<td class="truncate px-3 py-2 text-blue-700 dark:text-blue-300" title={event.host || event.asset}>{event.host || event.asset}</td>
+								<td class="px-3 py-2">
+									<button type="button" class="block w-full truncate text-left outline-none after:absolute after:inset-0"
+										disabled={busy} aria-pressed={selection === key(event)}
+										title={event.text || event.alert_title} onclick={() => selectEvent(event)}>
+										{event.text || event.alert_title}
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if selected}
+				<aside class="space-y-3 border-t bg-card p-3 text-xs lg:max-h-[60vh] lg:overflow-y-auto lg:border-l lg:border-t-0"
+					aria-label={t('Детали события', 'Event details')}>
+					<div>
+						<h2 class="text-sm font-semibold">{t('Детали события', 'Event details')}</h2>
+						<p class="mt-1 break-words">{selected.text || selected.alert_title}</p>
+					</div>
+					<Button size="sm" disabled={busy} onclick={discover}>
+						<ZapIcon class="size-4" aria-hidden="true" />
+						{t('Реагировать', 'Respond')}
+					</Button>
+					<dl class="divide-y border-y">
+						<div class="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 py-2">
+							<dt class="font-medium">{t('Узел', 'Host')}</dt>
+							<dd class="break-all">{selected.host || selected.asset}</dd>
+						</div>
+						{#each detailGroups as group}
+							{@const fields = group.fields.filter(field => selected?.details?.[field] !== undefined)}
+							{#if fields.length}
+								<div class="grid grid-cols-[5rem_minmax(0,1fr)] gap-2 py-2">
+									<dt class="font-medium">{t(...group.label)}</dt>
+									<dd class="space-y-1">
+										{#each fields as field (field)}
+											<div class="break-all">
+												<span class="text-muted-foreground">{field}</span>
+												<div>{String(selected.details?.[field])}</div>
+											</div>
+										{/each}
+									</dd>
+								</div>
+							{/if}
+						{/each}
+					</dl>
+					<p class="break-all text-muted-foreground">#{selected.alert_id} · {selected.event_id}</p>
+				</aside>
+			{/if}
 		</div>
-		<Button disabled={!selected || busy} onclick={discover}>{t('Проверить доступные действия', 'Check available actions')}</Button>
 	{:else if !busy && !error}
 		<p class="text-sm text-muted-foreground">
 			{#if summary && !summary.linked_alerts}
@@ -241,7 +319,7 @@
 				</label>
 				<Button variant="destructive" disabled={!confirmed || busy} onclick={execute}>{t('Выполнить действие', 'Execute action')}</Button>
 			{:else if !enabled}
-				<p class="text-sm text-muted-foreground">{t('Выполнение действий EDR отключено в настройках сервера.', 'EDR execution is disabled in server settings.')}</p>
+				<p class="text-sm text-muted-foreground">{t('Выполнение действий EDR отключено в настройках модуля MaxPatrol SIEM.', 'EDR execution is disabled in the MaxPatrol SIEM module settings.')}</p>
 			{/if}
 		</div>
 	{/if}

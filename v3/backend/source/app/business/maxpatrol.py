@@ -12,6 +12,7 @@ from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
 from iris_maxpatrol_module.collector import (
     LOOKBACK_DESCRIPTION, Config, positive_int, event_uuid, render_event_tree, compact_alert_source,
 )
+from iris_maxpatrol_module.edr import EDR_RESPONSE_PARAMETER, ENABLED_PARAMETER, execution_enabled
 
 MODULE = 'iris_maxpatrol_module'
 NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
@@ -43,13 +44,22 @@ def prepare_parameter(name, value, existing=None):
 
 
 def public_config(parameters):
-    result = copy.deepcopy(parameters or [])
+    result = with_edr_parameter(parameters)
     for parameter in result:
+        if parameter['param_name'] == ENABLED_PARAMETER:
+            parameter['value'] = execution_enabled(parameters)
         if parameter['param_name'] == 'lookback_hours':
             parameter['param_description'] = LOOKBACK_DESCRIPTION
         if parameter['param_name'] == 'api_token':
             parameter['has_value'] = bool(parameter.get('value'))
             parameter['value'] = ''
+    return result
+
+
+def with_edr_parameter(parameters):
+    result = copy.deepcopy(parameters or [])
+    if not any(parameter['param_name'] == ENABLED_PARAMETER for parameter in result):
+        result.append(EDR_RESPONSE_PARAMETER.copy())
     return result
 
 

@@ -88,8 +88,10 @@ def iris_module_save_parameter(mod_id, mod_config, parameter, value, section=Non
 
     if data.module_name == 'iris_maxpatrol_module':
         from copy import deepcopy
-        from app.business.maxpatrol import prepare_parameter
-        mod_config = deepcopy(data.module_config or [])
+        from app.business.maxpatrol import prepare_parameter, with_edr_parameter
+        from iris_maxpatrol_module.edr import ENABLED_PARAMETER
+        mod_config = (with_edr_parameter(data.module_config) if parameter == ENABLED_PARAMETER
+                      else deepcopy(data.module_config or []))
         existing = next((p.get('value') for p in mod_config if p['param_name'] == parameter), None)
         value = prepare_parameter(parameter, value, existing)
 
@@ -176,7 +178,11 @@ def get_module_config_from_id(module_id):
         IrisModule.id == module_id
     ).first()
 
-    return data.module_config, data.module_human_name, data.module_name
+    config = data.module_config
+    if data.module_name == 'iris_maxpatrol_module':
+        from app.business.maxpatrol import with_edr_parameter
+        config = with_edr_parameter(config)
+    return config, data.module_human_name, data.module_name
 
 
 def get_module_config_from_name(module_name):

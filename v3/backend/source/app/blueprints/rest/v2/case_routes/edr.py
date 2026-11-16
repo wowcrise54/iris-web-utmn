@@ -4,7 +4,6 @@ from dataclasses import asdict
 from hashlib import sha256
 import json
 import logging
-from os import getenv
 from uuid import uuid4
 
 from itsdangerous import BadData, URLSafeTimedSerializer
@@ -22,15 +21,11 @@ from app.models.maxpatrol import MaxPatrolReceipt
 from app.models.models import IrisModule, UserActivity
 from app.web import Blueprint, current_app, request
 from iris_maxpatrol_module.collector import SIEMError
-from iris_maxpatrol_module.edr import EdrClient, eligible_events, summarize_events
+from iris_maxpatrol_module.edr import EdrClient, eligible_events, execution_enabled, summarize_events
 
 
 case_edr_blueprint = Blueprint('case_edr', __name__, url_prefix='/<int:case_identifier>/edr')
 log = logging.getLogger('iris.edr')
-
-
-def execution_enabled():
-    return getenv('IRIS_EDR_RESPONSE_ENABLED', '').lower() == 'true'
 
 
 def sources(case_id, config, alert_id=None):
@@ -48,9 +43,8 @@ def sources(case_id, config, alert_id=None):
     return query.order_by(Alert.alert_id.desc()).yield_per(10)
 
 
-def module_configuration():
-    row = db.session.query(IrisModule).filter_by(module_name=MODULE, is_active=True).first()
-    return configuration(row) if row else None
+def active_module():
+    return db.session.query(IrisModule).filter_by(module_name=MODULE, is_active=True).first()
 
 
 def serializer():
@@ -66,8 +60,9 @@ def fingerprint(target, config):
 def list_events(case_identifier):
     if not access(case_identifier):
         return ac_api_return_access_denied()
+    row = active_module()
     try:
-        config = module_configuration()
+        config = configuration(row) if row else None
     except ValueError:
         return response_api_error('MaxPatrol SIEM configuration is invalid')
     linked_alerts = db.session.query(AlertCaseAssociation).filter_by(case_id=case_identifier).count()
@@ -76,15 +71,16 @@ def list_events(case_identifier):
              case_identifier, config is not None, linked_alerts, counts['matched_alerts'],
              counts['saved_events'], len(events))
     return response_api_success({
-        'events': events, 'execution_enabled': execution_enabled(),
+        'events': events, 'execution_enabled': row is not None and execution_enabled(row.module_config),
         'module_active': config is not None, 'linked_alerts': linked_alerts, **counts,
     })
 
 
 def candidate(case_id, alert_id, uid):
-    config = module_configuration()
-    if config is None:
+    row = active_module()
+    if row is None:
         raise ValueError('MaxPatrol SIEM module is disabled')
+    config = configuration(row)
     matches = [
         event for _, _, saved in sources(case_id, config, alert_id)
         for event_id, event in eligible_events(saved) if event_id == uid
@@ -125,7 +121,8 @@ def preview(case_identifier, alert_id, event_id):
 def execute(case_identifier):
     if not access(case_identifier, True):
         return ac_api_return_access_denied()
-    if not execution_enabled():
+    row = active_module()
+    if row is None or not execution_enabled(row.module_config):
         return response_api_error('EDR action execution is disabled')
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict) or payload.get('confirmed') is not True:
