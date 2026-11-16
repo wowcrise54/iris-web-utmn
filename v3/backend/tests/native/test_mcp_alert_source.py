@@ -14,6 +14,7 @@ import pytest
 SOURCE = Path(__file__).resolve().parents[2] / 'source/app'
 MCP = SOURCE / 'blueprints/rest/v2/mcp'
 TOOL = 'iris_alerts_source_get'
+EVENT_TOOL = 'iris_alerts_events_get'
 BUDGET = runpy.run_path(str(MCP / 'result_budget.py'))
 CLASSIFICATION = runpy.run_path(str(MCP / 'classification.py'))
 
@@ -59,10 +60,74 @@ def runtime():
                      'string': str, 'integer': int, 'object': dict})
     extract(MCP / 'dispatch.py', ['MCPError', '_validate_args', '_augmented_input_schema',
                                   'dispatch_tool_call'], scope)
-    extract(MCP / 'tools/alerts.py', ['_get_alert', TOOL], scope)
+    extract(MCP / 'tools/alerts.py', ['_get_alert', '_alert_text_page_end', TOOL, EVENT_TOOL], scope)
     return SimpleNamespace(scope=scope, spec=registry[TOOL],
                            call=lambda args: scope['dispatch_tool_call'](TOOL, args),
+                           events=lambda **args: scope['dispatch_tool_call'](
+                               EVENT_TOOL, {'alert_identifier': 306, **args}),
                            error=scope['MCPError'])
+
+
+def test_alert_events_return_whole_records_with_links_and_gaps(runtime):
+    first = {'uuid': 'root', 'text': 'Rule matched'}
+    second = {'uuid': 'child', 'text': 'Process started'}
+    runtime.scope['alerts_get'].return_value.alert_source_content = {
+        'incident': {'other': 'not part of the event page'},
+        'events': [first, second],
+        'event_links': {'root': ['child', 'missing']},
+        'event_collection': {'complete': False, 'missing_uuids': ['missing']},
+    }
+    page = runtime.events(limit=1)
+    assert page['events'] == [{'index': 0, 'event': first, 'linked_event_ids': ['child', 'missing']}]
+    assert page['missing_event_count'] == 1 and page['collection_complete'] is False
+    assert page['next_offset'] == 1 and page['untrusted_data'] is True
+    following = runtime.events(offset=page['next_offset'], expected_sha256=page['source_sha256'])
+    assert following['events'][0]['event'] == second and following['next_offset'] is None
+    assert CLASSIFICATION['is_read_only'](EVENT_TOOL)
+    spec = runtime.scope['TOOL_REGISTRY'][EVENT_TOOL]
+    assert spec.mvp is True
+    assert spec.permissions == (runtime.scope['Permissions'].alerts_read,)
+    second['text'] = 'Updated'
+    with pytest.raises(runtime.error, match='events changed'):
+        runtime.events(offset=1, expected_sha256=page['source_sha256'])
+
+
+def test_oversized_event_can_be_read_without_losing_other_events(runtime):
+    large = {'uuid': 'large', 'text': '"🧪' * 12000}
+    runtime.scope['alerts_get'].return_value.alert_source_content = {
+        'events': [large, {'uuid': 'next'}],
+    }
+    page = runtime.events()
+    assert page['events'][0] == {'index': 0, 'detail_required': True}
+    assert page['events'][1]['event'] == {'uuid': 'next'}
+    parts = []
+    offset = 0
+    while offset is not None:
+        detail = runtime.events(offset=0, detail_offset=offset,
+                                expected_sha256=page['source_sha256'])
+        assert '_truncated' not in detail
+        parts.append(detail['text'])
+        offset = detail['next_detail_offset']
+    assert json.loads(''.join(parts)) == {'index': 0, 'event': large, 'linked_event_ids': []}
+
+
+def test_alert_events_report_archived_only_sources(runtime):
+    runtime.scope['alerts_get'].return_value.alert_source_content = {
+        'event_storage': {'archived_only': True},
+        'event_collection': {'complete': False},
+    }
+    page = runtime.events()
+    assert page['archived_only'] is True and page['structured_events_available'] is False
+    assert page['collection_complete'] is False
+    assert page['events'] == [] and page['next_offset'] is None
+
+
+def test_alert_events_use_the_same_customer_access_check(runtime):
+    runtime.scope['alerts_get'].side_effect = LookupError('denied')
+    with pytest.raises(runtime.error, match='not found or access denied'):
+        runtime.events()
+    assert runtime.scope['alerts_get'].call_args.kwargs['fallback_customer_access'] is (
+        runtime.scope['ac_current_user_has_customer_access'])
 
 
 @pytest.mark.parametrize('value', [
@@ -157,6 +222,7 @@ def test_tool_is_available_to_yuki_as_a_default_read(runtime):
 def test_prompt_and_truncation_hint_point_to_recoverable_reads():
     prompt = runpy.run_path(str(SOURCE / 'iris_engine/llm/system_prompt.py'))['system_prompt'](case_id=None)
     assert TOOL in prompt and 'next_offset' in prompt
+    assert EVENT_TOOL in prompt and 'next_detail_offset' in prompt
     _, report = BUDGET['apply_result_budget']({'alert_source_content': {'x': 'x' * 100_000}})
     assert TOOL in report['hint']
 

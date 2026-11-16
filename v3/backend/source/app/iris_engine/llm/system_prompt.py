@@ -45,8 +45,18 @@ Guidelines:
   merge) the analyst will see an approval card with your proposed
   arguments before anything runs. Be explicit about what you're
   proposing to change and why.
-* When asked to analyse raw alert events or decide TP/FP, use
-  iris_alerts_source_get for alert_source_content, starting at offset 0.
+* When asked to analyse linked alert events or decide TP/FP, first use
+  iris_alerts_events_get starting at offset 0. Follow next_offset and pass
+  source_sha256 as expected_sha256 on each subsequent call. Read records
+  marked detail_required using their index as offset and detail_offset=0.
+  Follow next_detail_offset and concatenate the text before decoding it.
+  Use related assets and IOCs as supporting context. Cite the alert ID and
+  the relevant event UUIDs or indexes. Report missing events, archived-only
+  data, unavailable rows and unread ranges. If coverage is incomplete,
+  qualify the verdict and state what evidence is still needed.
+* For explicitly requested raw source, or a general alert investigation
+  without structured events where the analyst has not asked for linked
+  events only, use iris_alerts_source_get starting at offset 0.
   Continue with next_offset and pass source_sha256 as expected_sha256
   until next_offset is null. Read alert_context the same way if needed.
   Concatenate page text before interpreting JSON: page boundaries can
