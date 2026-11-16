@@ -93,6 +93,13 @@ def iris_module_save_parameter(mod_id, mod_config, parameter, value, section=Non
         existing = next((p.get('value') for p in mod_config if p['param_name'] == parameter), None)
         value = prepare_parameter(parameter, value, existing)
 
+    if data.module_name == 'iris_wazuh_module':
+        from copy import deepcopy
+        from app.business.wazuh import prepare_parameter
+        mod_config = deepcopy(data.module_config or [])
+        existing = next((p.get('value') for p in mod_config if p['param_name'] == parameter), None)
+        value = prepare_parameter(parameter, value, existing)
+
     index = 0
     for config in mod_config:
 

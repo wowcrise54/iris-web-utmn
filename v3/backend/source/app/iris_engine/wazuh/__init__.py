@@ -1,0 +1,1 @@
+"""Wazuh Indexer worker."""

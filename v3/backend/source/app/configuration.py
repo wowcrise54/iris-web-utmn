@@ -235,6 +235,7 @@ class CeleryConfig:
         'app.iris_engine.webhooks.tasks',
         'app.iris_engine.ptsandbox.tasks',
         'app.iris_engine.maxpatrol.tasks',
+        'app.iris_engine.wazuh.tasks',
         'app.iris_engine.evidence.tasks',
     ]
 

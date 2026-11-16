@@ -109,6 +109,9 @@ def module_get_detail(module_id):
     if module.module_name == 'iris_maxpatrol_module':
         from app.business.maxpatrol import public_config
         config = public_config(config)
+    if module.module_name == 'iris_wazuh_module':
+        from app.business.wazuh import public_config
+        config = public_config(config)
     return {
         'id': module.id,
         'module_name': module.module_name,
@@ -177,6 +180,13 @@ def modules_enable(module_id):
     if module_name is None:
         raise ObjectNotFoundError()
 
+    if module_name == 'iris_wazuh_module':
+        from app.business.wazuh import initialize
+        try:
+            initialize(modules_get(module_id))
+        except (ValueError, TypeError, KeyError) as exc:
+            raise BusinessProcessingError('Invalid Wazuh Indexer configuration') from exc
+
     if not iris_module_enable_by_id(module_id):
         raise BusinessProcessingError('Unable to enable module')
 
@@ -234,6 +244,9 @@ def modules_export_config(module_id):
         mod_config = public_config(mod_config)
     if mod_name == 'iris_maxpatrol_module':
         from app.business.maxpatrol import public_config
+        mod_config = public_config(mod_config)
+    if mod_name == 'iris_wazuh_module':
+        from app.business.wazuh import public_config
         mod_config = public_config(mod_config)
 
     return {
