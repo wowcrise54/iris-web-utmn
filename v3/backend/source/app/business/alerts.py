@@ -179,9 +179,8 @@ def alerts_create(alert: Alert, iocs: list[Ioc], assets: list[CaseAssets]) -> Al
     extract_alert_iocs(alert)
 
     db.session.add(alert)
-    db.session.commit()
-
     add_obj_history_entry(alert, 'Alert created')
+    db.session.commit()
 
     cache_similar_alert(alert.alert_customer_id, assets, iocs, alert.alert_id, alert.alert_source_event_time)
 

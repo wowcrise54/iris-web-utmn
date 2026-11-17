@@ -121,6 +121,25 @@ class MaxPatrolTests(unittest.TestCase):
         self.assertEqual(payload['alert_source_event_time'], datetime(2026, 10, 19, 10))
         self.assertEqual((payload['alert_severity_id'], payload['alert_status_id']), (1, 5))
 
+    def test_new_incidents_are_imported_before_a_bounded_refresh_batch(self):
+        m = self.core()
+        config = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': str(i)} for i in range(20)] + [{'id': 'new'}]
+        client.events.return_value = []
+        store.seen.side_effect = lambda incident_id: incident_id != 'new'
+        store.needs_event_refresh.return_value = True
+        store.stored_incident.return_value = None
+        order = Mock()
+        order.attach_mock(client.events, 'events')
+        order.attach_mock(store.create, 'create')
+
+        self.assertEqual(m.collect(config, client, store, extra_incidents=['0', 'older']), 1)
+
+        self.assertEqual([call[0] for call in order.mock_calls[:2]], ['events', 'create'])
+        self.assertEqual(client.events.call_args_list[0].args[0], 'new')
+        self.assertEqual(client.events.call_count, 6)
+
     def test_retry_failed_incident_and_skip_success_after_restart(self):
         m = self.core()
         c = m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'x'})

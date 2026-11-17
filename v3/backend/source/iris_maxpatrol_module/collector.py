@@ -16,6 +16,7 @@ from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 
 log = context_logger(__name__)
 REQUEST_REVISION = 'mp10-inline-clean-json-3'
+MAX_EVENT_REFRESHES_PER_POLL = 5
 LOOKBACK_DESCRIPTION = '1–8760; capped at 24 hours on every poll, including the first.'
 
 
@@ -393,15 +394,22 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
     closed_skipped = 0
     complete = False
     processed_incidents = set()
+    deferred_refreshes = []
+    refresh_attempts = 0
     log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
              config.customer_id, timestamp(start), timestamp(end))
     try:
-        for incident in chain(client.incidents(start, end), ({'id': uid} for uid in extra_incidents)):
+        incidents = ((incident, 'listed') for incident in client.incidents(start, end))
+        refreshes = ((incident, 'deferred') for incident in deferred_refreshes)
+        backlog = (({'id': uid}, 'saved') for uid in extra_incidents)
+        for incident, origin in chain(incidents, refreshes, backlog):
+            deferred = origin == 'deferred'
             incident_id = str(incident.get('id') or '').strip()
-            if incident_id and incident_id in processed_incidents:
-                continue
-            processed_incidents.add(incident_id)
-            received += 1
+            if not deferred:
+                if incident_id and incident_id in processed_incidents:
+                    continue
+                processed_incidents.add(incident_id)
+                received += 1
             if not store.active():
                 log.info('MaxPatrol collection stopped: module disabled or configuration changed')
                 break
@@ -412,10 +420,20 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
             with logging_context(incident=incident_id):
                 existing = False
                 try:
-                    existing = store.seen(incident_id)
-                    if existing and not store.needs_event_refresh(incident_id):
-                        already_imported += 1
-                        continue
+                    existing = deferred or store.seen(incident_id)
+                    if existing:
+                        if refresh_attempts >= MAX_EVENT_REFRESHES_PER_POLL:
+                            already_imported += 1
+                            continue
+                        if not deferred and not store.needs_event_refresh(incident_id):
+                            already_imported += 1
+                            continue
+                        if origin == 'listed':
+                            if incident.get('status') == 'Closed':
+                                closed_skipped += 1
+                            elif len(deferred_refreshes) < MAX_EVENT_REFRESHES_PER_POLL:
+                                deferred_refreshes.append(incident)
+                            continue
                     log.info('MaxPatrol incident import started: incident=%r', incident_id)
                     stored = store.stored_incident(incident_id) if existing else None
                     # List rows are authoritative for current selected fields. Keep
@@ -427,6 +445,8 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                         log.info('MaxPatrol closed incident skipped: incident=%r', incident_id)
                         continue
                     log.info('MaxPatrol incident data loaded: source=%s fields=%s', incident_source, len(detail))
+                    if existing:
+                        refresh_attempts += 1
                     try:
                         event_start, event_end = incident_event_window(detail, start, end)
                         events = client.events(incident_id, event_start, event_end)
@@ -437,7 +457,7 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
                                     incident_id, error_reason(exc))
                         events = []
                         materials = {'events': [], 'event_collection': {'version': 2, 'complete': False,
-                            'errors': [error_details(exc)], 'collected_at': timestamp(end)}}
+                            'errors': [error_details(exc)], 'collected_at': timestamp(datetime.now(timezone.utc))}}
                     materials['incident'] = detail
                     materials['incident_source'] = incident_source
                     materials['incident_refresh_error'] = None  # Clear obsolete card-GET failures.
@@ -473,8 +493,9 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
             complete = True
     finally:
         log.info('MaxPatrol collection summary: received=%s created=%s already_imported=%s failed=%s invalid=%s '
-                 'events_failed=%s complete=%s refreshed=%s incomplete_incidents=%s closed_skipped=%s duration_ms=%.1f',
-                 received, successes, already_imported, failed, invalid, events_failed, complete, refreshed,
+                     'events_failed=%s complete=%s refresh_attempts=%s refreshed=%s incomplete_incidents=%s '
+                     'closed_skipped=%s duration_ms=%.1f',
+                 received, successes, already_imported, failed, invalid, events_failed, complete, refresh_attempts, refreshed,
                  incomplete_incidents, closed_skipped, (perf_counter() - started) * 1000)
     return successes
 

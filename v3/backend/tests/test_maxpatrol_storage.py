@@ -1,6 +1,6 @@
 """Real SQL transactions with SQLite; app/broker boundaries are inert doubles."""
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
 from pathlib import Path
@@ -8,11 +8,13 @@ import sys
 import types
 import unittest
 from unittest.mock import MagicMock, Mock, patch
+from uuid import uuid4
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects import postgresql  # noqa: F401  register before temporary sys.modules isolation
+from werkzeug.local import LocalProxy
 
 SOURCE = Path(__file__).resolve().parents[1] / 'source'
 sys.path.insert(0, str(SOURCE))
@@ -68,6 +70,7 @@ def harness(*, json_deserializer=None):
         alert_source = Column(String)
         alert_source_ref = Column(String)
         alert_source_content = Column(JSON)
+        modification_history = Column(JSON)
         iocs = relationship(Ioc, secondary=association)
 
     engine = create_engine('sqlite://', json_deserializer=json_deserializer)
@@ -121,6 +124,38 @@ def harness(*, json_deserializer=None):
 
 
 class StorageTests(unittest.TestCase):
+    def test_background_alert_history_persists_without_a_request_user(self):
+        with harness() as h, patch.dict(sys.modules, {
+                'app.web': types.SimpleNamespace(current_app=None),
+                'app.db': types.SimpleNamespace(db=h.db),
+                'app.configuration': types.SimpleNamespace(IrisConfigException=ValueError),
+                'app.blueprints.iris_user': types.SimpleNamespace(iris_current_user=LocalProxy(lambda: None)),
+        }):
+            util = load('maxpatrol_test_util', 'app/util.py')
+            alert = h.Alert(alert_title='SIEM alert')
+            h.db.session.add(alert)
+            util.add_obj_history_entry(alert, 'Alert created', commit=True)
+            self.assertEqual(list(alert.modification_history.values()), [
+                {'user': 'system', 'user_id': None, 'action': 'Alert created'}])
+
+    def test_refresh_policy_expires_old_imports_and_throttles_incomplete_graphs(self):
+        with harness() as h:
+            now = datetime.now(timezone.utc)
+            for name, age, collected_min, expected in (
+                    ('old', 25, 120, False),
+                    ('cooldown', 2, 10, False),
+                    ('retry', 2, 61, True)):
+                alert_uuid = uuid4()
+                h.db.session.add(h.models.MaxPatrolReceipt(source_key=h.config.source_key,
+                    incident_id=name, alert_uuid=alert_uuid, imported_at=now - timedelta(hours=age)))
+                h.db.session.add(h.Alert(alert_uuid=alert_uuid, alert_customer_id=1,
+                    alert_source='MaxPatrol SIEM', alert_source_ref=name, alert_source_content={
+                        'event_collection': {'version': 2, 'complete': False,
+                            'collected_at': (now - timedelta(minutes=collected_min)).isoformat()}}))
+                h.db.session.commit()
+                self.assertEqual(h.store.needs_event_refresh(name), expected)
+            self.assertEqual(h.store.refresh_candidates(), ['retry'])
+
     def test_refresh_metadata_and_incident_queries_do_not_deserialize_event_payloads(self):
         def metadata_only(raw):
             value = json.loads(raw)

@@ -1,6 +1,6 @@
 """Native module settings and transactional incident ingestion."""
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 from uuid import UUID, uuid5
 
@@ -16,6 +16,7 @@ from iris_maxpatrol_module.edr import EDR_RESPONSE_PARAMETER, ENABLED_PARAMETER,
 
 MODULE = 'iris_maxpatrol_module'
 NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
+EVENT_REFRESH_WINDOW = timedelta(hours=24)
 
 
 def configuration(row):
@@ -92,9 +93,13 @@ class IrisStore:
 
     def needs_event_refresh(self, incident_id):
         from app.models.alerts import Alert
-        row = self._imported_alert_query(Alert.alert_source_content['event_collection']).filter(
+        row = self._recent_imports(Alert.alert_source_content['event_collection']).filter(
             MaxPatrolReceipt.incident_id == incident_id).first()
         return bool(row and self._event_refresh_due(row[0]))
+
+    def _recent_imports(self, *columns):
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - EVENT_REFRESH_WINDOW
+        return self._imported_alert_query(*columns).filter(MaxPatrolReceipt.imported_at >= cutoff)
 
     def stored_incident(self, incident_id):
         from app.models.alerts import Alert
@@ -107,7 +112,7 @@ class IrisStore:
 
     def refresh_candidates(self):
         from app.models.alerts import Alert
-        rows = self._imported_alert_query(
+        rows = self._recent_imports(
             MaxPatrolReceipt.incident_id, Alert.alert_source_content['event_collection']).yield_per(100)
         return [incident_id for incident_id, state in rows if self._event_refresh_due(state)]
 
@@ -117,11 +122,12 @@ class IrisStore:
         if state.get('refresh_blocked') is True:
             # The migration retained an oversized archive; do not rebuild it in worker RAM.
             return False
-        if state.get('version') != 2 or not state.get('complete'):
+        if state.get('version') != 2:
             return True
         try:
             collected = datetime.fromisoformat(state['collected_at'].replace('Z', '+00:00'))
-            return (datetime.now(timezone.utc) - collected).total_seconds() >= max(300, self.config.interval)
+            cooldown = 300 if state.get('complete') else 3600
+            return (datetime.now(timezone.utc) - collected).total_seconds() >= max(cooldown, self.config.interval)
         except (KeyError, ValueError, TypeError, AttributeError):
             return True
 

@@ -53,27 +53,20 @@ def add_obj_history_entry(obj, action, commit=False):
     utc = date_update
 
     if hasattr(obj, 'modification_history'):
-        if isinstance(obj.modification_history, dict):
-            obj.modification_history.update({
-                timestamp: {
-                    'user': iris_current_user.user,
-                    'user_id': iris_current_user.id,
-                    'action': action
-                }
-            })
-        else:
-            obj.modification_history = {
-                timestamp: {
-                    'user': iris_current_user.user,
-                    'user_id': iris_current_user.id,
-                    'action': action
-                }
-            }
+        user = iris_current_user._get_current_object()
+        entry = {
+            'user': 'system' if user is None else user.user,
+            'user_id': None if user is None else user.id,
+            'action': action,
+        }
+        if not isinstance(obj.modification_history, dict):
+            obj.modification_history = {}
+        obj.modification_history[timestamp] = entry
+        flag_modified(obj, "modification_history")
 
     if hasattr(obj, 'date_update'):
         obj.date_update = utc
 
-    flag_modified(obj, "modification_history")
     if commit:
         db.session.commit()
 
