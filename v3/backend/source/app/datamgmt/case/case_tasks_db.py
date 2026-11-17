@@ -213,7 +213,7 @@ def update_task_assignees(task_identifier, task_assignee_list, caseid):
     db.session.commit()
 
 
-def add_task(task, assignee_id_list, user_id, caseid):
+def stage_task(task, user_id, caseid):
     now = datetime.now()
     task.task_case_id = caseid
     task.task_userid_open = user_id
@@ -226,6 +226,10 @@ def add_task(task, assignee_id_list, user_id, caseid):
     db.session.add(task)
 
     update_tasks_state(caseid=caseid, userid=user_id)
+
+
+def add_task(task, assignee_id_list, user_id, caseid):
+    stage_task(task, user_id, caseid)
     db.session.commit()
 
     update_task_status(task.task_status_id, task.id, caseid)

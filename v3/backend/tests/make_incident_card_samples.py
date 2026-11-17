@@ -4,6 +4,7 @@ import base64
 import importlib.util
 from pathlib import Path
 import sys
+import types
 
 
 ROOT = Path(__file__).parents[1] / "source/app/business"
@@ -18,6 +19,9 @@ def load(name, path):
 
 def main():
     catalog = load("catalog", ROOT / "incident_card_catalog.py")
+    for name in ("app", "app.business"):
+        sys.modules.setdefault(name, types.ModuleType(name))
+    sys.modules["app.business.incident_card_catalog"] = catalog
     reports = load("reports", ROOT / "reports/incident_card_report.py")
     output = Path(sys.argv[1])
     output.mkdir(parents=True, exist_ok=True)
@@ -52,11 +56,8 @@ def main():
                 "Обнаружено фишинговое письмо. Проведён анализ заголовков, вложений "
                 "и сетевых соединений. Доказательства сохранены, опасные адреса заблокированы.\n"
             ) * 35
-            fields["additional_info"]["value"] = (
-                "SHA256: " + "a" * 64 + "\n" + "fqdn.example.test/" * 30
-            )
             fields["categories"]["value"] = [2, 3]
-            fields["incident_types"]["value"] = ["intentional:malware"]
+            fields["incident_types"]["value"] = ["intentional_malware"]
         snapshot["fields"] = fields
         snapshot["derived"] = (
             {

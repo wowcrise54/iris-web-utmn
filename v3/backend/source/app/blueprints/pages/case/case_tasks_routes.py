@@ -78,12 +78,12 @@ def case_task_view_modal(cur_id, caseid, url_redir):
     form = CaseTaskForm()
 
     task = get_task(task_id=cur_id)
+    if not task or task.task_case_id != caseid:
+        return response_error("Invalid task ID for this case")
+
     task_assignees = get_task_assignees(cur_id)
     form.task_status_id.choices = [(a.id, a.status_name) for a in get_tasks_status()]
     form.task_assignees_id.choices = []
-
-    if not task:
-        return response_error("Invalid task ID for this case")
 
     form.task_title.render_kw = {'value': task.task_title}
     form.task_description.data = task.task_description
@@ -101,7 +101,7 @@ def case_comment_task_modal(cur_id, caseid, url_redir):
         return redirect(url_for('case_task.case_task', cid=caseid, redirect=True))
 
     task = get_task(cur_id)
-    if not task:
+    if not task or task.task_case_id != caseid:
         return response_error('Invalid task ID')
 
     return render_template("modal_conversation.html", element_id=cur_id, element_type='tasks',

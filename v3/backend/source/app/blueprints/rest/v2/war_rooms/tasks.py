@@ -6,9 +6,11 @@
 
 from datetime import datetime
 
-from app.web import Blueprint, request
+from pydantic import ValidationError
 
 from app.blueprints.access_controls import ac_api_requires
+from app.blueprints.access_controls import ac_api_return_access_denied
+from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
 from app.blueprints.iris_user import iris_current_user
 from app.blueprints.rest.api_doc import api_doc
 from app.blueprints.rest.endpoints import response_api_created
@@ -16,9 +18,11 @@ from app.blueprints.rest.endpoints import response_api_deleted
 from app.blueprints.rest.endpoints import response_api_error
 from app.blueprints.rest.endpoints import response_api_not_found
 from app.blueprints.rest.endpoints import response_api_success
+from app.blueprints.rest.v2.war_rooms.access import can_write_war_room
 from app.blueprints.rest.v2.war_rooms.access import require_war_room_read
 from app.blueprints.rest.v2.war_rooms.access import require_war_room_write
 from app.business.war_room_chat import emit_system_event
+from app.business.war_room_task_fan_out import FanOutRequest, InvalidFanOut
 from app.business.war_room_tasks import (
     war_room_task_close,
     war_room_task_create,
@@ -28,13 +32,67 @@ from app.business.war_room_tasks import (
     war_room_task_update,
     war_room_task_used_tags,
 )
+from app.datamgmt.war_room_task_fan_out_db import attached_cases, fan_out_task, get_source_task, list_fan_out
+from app.db import db
+from app.models.authorization import CaseAccessLevel
 from app.models.errors import BusinessProcessingError
 from app.models.errors import ObjectNotFoundError
+from app.web import Blueprint, request
 
 
 war_rooms_tasks_blueprint = Blueprint(
     'war_rooms_tasks_rest_v2', __name__, url_prefix='/<int:war_room_id>/tasks'
 )
+
+
+@war_rooms_tasks_blueprint.get('/<int:task_id>/fan-out')
+@ac_api_requires()
+@api_doc(tags=['WarRoomTasks'], summary='List accessible case tasks linked to this War Room task')
+def get_task_fan_out(war_room_id, task_id):
+    error = require_war_room_read(war_room_id)
+    if error is not None:
+        return error
+    task = get_source_task(war_room_id, task_id) if 0 < task_id <= 2**63 - 1 else None
+    if task is None:
+        return response_api_not_found()
+    room_write = can_write_war_room(war_room_id)
+    case_access = {}
+    visible_cases = []
+    for case in attached_cases(war_room_id):
+        level = ac_fast_check_current_user_has_case_access(
+            case.case_id, [CaseAccessLevel.read_only, CaseAccessLevel.full_access],
+        )
+        if level is not None:
+            visible_cases.append(case)
+            case_access[case.case_id] = room_write and bool(level & CaseAccessLevel.full_access.value)
+    return response_api_success([
+        {**row, 'can_create': case_access[row['case_id']]}
+        for row in list_fan_out(task, visible_cases)
+    ])
+
+
+@war_rooms_tasks_blueprint.post('/<int:task_id>/fan-out')
+@ac_api_requires()
+@api_doc(tags=['WarRoomTasks'], summary='Distribute a task to attached cases')
+def post_task_fan_out(war_room_id, task_id):
+    error = require_war_room_write(war_room_id)
+    if error is not None:
+        return error
+    if not 0 < task_id <= 2**63 - 1:
+        return response_api_not_found()
+    try:
+        payload = FanOutRequest.model_validate(request.get_json())
+    except ValidationError:
+        return response_api_error('Invalid task distribution')
+    for case_id in payload.case_ids:
+        if ac_fast_check_current_user_has_case_access(case_id, [CaseAccessLevel.full_access]) is None:
+            return ac_api_return_access_denied(caseid=case_id)
+    try:
+        result = fan_out_task(war_room_id, task_id, payload, iris_current_user.id)
+    except InvalidFanOut as exc:
+        db.session.rollback()
+        return response_api_error(str(exc))
+    return response_api_not_found() if result is None else response_api_success(result)
 
 
 def _parse_due(raw):

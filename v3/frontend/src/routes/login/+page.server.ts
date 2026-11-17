@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { ApiService } from '$lib/services/api.service';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -72,13 +73,13 @@ export const load: PageServerLoad = async () => {
 				login_contact: asText(fetched.login_contact)
 			};
 		} else {
-			console.warn(
+			logger.warn(
 				'[login] authentication-settings returned a non-object payload; ' +
 					'falling back to local-auth defaults'
 			);
 		}
 	} catch (err) {
-		console.warn(
+		logger.warn(
 			'[login] failed to load authentication-settings; falling back to ' +
 				'local-auth defaults. Error:',
 			err
@@ -148,7 +149,7 @@ export const actions = {
 				tokenInfo
 			};
 		} catch (error: unknown) {
-			console.error('User', username, 'sign in error: ', error);
+			logger.error('User', username, 'sign in error: ', error);
 			return fail(400, {
 				error: (error as Error).message,
 				username,

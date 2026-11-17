@@ -17,9 +17,12 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 from sqlalchemy import and_
+from sqlalchemy import select
 
+from app.business.investigation_graph import resolve_event_roles
 from app.datamgmt.db_operations import db_create
 from app.datamgmt.db_operations import db_delete
+from app.datamgmt.lucene.event_query_compiler import compile_event_query
 from app.db import db
 from app.datamgmt.states import update_timeline_state
 from app.models.assets import AssetsType
@@ -227,6 +230,12 @@ def save_event_category(event_id, category_id):
     db_create(cec)
 
 
+def get_event_roles(model, entity_id, event_id, case_id):
+    return dict(model.query.with_entities(entity_id, model.role).filter_by(
+        event_id=event_id, case_id=case_id,
+    ).all())
+
+
 def get_event_assets_ids(event_id, caseid):
     assets_list = CaseEventsAssets.query.with_entities(
         CaseEventsAssets.asset_id
@@ -249,7 +258,9 @@ def get_event_iocs_ids(event_id, caseid):
     return [x[0] for x in iocs_list]
 
 
-def update_event_assets(event_id, caseid, assets_list, iocs_list, sync_iocs_assets):
+def update_event_assets(event_id, caseid, assets_list, iocs_list, sync_iocs_assets, roles=None):
+
+    previous = get_event_roles(CaseEventsAssets, CaseEventsAssets.asset_id, event_id, caseid) if roles is None else {}
 
     CaseEventsAssets.query.filter(
         CaseEventsAssets.event_id == event_id,
@@ -263,6 +274,17 @@ def update_event_assets(event_id, caseid, assets_list, iocs_list, sync_iocs_asse
         CaseAssets.case_id == caseid
     ).all()
 
+    resolved = resolve_event_roles((asset.asset_id for asset in valid_assets), roles, previous)
+
+    valid_ioc_ids = []
+    if sync_iocs_assets:
+        valid_ioc_ids = [
+            row.ioc_id for row in Ioc.query.with_entities(Ioc.ioc_id).filter(
+                Ioc.ioc_id.in_(iocs_list),
+                Ioc.case_id == caseid,
+            ).all()
+        ]
+
     for asset in valid_assets:
         try:
 
@@ -270,23 +292,18 @@ def update_event_assets(event_id, caseid, assets_list, iocs_list, sync_iocs_asse
             cea.asset_id = int(asset.asset_id)
             cea.event_id = event_id
             cea.case_id = caseid
+            cea.role = resolved[cea.asset_id]
 
             db.session.add(cea)
 
-            if sync_iocs_assets:
-                for ioc in iocs_list:
-                    link = IocAssetLink.query.filter(
-                        IocAssetLink.asset_id == int(asset.asset_id),
-                        IocAssetLink.ioc_id == int(ioc)
-                    ).first()
+            for ioc_id in valid_ioc_ids:
+                link = IocAssetLink.query.filter(
+                    IocAssetLink.asset_id == asset.asset_id,
+                    IocAssetLink.ioc_id == ioc_id,
+                ).first()
 
-                    if link is None:
-
-                        ial = IocAssetLink()
-                        ial.asset_id = int(asset.asset_id)
-                        ial.ioc_id = int(ioc)
-
-                        db.session.add(ial)
+                if link is None:
+                    db.session.add(IocAssetLink(asset_id=asset.asset_id, ioc_id=ioc_id))
 
         except Exception as e:
             return False, str(e)
@@ -295,7 +312,9 @@ def update_event_assets(event_id, caseid, assets_list, iocs_list, sync_iocs_asse
     return True, ''
 
 
-def update_event_iocs(event_id, caseid, iocs_list):
+def update_event_iocs(event_id, caseid, iocs_list, roles=None):
+
+    previous = get_event_roles(CaseEventsIoc, CaseEventsIoc.ioc_id, event_id, caseid) if roles is None else {}
 
     CaseEventsIoc.query.filter(
         CaseEventsIoc.event_id == event_id,
@@ -307,6 +326,8 @@ def update_event_iocs(event_id, caseid, iocs_list):
         Ioc.case_id == caseid
     ).all()
 
+    resolved = resolve_event_roles((ioc.ioc_id for ioc in valid_iocs), roles, previous)
+
     for ioc in valid_iocs:
         try:
 
@@ -314,6 +335,7 @@ def update_event_iocs(event_id, caseid, iocs_list):
             cea.ioc_id = int(ioc.ioc_id)
             cea.event_id = event_id
             cea.case_id = caseid
+            cea.role = resolved[cea.ioc_id]
 
             db.session.add(cea)
 
@@ -426,8 +448,24 @@ def get_events_by_case(case_identifier):
     ).all()
 
 
+def _event_text_search(query):
+    return or_(
+        CasesEvent.event_title.icontains(query, autoescape=True),
+        CasesEvent.event_content.icontains(query, autoescape=True),
+        CasesEvent.event_source.icontains(query, autoescape=True),
+    )
+
+
 def get_filtered_case_events(case_identifier, filters):
     condition = (CasesEvent.case_id == case_identifier)
+    query = filters.get('query')
+    if query:
+        condition = and_(condition, _event_text_search(query))
+    lucene_query = filters.get('lucene_query')
+    if lucene_query:
+        expression = compile_event_query(lucene_query)
+        if expression is not None:
+            condition = and_(condition, expression)
 
     assets = filters.get('assets')
     assets_id = filters.get('assets_id')
@@ -499,6 +537,12 @@ def get_filtered_case_events(case_identifier, filters):
         condition = and_(condition,
                          CasesEvent.event_id.in_(event_ids))
 
+    timeline_ids = filters.get('timeline_ids')
+    if timeline_ids:
+        condition = and_(condition, CasesEvent.event_id.in_(
+            select(CaseEventTimeline.event_id).where(CaseEventTimeline.timeline_id.in_(timeline_ids))
+        ))
+
     timeline = CasesEvent.query.with_entities(
         CasesEvent.event_id,
         CasesEvent.event_uuid,
@@ -506,6 +550,7 @@ def get_filtered_case_events(case_identifier, filters):
         CasesEvent.event_date_wtz,
         CasesEvent.event_tz,
         CasesEvent.event_title,
+        CasesEvent.event_source,
         CasesEvent.event_color,
         CasesEvent.event_tags,
         CasesEvent.event_content,
@@ -517,12 +562,13 @@ def get_filtered_case_events(case_identifier, filters):
         CasesEvent.event_added,
         EventCategory.name.label('category_name')
     ).filter(condition).order_by(
-        CasesEvent.event_date
+        CasesEvent.event_date, CasesEvent.event_id
     ).outerjoin(
         CasesEvent.category
     ).join(
         CasesEvent.user
     ).all()
+
 
     assets_cache_condition = (CaseEventsAssets.case_id == case_identifier)
     if assets_id:

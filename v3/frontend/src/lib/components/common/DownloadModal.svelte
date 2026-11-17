@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -56,7 +58,7 @@
 	function handleConfirm() {
 		if (selectedColumnKeys.size === 0) {
 			// Optionally, show a toast or inline message here
-			console.warn('No columns selected for download.');
+			logger.warn('No columns selected for download.');
 			return;
 		}
 		onConfirm(selectedDownloadType, new Set(selectedColumnKeys));

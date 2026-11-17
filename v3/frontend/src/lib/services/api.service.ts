@@ -1,3 +1,4 @@
+import { logger, getLogRequestId } from '$lib/observability/logger';
 import { browser } from '$app/environment';
 import { auth } from '$lib/stores/auth.store';
 import { AuthService } from './auth.service';
@@ -147,7 +148,7 @@ export class ApiService {
 			// Use the full URL or build it with our base URL
 			const fullUrl = absoluteUrl ? url : ApiService.buildApiUrl(url, useApiPrefix);
 
-			console.log(`Making ${method} request to: ${fullUrl}`);
+			logger.debug(`Making ${method} request to: ${fullUrl}`);
 
 			// Create headers object properly to ensure it's iterable
 			const fetchHeaders = new Headers({
@@ -155,6 +156,8 @@ export class ApiService {
 				Accept: 'application/json',
 				...headers
 			});
+			if (!fetchHeaders.has('X-Request-Id'))
+				fetchHeaders.set('X-Request-Id', getLogRequestId() || crypto.randomUUID());
 
 			const fetchOptions: RequestInitDuplex = {
 				method,
@@ -315,11 +318,11 @@ export class ApiService {
 				);
 
 				// Handle the error gracefully without crashing
-				console.error(`API fetch error: ${(error as Error).message}`);
+				logger.error('api_fetch_failed', error);
 
 				// For CORS errors, provide a more specific log to help debugging
 				if ((error as Error).message.includes('CORS')) {
-					console.warn('CORS issue detected. Please check backend CORS configuration.');
+					logger.warn('CORS issue detected. Please check backend CORS configuration.');
 				}
 
 				// Return a default response instead of throwing to prevent crash
@@ -336,7 +339,7 @@ export class ApiService {
 			}
 		} catch (error: unknown) {
 			// Handle any other errors that may occur outside the fetch call
-			console.error(`API processing error: ${(error as Error).message}`);
+			logger.error('api_processing_failed', error);
 
 			// Return a default response instead of throwing
 			return {

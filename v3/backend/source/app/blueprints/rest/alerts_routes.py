@@ -1,3 +1,4 @@
+from app.business.alert_materials import export_artifacts_to_case, require_artifact_import_access
 #  IRIS Source Code
 #  Copyright (C) 2024 - DFIR-IRIS
 #  contact@dfir-iris.org
@@ -81,6 +82,9 @@ _ALERT_UPDATE_READONLY_FIELDS = frozenset({
     'alert_id',
     'alert_customer_id',
     'alert_creation_time',
+    'iocs',
+    'alert_iocs',
+    'artifacts',
 })
 
 
@@ -384,6 +388,7 @@ def alerts_update_route(alert_id) -> Response:
                     activity_data.append(f"\"{key}\"")
 
         # Deserialize the JSON data into an Alert object
+        previous_content = alert.alert_source_content
         updated_alert = alert_schema.load(data, instance=alert, partial=True)
         if data.get('alert_owner_id') is None and updated_alert.alert_owner_id is None:
             updated_alert.alert_owner_id = iris_current_user.id
@@ -392,6 +397,8 @@ def alerts_update_route(alert_id) -> Response:
             updated_alert.alert_owner_id = None
 
         # Save the changes
+        from app.business.alert_ioc_extraction import extract_alert_iocs
+        extract_alert_iocs(updated_alert, previous_content)
         db.session.commit()
 
         updated_alert = call_modules_hook('on_postload_alert_update', updated_alert)
@@ -480,7 +487,10 @@ def alerts_batch_update_route() -> Response:
                 updates['alert_owner_id'] = None
 
             # Deserialize the JSON data into an Alert object
+            previous_content = alert.alert_source_content
             alert_schema.load(updates, instance=alert, partial=True)
+            from app.business.alert_ioc_extraction import extract_alert_iocs
+            extract_alert_iocs(alert, previous_content)
 
             db.session.commit()
 
@@ -643,6 +653,7 @@ def alerts_escalate_route(alert_id) -> Response:
             return response_error('Failed to create case from alert')
 
         ac_set_new_case_access(iris_current_user, case.case_id, case.client_id)
+        export_artifacts_to_case(alert, case, iris_current_user.id)
 
         case = call_modules_hook('on_postload_case_create', case)
 
@@ -710,6 +721,8 @@ def alerts_merge_route(alert_id) -> Response:
         if not check_ua_case_client(iris_current_user.id, target_case_id):
             return response_error('User not entitled to merge alerts for the case', status=403)
 
+        require_artifact_import_access(alert, case, iris_current_user.id)
+
         # Merge the alert into a case
         alert.alert_status_id = AlertStatus.query.filter_by(status_name='Merged').first().status_id
         db.session.commit()
@@ -719,6 +732,7 @@ def alerts_merge_route(alert_id) -> Response:
                             iocs_list=iocs_import_list, assets_list=assets_import_list, note=note,
                             import_as_event=import_as_event, case_tags=case_tags)
 
+        export_artifacts_to_case(alert, case, iris_current_user.id)
         alert = call_modules_hook('on_postload_alert_merge', alert, caseid=target_case_id)
 
         track_activity(f"merge alert #{alert_id} into existing case #{target_case_id}", caseid=target_case_id)
@@ -830,6 +844,11 @@ def alerts_batch_merge_route() -> Response:
         return response_error('User not entitled to merge alerts for the case', status=403)
 
     try:
+        for candidate_id in parse_comma_separated_identifiers(alert_ids):
+            candidate = get_alert_by_id(candidate_id)
+            if candidate is not None:
+                require_artifact_import_access(candidate, case, iris_current_user.id)
+
         # Merge the alerts into a case
         for alert_id in parse_comma_separated_identifiers(alert_ids):
 
@@ -848,6 +867,7 @@ def alerts_batch_merge_route() -> Response:
             merge_alert_in_case(alert, case, iocs_list=iocs_import_list, assets_list=assets_import_list, note=None,
                                 import_as_event=import_as_event, case_tags=case_tags)
 
+            export_artifacts_to_case(alert, case, iris_current_user.id)
             add_obj_history_entry(alert, f"Alert merged into existing case #{target_case_id}")
 
             alert = call_modules_hook('on_postload_alert_merge', alert)
@@ -924,6 +944,8 @@ def alerts_batch_escalate_route() -> Response:
             return response_error('Failed to create case from alert')
 
         ac_set_new_case_access(iris_current_user, case.case_id, case.client_id)
+        for source_alert in alerts_list:
+            export_artifacts_to_case(source_alert, case, iris_current_user.id)
 
         case = call_modules_hook('on_postload_case_create', case)
 

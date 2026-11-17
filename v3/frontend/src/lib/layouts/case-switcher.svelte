@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -57,7 +59,7 @@
 		const trimmed = query.trim();
 		const response = await CaseService.list(trimmed === '' ? {} : { quick_search: trimmed });
 		if (!response.ok) {
-			console.error('Error fetching cases:', response.error?.message);
+			logger.error('Error fetching cases:', response.error?.message);
 			return;
 		}
 		cases.set(extractCases(response.data).map(toCaseContext));

@@ -103,6 +103,8 @@ class CaseEventsAssets(db.Model):
     asset_id = Column(ForeignKey('case_assets.asset_id'))
     case_id = Column(ForeignKey('cases.case_id'))
 
+    role = Column(String(16), nullable=False, server_default='involved')
+
     event = relationship('CasesEvent')
     asset = relationship('CaseAssets')
     case = relationship('Cases')
@@ -115,6 +117,8 @@ class CaseEventsIoc(db.Model):
     event_id = Column(ForeignKey('cases_events.event_id'))
     ioc_id = Column(ForeignKey('ioc.ioc_id'))
     case_id = Column(ForeignKey('cases.case_id'))
+
+    role = Column(String(16), nullable=False, server_default='involved')
 
     event = relationship('CasesEvent')
     ioc = relationship('Ioc')
@@ -584,6 +588,8 @@ class ServerSettings(db.Model):
                            server_default=text("''"))
     chatbot_base_url = Column(String(500), nullable=False, default='',
                               server_default=text("''"))
+    chatbot_max_output_tokens = Column(
+        Integer, nullable=False, default=2048, server_default=text('2048'))
     chatbot_max_turns_per_conversation = Column(
         Integer, nullable=False, default=25, server_default=text('25'))
     chatbot_max_tool_calls_per_turn = Column(

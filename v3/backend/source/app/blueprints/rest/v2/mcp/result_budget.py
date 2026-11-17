@@ -33,6 +33,9 @@ from typing import Any
 # exhaust a 128k context window.
 MAX_RESULT_BYTES = 40_000
 
+# Raw alert pages are explicitly requested and sized before dispatch.
+ALERT_SOURCE_RESULT_BYTES = 256_000
+
 # Any single string longer than this is clipped before rows are
 # dropped — one pathological field (a raw detection payload, a long
 # note body) should not cost the caller the rest of its results.
@@ -59,7 +62,9 @@ _MIN_TEXT_FIELD_BYTES = 200
 _HINT = (
     'The result was too large to return in full. Narrow the filters, '
     'lower `per_page`, or fetch individual records with the matching '
-    '`*_get` tool. Do not assume the omitted records are absent.'
+    '`*_get` tool. For oversized alert_source_content or alert_context, use '
+    '`iris_alerts_source_get` and follow `next_offset` to read every page. '
+    'Do not assume the omitted records are absent.'
 )
 
 

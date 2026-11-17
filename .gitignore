@@ -2,8 +2,11 @@
 .env*
 !.env.example
 !.env.test
+!.env.*.example
+!.env.*.sample
 env/
 .venv/
+.venv-*/
 venv/
 venv1/
 
@@ -13,8 +16,18 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+junit.xml
 htmlcov/
 *.egg-info/
+.eggs/
+/build/
+/dist/
 
 # Node.js and frontend build output
 node_modules/
@@ -24,6 +37,10 @@ node_modules/
 coverage/
 test-results/
 playwright-report/
+blob-report/
+playwright-junit.xml
+*.tsbuildinfo
+vite.config.*.timestamp-*
 source/app/build/
 source/app/static/assets/dist/
 
@@ -35,6 +52,9 @@ celerybeat-schedule.db
 source/app/database.db
 *.dump
 *.bak
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # IDE and operating system
 .idea/
@@ -42,6 +62,10 @@ source/app/database.db
 *.code-workspace
 .DS_Store
 Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
 
 # Project-specific generated or private files
 flask/

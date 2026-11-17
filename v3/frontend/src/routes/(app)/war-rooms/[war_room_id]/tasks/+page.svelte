@@ -18,6 +18,7 @@
 		CornerDownRight,
 		Tag as TagIcon,
 		GripVertical,
+		Waypoints,
 		Calendar as CalendarIcon,
 		ArrowUpFromLine,
 		Columns3,
@@ -43,6 +44,7 @@
 	import type { TaskStatus } from '$lib/types/resources/task';
 	import TaskKanbanBoard from '$lib/components/common/tasks/TaskKanbanBoard.svelte';
 	import type { KanbanColumn } from '$lib/components/common/tasks/kanban-types';
+	import TaskFanOutDialog from './TaskFanOutDialog.svelte';
 
 	const warRoomId = $derived(Number(page.params.war_room_id));
 
@@ -114,6 +116,8 @@
 	let dialogOpen = $state(false);
 	let dialogMode = $state<'create' | 'edit'>('create');
 	let editing = $state<WarRoomTask | null>(null);
+	let fanOut = $state<WarRoomTask | null>(null);
+	let fanOutOpen = $state(false);
 	let form = $state<FormState>(emptyForm());
 	let saving = $state(false);
 
@@ -290,6 +294,11 @@
 		};
 		dialogOpen = true;
 	};
+
+	function openFanOut(task: WarRoomTask) {
+		fanOut = task;
+		fanOutOpen = true;
+	}
 
 	function upsertTask(next: WarRoomTask) {
 		// The board holds a flat copy of the same rows; keep it level with
@@ -1169,6 +1178,7 @@
 		>
 			<Pencil class="h-3.5 w-3.5" />
 		</Button>
+		{@render linkedTasksButton(t)}
 		<Button
 			variant="ghost"
 			size="icon"
@@ -1253,6 +1263,7 @@
 		>
 			<Pencil class="h-3.5 w-3.5" />
 		</Button>
+		{@render linkedTasksButton(t)}
 		<Button
 			variant="ghost"
 			size="icon"
@@ -1305,6 +1316,17 @@
 		{/if}
 	</div>
 {/snippet}
+
+{#snippet linkedTasksButton(task: WarRoomTask)}
+	<Button variant="ghost" size="icon" class="h-6 w-6"
+		aria-label={irisT('Linked case tasks', $irisLocale)} onclick={() => openFanOut(task)}>
+		<Waypoints class="h-3.5 w-3.5" />
+	</Button>
+{/snippet}
+
+{#if fanOut && fanOut.war_room_id === warRoomId}
+	<TaskFanOutDialog bind:open={fanOutOpen} {warRoomId} taskId={fanOut.task_id} title={fanOut.title} {statuses} />
+{/if}
 
 <Dialog bind:open={dialogOpen}>
 	<DialogContent class="max-w-lg">

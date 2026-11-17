@@ -16,7 +16,6 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import traceback
 from marshmallow import ValidationError
 
 from app.web import Blueprint
@@ -324,8 +323,7 @@ def manage_groups_cac_delete_case(cur_id):
         db.session.commit()
 
     except Exception as e:
-        log.error(f"Error while removing cases access from group: {e}")
-        log.error(traceback.format_exc())
+        log.exception(f"Error while removing cases access from group: {e}")
         return response_error(msg=str(e))
 
     if success:

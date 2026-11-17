@@ -24,6 +24,18 @@
 	const people = $derived(
 		Array.isArray(field.value) ? (field.value as { name: string; position: string }[]) : []
 	);
+	type ChoiceOption = NonNullable<CardDefinition['options']>[number];
+	const twoColumns = $derived(!['categories', 'actors', 'motives'].includes(definition.key));
+	const choiceGroups = $derived.by(() => {
+		const groups: { name: string; options: ChoiceOption[] }[] = [];
+		for (const option of definition.options ?? []) {
+			const name = ru ? (option.group_ru ?? '') : (option.group_en ?? option.group_ru ?? '');
+			if (!groups.length || groups[groups.length - 1].name !== name)
+				groups.push({ name, options: [] });
+			groups[groups.length - 1].options.push(option);
+		}
+		return groups;
+	});
 	function setDate(value: string) {
 		try {
 			onchange(value ? fromLocalInput(value, zone) : null);
@@ -50,12 +62,9 @@
 	}
 </script>
 
-<div class="field">
+<div class="field" class:wide={definition.type === 'multichoice' || definition.type === 'people'}>
 	<div class="field-label">
-		<label for={`card-${definition.key}`}>{label}</label><span
-			class:manual={field.mode === 'manual'}
-			>{field.mode === 'manual' ? (ru ? 'Вручную' : 'Manual') : ru ? 'Авто' : 'Auto'}</span
-		>
+		<label for={`card-${definition.key}`}>{label}</label>
 	</div>
 	{#if view}
 		<div class="display-value" id={`card-${definition.key}`}>
@@ -113,21 +122,35 @@
 	{:else if definition.type === 'choice' || definition.type === 'boolean' || definition.type === 'multichoice'}
 		{#if definition.type === 'multichoice'}
 			<div id={`card-${definition.key}`} class="choices">
-				{#each definition.options ?? [] as option}<label
-						><input
-							type="checkbox"
-							disabled={!editable}
-							checked={Array.isArray(field.value) && field.value.includes(option.value)}
-							onchange={(e) =>
-								onchange(
-									e.currentTarget.checked
-										? [...(Array.isArray(field.value) ? field.value : []), option.value]
-										: (Array.isArray(field.value) ? field.value : []).filter(
-												(v) => v !== option.value
-											)
-								)}
-						/>{ru ? option.label_ru : option.label_en}</label
-					>{/each}
+				{#each choiceGroups as group}
+					<fieldset aria-label={group.name || label}>
+						{#if group.name}<legend>{group.name}</legend>{/if}
+						<div
+							class="choice-options"
+							class:columns={twoColumns && group.options.length > 1}
+							class:column-flow={definition.key === 'incident_types' && group.options.length > 1}
+							style={`--choice-rows: ${Math.ceil(group.options.length / 2)}`}
+						>
+							{#each group.options as option}
+								<label
+									><input
+										type="checkbox"
+										disabled={!editable}
+										checked={Array.isArray(field.value) && field.value.includes(option.value)}
+										onchange={(e) =>
+											onchange(
+												e.currentTarget.checked
+													? [...(Array.isArray(field.value) ? field.value : []), option.value]
+													: (Array.isArray(field.value) ? field.value : []).filter(
+															(v) => v !== option.value
+														)
+											)}
+									/>{ru ? option.label_ru : option.label_en}</label
+								>
+							{/each}
+						</div>
+					</fieldset>
+				{/each}
 			</div>
 		{:else}<select
 				id={`card-${definition.key}`}
@@ -152,28 +175,14 @@
 			>{/if}
 	{:else}<input
 			id={`card-${definition.key}`}
-			value={String(field.value ?? '')}
+			value={String(field.value ?? '').replace(/\r?\n/g, ' ')}
 			disabled={!editable}
 			oninput={(e) => onchange(e.currentTarget.value)}
 		/>{/if}
-	<div class="provenance">
-		<small
-			>{field.source ?? (ru ? 'Нет источника' : 'No source')} · {field.status === 'missing'
-				? ru
-					? 'Не заполнено'
-					: 'Missing'
-				: field.status === 'manual'
-					? ru
-						? 'Ручное значение'
-						: 'Manual value'
-					: ru
-						? 'Заполнено'
-						: 'Available'}</small
-		>{#if !view && editable && definition.auto && field.mode === 'manual'}<button
-				class="minor"
-				onclick={() => onchange(field.value, 'auto')}>{ru ? 'Вернуть авто' : 'Restore auto'}</button
-			>{/if}
-	</div>
+	{#if !view && editable && definition.auto && field.mode === 'manual'}<button
+			class="minor"
+			onclick={() => onchange(field.value, 'auto')}>{ru ? 'Вернуть авто' : 'Restore auto'}</button
+		>{/if}
 </div>
 
 <style>
@@ -194,16 +203,6 @@
 		align-items: center;
 		margin-bottom: 0.5rem;
 		font-weight: 600;
-	}
-	.field-label span {
-		font-size: 0.65rem;
-		font-weight: 400;
-		background: hsl(var(--muted));
-		border-radius: 1rem;
-		padding: 0.15rem 0.5rem;
-	}
-	.field-label .manual {
-		color: hsl(var(--primary));
 	}
 	input:not([type='checkbox']),
 	textarea,
@@ -226,14 +225,6 @@
 	textarea {
 		resize: vertical;
 	}
-	.provenance {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-top: 0.4rem;
-		color: hsl(var(--muted-foreground));
-		font-size: 0.75rem;
-	}
 	.minor {
 		color: hsl(var(--primary));
 		font-size: 0.75rem;
@@ -243,16 +234,63 @@
 		gap: 0.5rem;
 		margin: 0.5rem 0;
 	}
+	.wide {
+		grid-column: 1 / -1;
+	}
 	.choices {
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
 		gap: 1rem;
+		width: 100%;
+	}
+	.choices fieldset {
+		min-width: 0;
+		border: 0;
+		padding: 0;
+		margin: 0;
+	}
+	.choices legend {
+		font-weight: 600;
+		padding: 0;
+		margin-bottom: 0.6rem;
+	}
+	.choice-options {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.15rem 1.25rem;
+	}
+	.choice-options.columns {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.choice-options.column-flow {
+		grid-auto-flow: column;
+		grid-template-rows: repeat(var(--choice-rows), auto);
 	}
 	.choices label {
 		display: flex;
-		align-items: center;
-		gap: 0.4rem;
+		align-items: flex-start;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.4rem 0.25rem;
+		border-radius: 0.35rem;
+		cursor: pointer;
 	}
+	.choices label:hover {
+		background: hsl(var(--muted));
+	}
+	.choices input {
+		flex-shrink: 0;
+		margin-top: 0.2rem;
+	}
+	@media (max-width: 900px) {
+		.choice-options.columns {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.choice-options.column-flow {
+			grid-auto-flow: row;
+			grid-template-rows: none;
+		}
+	}
+
 	small {
 		font-size: 0.75rem;
 		color: hsl(var(--muted-foreground));

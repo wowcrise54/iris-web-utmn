@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -445,7 +447,7 @@
 								});
 							})
 							.catch((e) => {
-								console.error('Clipboard copy error:', e);
+								logger.error('Clipboard copy error:', e);
 
 								toast({
 									title: 'Could not copy link',
@@ -463,7 +465,7 @@
 								});
 							})
 							.catch((e) => {
-								console.error('Clipboard copy error:', e);
+								logger.error('Clipboard copy error:', e);
 
 								toast({
 									title: 'Could not copy link',

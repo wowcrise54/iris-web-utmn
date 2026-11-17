@@ -35,12 +35,16 @@ def require_war_room_read(war_room_id):
 def require_war_room_write(war_room_id):
     if not war_room_exists(war_room_id):
         return response_api_not_found()
-    if not ac_current_user_has_permission(Permissions.war_rooms_write) \
-            and not ac_current_user_has_permission(Permissions.server_administrator):
-        return ac_api_return_access_denied()
-    if ac_fast_check_current_user_has_war_room_access(
-        war_room_id,
-        [WarRoomAccessLevel.full_access],
-    ) is None:
+    if not can_write_war_room(war_room_id):
         return ac_api_return_access_denied()
     return None
+
+
+def can_write_war_room(war_room_id):
+    if not ac_current_user_has_permission(Permissions.war_rooms_write) \
+            and not ac_current_user_has_permission(Permissions.server_administrator):
+        return False
+    return ac_fast_check_current_user_has_war_room_access(
+        war_room_id,
+        [WarRoomAccessLevel.full_access],
+    ) is not None

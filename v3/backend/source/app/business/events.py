@@ -16,7 +16,8 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from datetime import datetime
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 
 from app.db import db
 from app.blueprints.iris_user import iris_current_user
@@ -48,7 +49,7 @@ from app.business.case_timelines import set_event_timelines
 
 
 def events_create(case_identifier, event: CasesEvent, event_category_id, event_assets,
-                  event_iocs, sync_iocs_assets, timeline_ids=None) -> CasesEvent:
+                  event_iocs, sync_iocs_assets, timeline_ids=None, *, asset_roles=None, ioc_roles=None) -> CasesEvent:
 
     event.case_id = case_identifier
     event.event_added = datetime.utcnow()
@@ -64,11 +65,11 @@ def events_create(case_identifier, event: CasesEvent, event_category_id, event_a
 
     setattr(event, 'event_category_id', event_category_id)
 
-    success, log = update_event_assets(event.event_id, case_identifier, event_assets, event_iocs, sync_iocs_assets)
+    success, log = update_event_assets(event.event_id, case_identifier, event_assets, event_iocs, sync_iocs_assets, roles=asset_roles)
     if not success:
         raise BusinessProcessingError('Error while saving linked assets', data=log)
 
-    success, log = update_event_iocs(event.event_id, case_identifier, event_iocs)
+    success, log = update_event_iocs(event.event_id, case_identifier, event_iocs, roles=ioc_roles)
     if not success:
         raise BusinessProcessingError('Error while saving linked iocs', data=log)
 
@@ -103,7 +104,7 @@ def events_get_iocs_ids(event: CasesEvent) -> list[int]:
 
 
 def events_update(event: CasesEvent, event_category_id, event_assets, event_iocs,
-                  event_sync_iocs_assets, timeline_ids=None) -> CasesEvent:
+                  event_sync_iocs_assets, timeline_ids=None, *, asset_roles=None, ioc_roles=None) -> CasesEvent:
     add_obj_history_entry(event, 'updated')
 
     update_timeline_state(event.case_id)
@@ -113,11 +114,11 @@ def events_update(event: CasesEvent, event_category_id, event_assets, event_iocs
 
     setattr(event, 'event_category_id', event_category_id)
 
-    success, log = update_event_assets(event.event_id, event.case_id, event_assets, event_iocs, event_sync_iocs_assets)
+    success, log = update_event_assets(event.event_id, event.case_id, event_assets, event_iocs, event_sync_iocs_assets, roles=asset_roles)
     if not success:
         raise BusinessProcessingError('Error while saving linked assets', data=log)
 
-    success, log = update_event_iocs(event.event_id, event.case_id, event_iocs)
+    success, log = update_event_iocs(event.event_id, event.case_id, event_iocs, roles=ioc_roles)
     if not success:
         raise BusinessProcessingError('Error while saving linked iocs', data=log)
 
@@ -138,7 +139,35 @@ def events_delete(user, event: CasesEvent):
     track_activity(f'deleted event "{event.event_title}" in timeline', event.case_id)
 
 
-def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int = 0):
+_HISTOGRAM_STEPS = (60, 300, 900, 3600, 21600, 86400, 604800, 2592000, 31536000)
+
+
+def _timeline_statistics(rows):
+    sources = Counter(row.event_source for row in rows if row.event_source)
+    categories = Counter(row.category_name for row in rows if row.category_name)
+    origin = datetime.min
+    second = timedelta(seconds=1)
+    seconds = [(row.event_date - origin) // second for row in rows]
+    interval = None
+    histogram = []
+    if seconds:
+        start, end = min(seconds), max(seconds)
+        interval = next((step for step in _HISTOGRAM_STEPS if end // step - start // step < 60),
+                        max(_HISTOGRAM_STEPS[-1], (end - start) // 59 + 1))
+        bins = Counter(timestamp // interval for timestamp in seconds)
+        for index in range(start // interval, end // interval + 1):
+            bucket_start = (origin + timedelta(seconds=index * interval)).replace(tzinfo=timezone.utc)
+            histogram.append({'start': bucket_start.isoformat(), 'count': bins[index]})
+
+    return {
+        'interval_seconds': interval,
+        'histogram': histogram,
+        'sources': [{'value': value, 'count': count} for value, count in sources.most_common(10)],
+        'categories': [{'value': value, 'count': count} for value, count in categories.most_common(10)],
+    }
+
+
+def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int = 0, *, include_stats=False):
     """List timeline events for a case, applying the given filter dimensions.
 
     Returns a dict with keys `tim`, `assets`, `iocs`, `categories`, `state`,
@@ -204,6 +233,7 @@ def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int 
 
     tim: list[dict] = []
     events_list: list[int] = []
+    stats_rows = []
     for row in timeline:
         if (assets_filter_values is not None or assets_id_filter is not None) \
                 and row.event_id not in assets_intersection:
@@ -211,6 +241,9 @@ def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int 
 
         if iocs_filter_values is not None and row.event_id not in iocs_intersection:
             continue
+
+        if include_stats:
+            stats_rows.append(row)
 
         ras = row._asdict()
         ras['event_date'] = ras['event_date'].strftime('%Y-%m-%dT%H:%M:%S.%f')
@@ -322,7 +355,7 @@ def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int 
 
     iocs = get_case_iocs_light(case_identifier)
 
-    return {
+    result = {
         'tim': tim_page,
         'comments_map': events_comments_map,
         'assets': cache,
@@ -331,3 +364,6 @@ def events_list_filtered(case_identifier, filters, page: int = 1, per_page: int 
         'state': get_timeline_state(caseid=case_identifier),
         'pagination': pagination
     }
+    if include_stats:
+        result['statistics'] = _timeline_statistics(stats_rows)
+    return result

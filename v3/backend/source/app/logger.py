@@ -21,6 +21,15 @@ import logging
 LOG_FORMAT = '%(asctime)s :: %(levelname)s :: %(module)s :: %(funcName)s :: %(message)s'
 LOG_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, datefmt=LOG_TIME_FORMAT)
+from app.observability_logging import configure_logging
 
-logger = logging
+configure_logging()
+
+
+class _LegacyLogger:
+    """Keep the historical module facade (including getLogger/INFO)."""
+    def __getattr__(self, name):
+        return getattr(logging.getLogger('iris'), name, getattr(logging, name, None))
+
+
+logger = _LegacyLogger()

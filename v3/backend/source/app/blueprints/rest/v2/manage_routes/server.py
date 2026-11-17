@@ -110,6 +110,7 @@ _CHATBOT_TRACKED_FIELDS = (
     'chatbot_api_key',
     'chatbot_model',
     'chatbot_base_url',
+    'chatbot_max_output_tokens',
     'chatbot_max_turns_per_conversation',
     'chatbot_max_tool_calls_per_turn',
     'chatbot_auto_execute_read_tools',
@@ -555,6 +556,21 @@ def server_get_settings() -> Response:
          tags=['ManageServer'], summary='Update server settings')
 def server_put_settings() -> Response:
     return server_operations.update_settings()
+
+
+@server_blueprint.get('/mcp/tools')
+@ac_api_requires(Permissions.server_administrator)
+@demo_mode_owner_only
+@api_doc(tags=['ManageServer'], summary='List available MCP tools')
+def server_get_mcp_tools() -> Response:
+    # Reuse MCP discovery rules while allowing the settings page's session auth.
+    from app.blueprints.rest.v2.mcp.dispatch import build_tools_list
+    from app.blueprints.rest.v2.mcp.classification import mutates
+
+    return response_api_success({'tools': [
+        {**tool, 'read_only': not mutates(tool['name'])}
+        for tool in build_tools_list()
+    ]})
 
 
 @server_blueprint.post('/backups/db')

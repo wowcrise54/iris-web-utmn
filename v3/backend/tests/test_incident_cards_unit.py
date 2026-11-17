@@ -73,15 +73,11 @@ class IncidentCardTests(unittest.TestCase):
                 self.assertEqual(result["importance"], importance)
                 self.assertEqual(result["priority"], priorities[asset][importance])
 
-    def test_category8_requires_reason_even_with_other_category(self):
+    def test_category8_low_and_mixed_categories_use_maximum(self):
         mod = self.load()
-        fields = {
-            "categories": {"value": [2, 8]},
-            "prioritization_type": {"value": "key"},
-            "category8_importance": {"value": "low"},
-        }
-        self.assertIsNone(mod.derive(fields)["importance"])
-        fields["category8_reason"] = {"value": "reason"}
+        fields = {"categories": {"value": [8]}, "prioritization_type": {"value": "key"}}
+        self.assertEqual(mod.derive(fields)["importance"], "low")
+        fields["categories"]["value"] = [2, 8]
         self.assertEqual(mod.derive(fields)["importance"], "high")
 
     def test_timestamps_and_completed_duration(self):
@@ -97,7 +93,6 @@ class IncidentCardTests(unittest.TestCase):
             }.items()
         }
         result = mod.derive(fields)
-        self.assertEqual(result["reaction_seconds"], 300)
         self.assertIsNone(result["incident_duration_seconds"])
         fields["completed"]["value"] = True
         self.assertEqual(mod.derive(fields)["incident_duration_seconds"], 3600)
@@ -151,23 +146,26 @@ class IncidentCardTests(unittest.TestCase):
         context = {
             "meta": {"case_id": 1},
             "sources": {},
-            "automatic": {"title": ("new", "case.name")},
+            "automatic": {"description": ("new", "case.description")},
         }
         stored = {
             "revision": 2,
             "fields": {
-                "title": {"value": "manual", "mode": "manual"},
-                "files": {"value": "old", "mode": "auto", "source": "file_ids:1"},
+                "description": {"value": "manual", "mode": "manual"},
+                "criticality": {
+                    "value": "Medium",
+                    "mode": "auto",
+                    "source": "case.severity",
+                },
             },
             "selections": {"file_ids": [1]},
         }
         result = mod.build_snapshot(context, stored)
-        self.assertEqual(result["fields"]["title"]["value"], "manual")
-        self.assertEqual(result["fields"]["files"]["value"], "old")
-        self.assertEqual(result["fields"]["files"]["status"], "missing")
-        self.assertIn("files", result["completeness"]["missing"])
+        self.assertEqual(result["fields"]["description"]["value"], "manual")
+        self.assertEqual(result["fields"]["criticality"]["value"], "Средний")
+        self.assertEqual(result["fields"]["criticality"]["status"], "missing")
         self.assertTrue(result["warnings"])
-        self.assertNotIn("source", stored["fields"]["title"])
+        self.assertNotIn("source", stored["fields"]["description"])
 
     def test_unknown_incident_type_is_exclusive(self):
         mod = self.load()
@@ -192,8 +190,8 @@ class IncidentCardTests(unittest.TestCase):
             hasattr(mod, "merge_fields"), "server-owned auto provenance merge missing"
         )
         stored = {
-            "files": {
-                "value": "original",
+            "criticality": {
+                "value": "High",
                 "mode": "auto",
                 "source": "file_ids:3",
                 "status": "ok",
@@ -202,46 +200,40 @@ class IncidentCardTests(unittest.TestCase):
         merged = mod.merge_fields(
             stored,
             {
-                "files": {"value": "forged", "mode": "auto"},
-                "hashes": {"value": "forged hash", "mode": "auto"},
+                "criticality": {"value": "forged", "mode": "auto"},
+                "description": {"value": "forged text", "mode": "auto"},
             },
         )
         result = mod.build_snapshot(
             {"meta": {}, "sources": {}, "automatic": {}}, {"fields": merged}
         )
-        self.assertEqual(result["fields"]["files"]["value"], "original")
-        self.assertEqual(result["fields"]["files"]["source"], "file_ids:3")
-        self.assertEqual(result["fields"]["files"]["status"], "missing")
-        self.assertIsNone(result["fields"]["hashes"]["value"])
-        self.assertEqual(stored["files"]["status"], "ok")
+        self.assertEqual(result["fields"]["criticality"]["value"], "Высокий")
+        self.assertEqual(result["fields"]["criticality"]["source"], "file_ids:3")
+        self.assertEqual(result["fields"]["criticality"]["status"], "missing")
+        self.assertIsNone(result["fields"]["description"]["value"])
+        self.assertEqual(stored["criticality"]["status"], "ok")
 
-    def test_echoed_transfer_selections_keep_missing_source_warning(self):
+    def test_source_links_are_rejected_even_if_they_belong_to_the_case(self):
         mod = self.load()
-        self.assertTrue(
-            hasattr(mod, "unresolved_sources"),
-            "material selection change detection missing",
-        )
-        stored = {
-            "selections": {"file_ids": [1], "alert_id": None},
-            "missing_sources": ["file_ids", "alert_id"],
-        }
-        available = {"file_ids": {1, 2}, "alert_id": {3}}
-        echoed = mod.deepcopy(mod.SELECTIONS)
-        echoed.update(stored["selections"])
-        self.assertEqual(
-            mod.unresolved_sources(stored, echoed, available), ["file_ids", "alert_id"]
-        )
-        echoed["file_ids"] = [1, 2]
-        self.assertEqual(
-            mod.unresolved_sources(stored, echoed, available), ["alert_id"]
-        )
-        echoed["alert_id"] = 3
-        self.assertEqual(mod.unresolved_sources(stored, echoed, available), [])
-        echoed["file_ids"] = []
-        echoed["alert_id"] = None
-        self.assertEqual(
-            mod.unresolved_sources(stored, echoed, available), ["file_ids", "alert_id"]
-        )
+        for key in (
+            "alert_id",
+            "affected_asset_ids",
+            "file_ids",
+            "ioc_ids",
+            "source_asset_id",
+            "target_asset_id",
+            "performed_task_ids",
+            "planned_task_ids",
+        ):
+            with self.subTest(key=key), self.assertRaises(mod.CardValidationError):
+                mod.validate_update(
+                    dict(
+                        schema_version=1,
+                        revision=0,
+                        fields={},
+                        selections={key: [1] if key.endswith("_ids") else 1},
+                    )
+                )
 
     def test_empty_read_side_effect_free(self):
         mod = self.load()

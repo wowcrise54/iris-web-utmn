@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -85,7 +87,7 @@
 				clean.searchParams.delete('oidc');
 				history.replaceState({}, '', clean.pathname + clean.search);
 			} catch (e) {
-				console.error('OIDC exchange failed:', e);
+				logger.error('OIDC exchange failed:', e);
 				error = 'SSO sign-in failed. Please try again.';
 				auth.clearAuth();
 			}
@@ -112,13 +114,13 @@
 
 		if (auth.getMfaEnabled() && hasValidTokens) {
 			if (!auth.getMfaSetupComplete()) {
-				console.log('Redirecting to mfa-setup');
+				logger.debug('Redirecting to mfa-setup');
 				await goto('/login/mfa-setup', { replaceState: true });
 				return;
 			}
 
 			if (!auth.getMfaVerified()) {
-				console.log('Redirecting to mfa-verify');
+				logger.debug('Redirecting to mfa-verify');
 				await goto('/login/mfa-verify', { replaceState: true });
 				return;
 			}

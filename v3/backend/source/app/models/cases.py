@@ -155,7 +155,12 @@ class CasesEvent(db.Model):
                             primaryjoin="CasesEvent.event_id==CaseEventCategory.event_id",
                             secondaryjoin="CaseEventCategory.category_id==EventCategory.id",
                             viewonly=True)
-    children = relationship("CasesEvent", backref=backref('parent', remote_side=[event_id]))
+    children = relationship(
+        "CasesEvent",
+        primaryjoin="and_(CasesEvent.event_id == remote(foreign(CasesEvent.parent_event_id)), "
+                    "CasesEvent.case_id == remote(CasesEvent.case_id))",
+        backref=backref('parent', remote_side=[event_id, case_id]),
+    )
 
     __table_args__ = (
         CheckConstraint('event_id != parent_event_id', name='check_different_ids'),

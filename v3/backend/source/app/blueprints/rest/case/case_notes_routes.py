@@ -32,7 +32,6 @@ from app.business.notes import notes_list_revisions
 from app.business.notes import notes_get_revision
 from app.business.notes import notes_delete_revision
 from app.business.notes import notes_update
-from app.business.notes import notes_get
 from app.business.notes import notes_delete
 from app.datamgmt.case.case_db import get_case
 from app.datamgmt.case.case_notes_db import add_comment_to_note
@@ -117,7 +116,7 @@ def case_note_detail(cur_id, caseid):
 @ac_api_requires()
 def case_note_delete(cur_id, caseid):
     note = get_note(cur_id)
-    if not note:
+    if not note or note.note_case_id != caseid:
         return response_error('Invalid note ID for this case')
 
     try:
@@ -137,10 +136,18 @@ def case_note_save(cur_id, caseid):
     addnote_schema = CaseNoteSchema()
 
     try:
-        note = notes_get(cur_id)
+        note = get_note(cur_id)
+        if not note or note.note_case_id != caseid:
+            return response_error('Invalid note ID for this case')
+
         request_data = call_modules_hook('on_preload_note_update', request.get_json(), caseid=note.note_case_id)
 
         request_data['note_id'] = note.note_id
+        request_data['note_case_id'] = caseid
+        if request_data.get('directory_id') is not None:
+            addnote_schema.verify_directory_id(request_data, caseid=caseid)
+        request_data.pop('directory', None)
+        request_data.pop('comments', None)
         addnote_schema.load(request_data, partial=True, instance=note)
         note = notes_update(iris_current_user, note)
 
@@ -159,8 +166,11 @@ def case_note_save(cur_id, caseid):
 def case_note_list_history(cur_id, caseid):
     note_version_sc = CaseNoteRevisionSchema(many=True)
 
-    try:
+    note = get_note(cur_id)
+    if not note or note.note_case_id != caseid:
+        return response_error('Invalid note ID for this case')
 
+    try:
         note_version = notes_list_revisions(cur_id)
 
         return response_success("ok", data=note_version_sc.dump(note_version))
@@ -176,8 +186,11 @@ def case_note_list_history(cur_id, caseid):
 def case_note_revision(cur_id, revision_id, caseid):
     note_version_sc = CaseNoteRevisionSchema()
 
-    try:
+    note = get_note(cur_id)
+    if not note or note.note_case_id != caseid:
+        return response_error('Invalid note ID for this case')
 
+    try:
         note_version = notes_get_revision(cur_id, revision_id)
 
         return response_success("ok", data=note_version_sc.dump(note_version))
@@ -191,8 +204,11 @@ def case_note_revision(cur_id, revision_id, caseid):
 @ac_requires_case_identifier(CaseAccessLevel.full_access)
 @ac_api_requires()
 def case_note_revision_delete(cur_id, revision_id, caseid):
-    try:
+    note = get_note(cur_id)
+    if not note or note.note_case_id != caseid:
+        return response_error('Invalid note ID for this case')
 
+    try:
         notes_delete_revision(cur_id, revision_id)
 
         return response_success(f"Revision {revision_id} of note {cur_id} deleted")
@@ -214,6 +230,9 @@ def case_note_add(caseid):
         note_schema = CaseNoteSchema()
         note_schema.verify_directory_id(request_data, caseid=caseid)
 
+        request_data.pop('note_id', None)
+        request_data.pop('directory', None)
+        request_data.pop('comments', None)
         note = note_schema.load(request_data)
         note = notes_create(note, caseid)
 
@@ -262,7 +281,7 @@ def case_directory_update(dir_id, caseid):
     try:
 
         directory = get_directory(dir_id)
-        if not directory:
+        if not directory or directory.case_id != caseid:
             return response_error(msg="Invalid directory ID")
 
         directory_schema = CaseNoteDirectorySchema()
@@ -297,7 +316,7 @@ def case_directory_delete(dir_id, caseid):
     try:
 
         directory = get_directory(dir_id)
-        if not directory:
+        if not directory or directory.case_id != caseid:
             return response_error(msg="Invalid directory ID")
 
         # Proceed to delete directory, but remove all associated notes and subdirectories recursively
@@ -480,6 +499,10 @@ def case_comment_note_edit(cur_id, com_id, caseid):
 def case_comment_note_delete(cur_id, com_id, caseid):
     note = get_note(cur_id)
     if not note or note.note_case_id != caseid:
+        return response_error("Invalid comment ID")
+
+    comment = get_case_note_comment(cur_id, com_id)
+    if not comment or comment.comment_case_id != caseid:
         return response_error("Invalid comment ID")
 
     success, msg = delete_note_comment(iris_current_user.id, cur_id, com_id)

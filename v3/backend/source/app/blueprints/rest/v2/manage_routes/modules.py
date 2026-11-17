@@ -52,6 +52,17 @@ from app.models.errors import ObjectNotFoundError
 modules_blueprint = Blueprint('modules_rest_v2', __name__, url_prefix='/modules')
 
 
+@modules_blueprint.post('/<int:identifier>/check-connection')
+@ac_api_requires(Permissions.server_administrator)
+@api_doc(tags=['PTSandbox'], summary='Check the saved PT Sandbox connection without uploading a file')
+def check_module_connection(identifier):
+    from app.business.ptsandbox import connection_check, SandboxError
+    try:
+        return response_api_success(connection_check(identifier))
+    except SandboxError as exc:
+        return response_api_error(str(exc))
+
+
 @modules_blueprint.get('')
 @ac_api_requires(Permissions.server_administrator)
 @api_doc(tags=['ManageModules'], summary='List modules')

@@ -30,6 +30,16 @@
 		placeholder: string;
 		type?: string;
 	}> = [
+		{
+			field: 'query',
+			label: irisT("Event search", $irisLocale),
+			placeholder: irisT("Title, description, or source", $irisLocale)
+		},
+		{
+			field: 'luceneQuery',
+			label: irisT("Lucene query", $irisLocale),
+			placeholder: 'source:Sysmon AND title:PowerShell'
+		},
 		{ field: 'title', label: irisT("Title", $irisLocale), placeholder: irisT("contains…", $irisLocale) },
 		{ field: 'description', label: irisT("Description", $irisLocale), placeholder: irisT("contains…", $irisLocale) },
 		{ field: 'source', label: irisT("Source", $irisLocale), placeholder: irisT("contains…", $irisLocale) },

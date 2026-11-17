@@ -37,6 +37,9 @@ from app.blueprints.rest.parsing import parse_pagination_parameters
 from app.business.activity import activity_add_manual_entry
 from app.business.activity import activity_search_in_case
 from app.blueprints.rest.v2.case_routes.incident_card import case_incident_card_blueprint
+from app.blueprints.rest.v2.case_routes.sandbox import case_sandbox_blueprint
+from app.blueprints.rest.v2.case_routes.edr import case_edr_blueprint
+from app.blueprints.rest.v2.case_routes.evidence_analysis import case_analysis_blueprint
 from app.blueprints.rest.v2.case_routes.assets import case_assets_blueprint
 from app.blueprints.rest.v2.case_routes.iocs import case_iocs_blueprint
 from app.blueprints.rest.v2.case_routes.notes import case_notes_blueprint
@@ -44,6 +47,8 @@ from app.blueprints.rest.v2.case_routes.notes_directories import case_notes_dire
 from app.blueprints.rest.v2.case_routes.tasks import case_tasks_blueprint
 from app.blueprints.rest.v2.case_routes.evidences import case_evidences_blueprint
 from app.blueprints.rest.v2.case_routes.events import case_events_blueprint
+from app.blueprints.rest.v2.case_routes.case_trackers import case_trackers_blueprint
+from app.blueprints.rest.v2.case_routes.investigation_graph import case_graph_blueprint
 from app.blueprints.rest.v2.case_routes.timelines import case_timelines_blueprint
 from app.blueprints.rest.v2.case_routes.datastore import case_datastore_blueprint
 from app.blueprints.rest.v2.case_routes.dim_hooks import case_dim_hooks_blueprint
@@ -447,6 +452,9 @@ cases_blueprint = Blueprint('cases',
                             __name__,
                             url_prefix='/cases')
 cases_blueprint.register_blueprint(case_incident_card_blueprint)
+cases_blueprint.register_blueprint(case_sandbox_blueprint)
+cases_blueprint.register_blueprint(case_edr_blueprint)
+cases_blueprint.register_blueprint(case_analysis_blueprint)
 cases_blueprint.register_blueprint(case_assets_blueprint)
 cases_blueprint.register_blueprint(case_iocs_blueprint)
 cases_blueprint.register_blueprint(case_notes_directories_blueprint)
@@ -454,6 +462,8 @@ cases_blueprint.register_blueprint(case_notes_blueprint)
 cases_blueprint.register_blueprint(case_tasks_blueprint)
 cases_blueprint.register_blueprint(case_evidences_blueprint)
 cases_blueprint.register_blueprint(case_events_blueprint)
+cases_blueprint.register_blueprint(case_graph_blueprint)
+cases_blueprint.register_blueprint(case_trackers_blueprint)
 cases_blueprint.register_blueprint(case_timelines_blueprint)
 cases_blueprint.register_blueprint(case_datastore_blueprint)
 cases_blueprint.register_blueprint(case_dim_hooks_blueprint)

@@ -5,6 +5,7 @@
 	import type { Ioc } from '$lib/types/resources/ioc';
 	import EntityRow from '$lib/components/common/EntityRow.svelte';
 	import TlpBadge from '$lib/components/common/tlp/TlpBadge.svelte';
+	import OpenCTIStatus from '$lib/components/common/OpenCTIStatus.svelte';
 	import SeenElsewhereBadge from '$lib/components/common/SeenElsewhereBadge.svelte';
 	import { toPlainSnippet } from '$lib/utils/text';
 	import { CASE_IOCS_CTX, type CaseIocsContext } from '$lib/contexts/case-iocs.context.svelte';
@@ -88,6 +89,7 @@
 
 		{#snippet badges()}
 			<TlpBadge tlp_name={ioc.tlp?.tlp_name} />
+			<OpenCTIStatus enrichment={ioc.ioc_enrichment} />
 		{/snippet}
 
 		{#snippet meta()}

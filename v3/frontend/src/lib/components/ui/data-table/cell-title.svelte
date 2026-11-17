@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -16,7 +18,7 @@
 		if (redirUrl) {
 			goto(redirUrl);
 		} else {
-			console.error('Invalid element provided:', redirUrl);
+			logger.error('Invalid element provided:', redirUrl);
 		}
 	}
 

@@ -1,6 +1,9 @@
 """Read-only OpenCTI GraphQL client. Values are variables, never query text."""
 import ipaddress
 import json
+import logging
+import os
+from uuid import uuid4
 import re
 import socket
 from datetime import datetime, timezone
@@ -102,8 +105,16 @@ INDICATOR_QUERY = '''query IrisOpenCTIIndicators($filters: FilterGroup, $after: 
 }'''
 RELATION_QUERY = '''query IrisOpenCTIRelations($ids: [String], $after: ID) {
   stixCoreRelationships(fromOrToId: $ids, first: 100, after: $after) {
-    edges { node { id relationship_type from { id entity_type }
-      to { id entity_type
+    edges { node { id relationship_type
+      from {
+        ... on StixObject { id entity_type }
+        ... on StixRelationship { id entity_type }
+        ... on Creator { id entity_type }
+      }
+      to {
+        ... on StixObject { id entity_type }
+        ... on StixRelationship { id entity_type }
+        ... on Creator { id entity_type }
         ... on Malware { name } ... on Tool { name } ... on Campaign { name }
         ... on IntrusionSet { name } ... on AttackPattern { name }
         ... on ThreatActorGroup { name }
@@ -138,18 +149,52 @@ class OpenCTIClient:
         self.deadline = None
         self.opener = build_opener(ProxyHandler({}), _NoRedirect())
 
+    def _trace(self, direction, request_id, body, http_status=None, clock=None):
+        log = logging.getLogger(__name__)
+        if not (log.isEnabledFor(5) or os.environ.get('IRIS_OPENCTI_LOG_LEVEL', '').upper() == 'TRACE'
+                or os.environ.get('IRIS_OPENCTI_LOG_PAYLOADS', '').lower() == 'true'):
+            return
+        if not log.isEnabledFor(logging.DEBUG):
+            return
+        # TRACE is metadata-only, including when the legacy payload flag is set.
+        log.log(5 if log.isEnabledFor(5) else logging.DEBUG,
+                  'OpenCTI TRACE %s request_id=%s http_status=%s duration_ms=%.1f bytes=%s',
+                  direction, request_id, http_status, (monotonic() - clock) * 1000,
+                  len(body), extra={'event': 'opencti_http', 'stage': direction,
+                                    'status': http_status, 'duration_ms': round((monotonic() - clock) * 1000, 2),
+                                    'metadata': {'bytes': len(body)}})
+
     def query(self, document, variables):
+        log = logging.getLogger(__name__)
+        operation = {OBSERVABLE_QUERY: 'observables', INDICATOR_QUERY: 'indicators',
+                     RELATION_QUERY: 'relationships'}.get(document, 'connection')
+        clock = monotonic()
+        log.debug('OpenCTI request_started operation=%s', operation)
+        try:
+            result = self._query(document, variables, uuid4().hex)
+        except OpenCTIError as error:
+            log.warning('OpenCTI request_failed operation=%s status=%s duration_ms=%.1f',
+                        operation, error.status, (monotonic() - clock) * 1000)
+            raise
+        log.debug('OpenCTI request_completed operation=%s duration_ms=%.1f',
+                  operation, (monotonic() - clock) * 1000)
+        return result
+
+    def _query(self, document, variables, request_id):
         if self.is_active is not None and not self.is_active():
             raise OpenCTIError('disabled')
         request = Request(self.url + '/graphql',
                           data=json.dumps({'query': document, 'variables': variables}).encode(),
                           headers={'Authorization': f'Bearer {self.token}', 'Content-Type': 'application/json'})
+        clock = monotonic()
+        self._trace('request', request_id, request.data, clock=clock)
         try:
             remaining = self.deadline - monotonic() if self.deadline else self.timeout
             if remaining <= 0:
                 raise OpenCTIError('timeout')
             with self.opener.open(request, timeout=min(self.timeout, remaining)) as response:
                 raw = response.read(4 * 1024 * 1024 + 1)
+                self._trace('response', request_id, raw, response.status, clock)
             if len(raw) > 4 * 1024 * 1024:
                 raise OpenCTIError('response_too_large')
             payload = json.loads(raw)
@@ -165,7 +210,15 @@ class OpenCTIClient:
             return payload['data']
         except HTTPError as error:
             status = 'unauthorized' if error.code in (401, 403) else 'unavailable' if error.code >= 500 else 'http_error'
-            error.close()
+            try:
+                # Only read error bodies when payload logging is enabled.
+                if (os.environ.get('IRIS_OPENCTI_LOG_LEVEL', '').upper() == 'TRACE'
+                        or os.environ.get('IRIS_OPENCTI_LOG_PAYLOADS', '').lower() == 'true'):
+                    self._trace('response', request_id, error.read(16384 + len(self.token) * 6 + 1), error.code, clock)
+            except (OSError, ValueError):
+                pass
+            finally:
+                error.close()
             raise OpenCTIError(status) from None
         except (TimeoutError, socket.timeout):
             raise OpenCTIError('timeout') from None
@@ -178,10 +231,12 @@ class OpenCTIClient:
 
     def pages(self, query, key, variables):
         after = None
-        for _ in range(10):
+        for page_number in range(1, 11):
             connection = self.query(query, {**variables, 'after': after}).get(key)
             if not isinstance(connection, dict):
                 raise OpenCTIError('invalid_response')
+            logging.getLogger(__name__).debug('OpenCTI page_received connection=%s page=%d items=%d',
+                                               key, page_number, len(nodes(connection)))
             yield connection
             page = connection.get('pageInfo', {})
             if not page.get('hasNextPage'):

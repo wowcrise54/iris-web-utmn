@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 /**
  * Socket.IO transport for a Yjs document.
  *
@@ -132,7 +133,7 @@ export class SocketYjsProvider {
 		// Kept as a real error so operators can see why collab is offline
 		// (auth failure, namespace not registered, network drop) without
 		// enabling verbose logging.
-		console.error('[collab] connect_error for', this.docName, err?.message ?? err);
+		logger.error('[collab] connect_error for', this.docName, err?.message ?? err);
 	};
 	private readonly onDisconnect = (_reason: string) => {
 		/* no-op; reconnect logic is handled by socket.io-client */
@@ -215,7 +216,7 @@ export class SocketYjsProvider {
 				// until a remote peer sends the next sync, which will
 				// hydrate us. This is very rare in practice (implies a
 				// wire-format mismatch between client and server).
-				console.warn('collab: sync-init apply failed', err);
+				logger.warn('collab: sync-init apply failed', err);
 			}
 		}
 
@@ -231,7 +232,7 @@ export class SocketYjsProvider {
 		try {
 			Y.applyUpdate(this.ydoc, fromBase64(data.update), this);
 		} catch (err) {
-			console.warn('collab: remote sync apply failed', err);
+			logger.warn('collab: remote sync apply failed', err);
 		}
 	}
 
@@ -240,7 +241,7 @@ export class SocketYjsProvider {
 		try {
 			applyAwarenessUpdate(this.awareness, fromBase64(data.update), 'remote');
 		} catch (err) {
-			console.warn('collab: remote awareness apply failed', err);
+			logger.warn('collab: remote awareness apply failed', err);
 			return;
 		}
 		// Overwrite the freshly-applied peer state with the server-

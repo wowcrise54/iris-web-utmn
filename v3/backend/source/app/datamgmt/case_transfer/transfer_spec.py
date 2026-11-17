@@ -232,10 +232,10 @@ ENTITIES = [
                entity_refs={'event_id': 'event'},
                lookup_refs={'category_id': 'event_category'}),
 
-    EntitySpec('event_asset', CaseEventsAssets, 'id', case_column='case_id',
+    EntitySpec('event_asset', CaseEventsAssets, 'id', case_column='case_id', fields=('role',),
                entity_refs={'event_id': 'event', 'asset_id': 'asset'}),
 
-    EntitySpec('event_ioc', CaseEventsIoc, 'id', case_column='case_id',
+    EntitySpec('event_ioc', CaseEventsIoc, 'id', case_column='case_id', fields=('role',),
                entity_refs={'event_id': 'event', 'ioc_id': 'ioc'}),
 
     EntitySpec('task', CaseTasks, 'id', case_column='task_case_id',

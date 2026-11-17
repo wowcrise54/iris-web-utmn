@@ -45,6 +45,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import ChipHoverHost from '$lib/components/common/MarkDown/ChipHoverHost.svelte';
 	import TimelineTopbar from './components/timeline-topbar.svelte';
+	import TimelineStatistics from './components/timeline-statistics.svelte';
 	import TimelineSideToolbar from './components/timeline-side-toolbar.svelte';
 	import TimelineSidebar from './components/timeline-sidebar.svelte';
 	import TimelineView from './components/timeline-view.svelte';
@@ -62,7 +63,14 @@
 		children?: EventWithChildren[];
 	};
 
+	const linkedEventId = $derived.by(() => {
+		const value = Number(page.url.searchParams.get('event'));
+		return Number.isSafeInteger(value) && value > 0 ? value : null;
+	});
+
 	const emptyFilters = (): TimelineFilterData => ({
+		query: '',
+		luceneQuery: '',
 		title: '',
 		description: '',
 		source: '',
@@ -208,14 +216,13 @@
 	const onQuickSearchChange = (value: string) => {
 		quickSearch = value;
 		quickSearchMatchIndex = 0;
-		// Quick-search runs against in-memory events. Trigger a one-shot
-		// pull of all remaining pages on first use so the search covers the
-		// entire timeline, not just what has been scrolled past. loadAll is
-		// idempotent and bails out if the data is already complete.
-		if (value.trim() && !timeline.list.allLoaded) {
+	};
+
+	$effect(() => {
+		if (quickSearch.trim() && timeline.list.status === 'idle' && timeline.list.nextPage !== null) {
 			void timeline.loadAll({ fetch });
 		}
-	};
+	});
 
 	const parentEventCandidates = $derived(
 		timeline.events().filter((event) => event.event_id !== selectedEvent?.event_id)
@@ -265,8 +272,11 @@
 	});
 
 	const toQuery = (): CaseTimelineFilterQuery => {
-		const query: CaseTimelineFilterQuery = {};
+		const query: CaseTimelineFilterQuery = { timeline_id: [...selectedTimelineIds] };
+		if (linkedEventId) query.event_id = [linkedEventId];
 
+		if (filters.query.trim()) query.query = filters.query.trim();
+		if (filters.luceneQuery.trim()) query.lucene_query = filters.luceneQuery.trim();
 		if (filters.title.trim()) query.title = [filters.title.trim()];
 		if (filters.description.trim()) query.description = [filters.description.trim()];
 		if (filters.source.trim()) query.source = [filters.source.trim()];
@@ -275,7 +285,7 @@
 		if (filters.ioc.trim()) query.ioc = [filters.ioc.trim()];
 		if (filters.category.trim()) query.category = [filters.category.trim()];
 		if (filters.startDate) query.start_date = filters.startDate;
-		if (filters.endDate) query.end_date = filters.endDate;
+		if (filters.endDate) query.end_date = `${filters.endDate}T23:59:59.999999`;
 		if (filters.flag) query.flag = filters.flag.toLowerCase() === 'true';
 
 		return query;
@@ -291,7 +301,7 @@
 
 	const clearFilters = async () => {
 		filters = emptyFilters();
-		await timeline.loadEvents({}, { fetch });
+		await timeline.loadEvents(toQuery(), { fetch });
 	};
 
 	const refreshTimeline = async () => {
@@ -459,6 +469,8 @@
 		event_tz: event.event_tz,
 		event_assets: event.event_assets ?? [],
 		event_iocs: event.event_iocs ?? [],
+		event_assets_roles: event.event_assets_roles,
+		event_iocs_roles: event.event_iocs_roles,
 		event_raw: event.event_raw ?? '',
 		event_source: event.event_source ?? '',
 		event_in_summary: event.event_in_summary ?? false,
@@ -471,7 +483,11 @@
 	});
 
 	const duplicateBranch = async (event: EventWithChildren, parentEventId: number | null) => {
-		const created = await timeline.createEvent(toCreatePayload(event, parentEventId), { fetch });
+		const detail = event.event_assets_roles && event.event_iocs_roles
+			? event
+			: await timeline.getEvent(event.event_id);
+		if (!detail) return;
+		const created = await timeline.createEvent(toCreatePayload(detail, parentEventId), { fetch });
 
 		if (!created) return;
 
@@ -582,15 +598,21 @@
 		}
 	};
 
+	const reloadTimelineSelection = () =>
+		timeline.loadEvents({ ...timeline.list.query, timeline_id: [...selectedTimelineIds] }, { fetch });
+
 	const toggleTimelineSelected = (timelineId: number) => {
 		const next = new Set(selectedTimelineIds);
 		if (next.has(timelineId)) next.delete(timelineId);
 		else next.add(timelineId);
 		selectedTimelineIds = next;
+		void reloadTimelineSelection();
 	};
 
 	const selectAllTimelines = () => {
+		if (selectedTimelineIds.size === 0) return;
 		selectedTimelineIds = new Set();
+		void reloadTimelineSelection();
 	};
 
 	const createTimeline = async (body: { name: string; color: string | null }) => {
@@ -635,6 +657,7 @@
 				const next = new Set(selectedTimelineIds);
 				next.delete(timelineId);
 				selectedTimelineIds = next;
+				await reloadTimelineSelection();
 			}
 		} else {
 			toast({
@@ -779,7 +802,8 @@
 
 	const loadMore = async () => {
 		if (timeline.list.nextPage === null) return;
-		if (timeline.list.status === 'loading' || timeline.list.status === 'loading_more') return;
+		if (timeline.list.status === 'loading' || timeline.list.status === 'loading_more' ||
+			timeline.list.status === 'loading_all') return;
 		await timeline.loadMore({ fetch });
 
 		// Chain-load if the trigger still sits inside the prefetch zone. The
@@ -828,7 +852,7 @@
 	};
 
 	$effect(() => {
-		timeline.loadEvents({}, { fetch });
+		timeline.loadEvents(linkedEventId ? { event_id: [linkedEventId] } : {}, { fetch });
 		loadEventCategories();
 		loadCaseAssets();
 		loadCaseIocs();
@@ -865,6 +889,12 @@
 			{canEdit}
 		/>
 		<div class="flex h-full min-h-0 flex-1 flex-col">
+			{#if linkedEventId}
+				<div class="flex items-center justify-between border-b px-4 py-2 text-sm">
+					<span>{irisT('Event', $irisLocale)} #{linkedEventId}</span>
+					<a class="underline" href={`/case/${page.params.case_id}/timeline`}>{irisT('Show all events', $irisLocale)}</a>
+				</div>
+			{/if}
 			<TimelineTopbar
 				{filters}
 				{eventCategories}
@@ -904,6 +934,9 @@
 						{irisT("No timeline events found.", $irisLocale)}
 					</div>
 				{:else}
+					{#if timeline.list.statistics}
+						<TimelineStatistics statistics={timeline.list.statistics} />
+					{/if}
 					<ChipHoverHost caseId={page.params.case_id}>
 						<TimelineView
 							groups={groupedRootEvents}

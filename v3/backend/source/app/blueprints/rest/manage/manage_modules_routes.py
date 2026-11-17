@@ -17,8 +17,8 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import json
-import logging as log
-import traceback
+import logging
+log = logging.getLogger(__name__)
 from app.web import Blueprint
 from app.web import request
 
@@ -91,7 +91,7 @@ def add_module():
         return response_success(message, data=module_schema.dump(module))
 
     except Exception as e:
-        traceback.print_exc()
+        log.exception('operation_failed')
         return response_error(e.__str__())
 
 

@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { writable, derived, get } from 'svelte/store';
 import type { LoginResponse } from '$lib/services/auth.service';
 import { ApiService } from '$lib/services/api.service';
@@ -232,7 +233,7 @@ const createAuthStore = () => {
 
 					return null;
 				} catch (error) {
-					console.error('loadAuth failed:', error);
+					logger.error('loadAuth failed:', error);
 
 					if (redirectOnFailure) {
 						store.clearAuth();

@@ -19,7 +19,8 @@
 from datetime import datetime
 
 import csv
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import marshmallow
 from app.web import Blueprint
 from app.web import request
@@ -53,9 +54,7 @@ from app.models.authorization import CaseAccessLevel
 from app.schema.marshables import CommentSchema
 from app.schema.marshables import IocSchema
 from app.blueprints.access_controls import ac_requires_case_identifier
-from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
 from app.blueprints.access_controls import ac_api_requires
-from app.blueprints.access_controls import ac_api_return_access_denied
 from app.blueprints.responses import response_error
 from app.blueprints.responses import response_success
 from app.iris_engine.module_handler.module_handler import call_deprecated_on_preload_modules_hook
@@ -115,6 +114,7 @@ def deprecated_case_add_ioc(caseid):
     try:
         request_data = call_deprecated_on_preload_modules_hook('ioc_create', request.get_json(), caseid)
         request_data['case_id'] = caseid
+        request_data.pop('ioc_id', None)
         ioc = ioc_schema.load(request_data)
         ioc = iocs_create(ioc)
         return response_success('IOC added', data=ioc_schema.dump(ioc))
@@ -195,7 +195,7 @@ def case_upload_ioc(caseid):
 
             if not ioc:
                 errors.append(f'{ioc.ioc_value} (internal reasons)')
-                log.error(f'Unable to create IOC {ioc.ioc_value} for internal reasons')
+                log.error('Unable to create IOC for internal reasons')
                 continue
 
             add_ioc(ioc, iris_current_user.id, caseid)
@@ -221,8 +221,8 @@ def case_upload_ioc(caseid):
 def deprecated_case_delete_ioc(cur_id: int, caseid: int):
     try:
         ioc = iocs_get(cur_id)
-        if not ac_fast_check_current_user_has_case_access(ioc.case_id, [CaseAccessLevel.full_access]):
-            return ac_api_return_access_denied(caseid=ioc.case_id)
+        if ioc.case_id != caseid:
+            raise ObjectNotFoundError()
 
         msg = iocs_delete(ioc)
         return response_success(msg=msg)
@@ -242,6 +242,8 @@ def deprecated_case_view_ioc(cur_id, caseid):
     ioc_schema = IocSchema()
     try:
         ioc = iocs_get(cur_id)
+        if ioc.case_id != caseid:
+            raise ObjectNotFoundError()
 
         return response_success(data=ioc_schema.dump(ioc))
     except ObjectNotFoundError:
@@ -257,6 +259,8 @@ def case_update_ioc(cur_id, caseid):
 
     try:
         ioc = iocs_get(cur_id)
+        if ioc.case_id != caseid:
+            raise ObjectNotFoundError()
 
         request_data = call_deprecated_on_preload_modules_hook('ioc_update', request.get_json(), ioc.case_id)
 
@@ -361,6 +365,10 @@ def case_comment_ioc_edit(cur_id, com_id, caseid):
 def case_comment_ioc_delete(cur_id, com_id, caseid):
     if not get_ioc(cur_id, caseid=caseid):
         return response_error('Invalid comment ID')
+
+    comment = get_case_ioc_comment(cur_id, com_id)
+    if not comment or comment.comment_case_id != caseid:
+        return response_error("Invalid comment ID")
 
     success, msg = delete_ioc_comment(iris_current_user.id, cur_id, com_id)
     if not success:

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
-	import { PencilIcon, SparklesIcon } from 'lucide-svelte';
+	import { PencilIcon, SparklesIcon, Trash2Icon } from 'lucide-svelte';
+	export let onDelete: (() => void) | undefined = undefined;
 
 	// Per-row actions for the IOC/asset tables. Both handlers are
 	// optional: a table only gets the buttons whose callback it passed,
@@ -17,6 +18,9 @@
 </script>
 
 <div class="flex items-center justify-end gap-1">
+	{#if onDelete}
+		<button type="button" class="rounded p-1 text-muted-foreground hover:text-destructive" title={irisT('Remove IOC from alert', $irisLocale)} aria-label={irisT('Remove IOC from alert', $irisLocale)} onclick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2Icon class="size-3.5" /></button>
+	{/if}
 	{#if onShowEnrichment}
 		<button
 			type="button"

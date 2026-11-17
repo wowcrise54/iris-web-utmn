@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import type { Handle, HandleServerError, RequestEvent } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { normalizeLocale } from '$lib/i18n/translate';
@@ -12,6 +13,7 @@ import {
 import { env } from '$env/dynamic/public';
 import { env as privateEnv } from '$env/dynamic/private';
 import sharp from 'sharp';
+import { loggingHandle } from '$lib/server/logging';
 import { initSentry } from '$lib/observability/init';
 import {
 	COOKIE_ACCESS_TOKEN,
@@ -489,7 +491,7 @@ const irisHandle: Handle = async ({ event, resolve }) => {
 				headers: out
 			});
 		} catch (error) {
-			console.error('Auth proxy error:', error);
+			logger.error('Auth proxy error:', error);
 			return new Response(
 				JSON.stringify({
 					error: 'Failed to connect to authentication service',
@@ -517,7 +519,13 @@ const localeHandle: Handle = ({ event, resolve }) =>
 				`<html lang="${normalizeLocale(event.cookies.get('iris_ui_locale'))}">`
 			)
 	});
-export const handle: Handle = sequence(localeHandle, sentryHandle(), csrfHandle, irisHandle);
+export const handle: Handle = sequence(
+	loggingHandle,
+	localeHandle,
+	sentryHandle(),
+	csrfHandle,
+	irisHandle
+);
 
 const fallbackHandleError: HandleServerError = ({ error, event }) => {
 	const message = error instanceof Error ? error.message : 'Server error';

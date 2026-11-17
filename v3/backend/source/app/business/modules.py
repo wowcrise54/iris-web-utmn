@@ -102,6 +102,16 @@ def module_get_detail(module_id):
     package — those are the bits the modal shows above the config table.
     """
     module = modules_get(module_id)
+    config = module.module_config or []
+    if module.module_name == 'iris_ptsandbox_module':
+        from app.business.ptsandbox import public_config
+        config = public_config(config)
+    if module.module_name == 'iris_maxpatrol_module':
+        from app.business.maxpatrol import public_config
+        config = public_config(config)
+    if module.module_name == 'iris_wazuh_module':
+        from app.business.wazuh import public_config
+        config = public_config(config)
     return {
         'id': module.id,
         'module_name': module.module_name,
@@ -113,7 +123,7 @@ def module_get_detail(module_id):
         'is_active': module.is_active,
         'has_pipeline': module.has_pipeline,
         'module_type': module.module_type,
-        'module_config': module.module_config or [],
+        'module_config': config,
     }
 
 
@@ -170,6 +180,13 @@ def modules_enable(module_id):
     if module_name is None:
         raise ObjectNotFoundError()
 
+    if module_name == 'iris_wazuh_module':
+        from app.business.wazuh import initialize
+        try:
+            initialize(modules_get(module_id))
+        except (ValueError, TypeError, KeyError) as exc:
+            raise BusinessProcessingError('Invalid Wazuh Indexer configuration') from exc
+
     if not iris_module_enable_by_id(module_id):
         raise BusinessProcessingError('Unable to enable module')
 
@@ -221,6 +238,16 @@ def modules_export_config(module_id):
     mod_config, mod_human_name, mod_name = get_module_config_from_id(module_id)
     if mod_config is None:
         raise ObjectNotFoundError()
+
+    if mod_name == 'iris_ptsandbox_module':
+        from app.business.ptsandbox import public_config
+        mod_config = public_config(mod_config)
+    if mod_name == 'iris_maxpatrol_module':
+        from app.business.maxpatrol import public_config
+        mod_config = public_config(mod_config)
+    if mod_name == 'iris_wazuh_module':
+        from app.business.wazuh import public_config
+        mod_config = public_config(mod_config)
 
     return {
         'module_name': mod_name,

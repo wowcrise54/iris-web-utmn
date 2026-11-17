@@ -1,3 +1,4 @@
+import { logger } from '$lib/observability/logger';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { auth } from '$lib/stores/auth.store';
@@ -126,7 +127,7 @@ class AuthenticationService {
 
 			return responseData;
 		} catch (error: unknown) {
-			console.error('Login error:', (error as Error).message);
+			logger.error('Login error:', (error as Error).message);
 
 			throw error;
 		}
@@ -170,7 +171,7 @@ class AuthenticationService {
 		try {
 			await ApiService.post('/api/v2/auth/logout', {});
 		} catch (error: unknown) {
-			console.error('Logout error:', (error as Error).message);
+			logger.error('Logout error:', (error as Error).message);
 		} finally {
 			// Clear user data from store
 			auth.clearAuth();
@@ -194,7 +195,7 @@ class AuthenticationService {
 
 		this.refreshInflight = (async () => {
 			try {
-				console.log('Refreshing token...');
+				logger.debug('Refreshing token...');
 
 				// No `refresh_token` in the body: the browser does not hold it.
 				// The proxy in hooks.server.ts splices it in from the HttpOnly
@@ -209,7 +210,7 @@ class AuthenticationService {
 				);
 
 				if (!response.ok) {
-					console.error(
+					logger.error(
 						'Token refresh failed:',
 						response.error ? response.error.message : 'Unknown'
 					);
@@ -229,7 +230,7 @@ class AuthenticationService {
 
 				return refreshData;
 			} catch (error: unknown) {
-				console.error('Token refresh error:', error);
+				logger.error('Token refresh error:', error);
 				return null;
 			} finally {
 				this.refreshInflight = null;
@@ -245,7 +246,7 @@ class AuthenticationService {
 
 			return response.data as WhoamiResponse;
 		} catch (error: unknown) {
-			console.error('Whoami error:', (error as Error).message);
+			logger.error('Whoami error:', (error as Error).message);
 		}
 	}
 

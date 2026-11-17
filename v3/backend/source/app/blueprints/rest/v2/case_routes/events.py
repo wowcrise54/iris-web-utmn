@@ -18,7 +18,12 @@
 
 from app.web import Blueprint
 from app.web import request
+from marshmallow import fields
 from marshmallow.exceptions import ValidationError
+from marshmallow.validate import OneOf
+
+from app.datamgmt.case.case_events_db import get_event_roles
+from app.models.models import CaseEventsAssets, CaseEventsIoc
 
 from app.blueprints.access_controls import ac_api_requires
 from app.blueprints.access_controls import ac_fast_check_current_user_has_case_access
@@ -40,11 +45,39 @@ from app.models.cases import CasesEvent
 from app.schema.marshables import EventSchema
 from app.models.errors import BusinessProcessingError
 from app.models.errors import ObjectNotFoundError
+from app.models.errors import SearchQueryError
 from app.business.cases import cases_exists
 from app.iris_engine.utils.collab import notify
 from app.models.authorization import CaseAccessLevel
 from app.iris_engine.module_handler.module_handler import call_deprecated_on_preload_modules_hook
 from app.blueprints.iris_user import iris_current_user
+
+
+_ROLE_MAP = fields.Dict(
+    keys=fields.Integer(strict=False),
+    values=fields.String(validate=OneOf(('source', 'target', 'involved'))),
+)
+
+
+def _read_event_roles(data, kind):
+    field = f'event_{kind}_roles'
+    if field not in data:
+        return None
+    try:
+        return _ROLE_MAP.deserialize(data[field])
+    except ValidationError as exc:
+        raise ValidationError(exc.messages, field_name=field) from exc
+
+
+def _dump_event_roles(event):
+    return {
+        'event_assets_roles': get_event_roles(
+            CaseEventsAssets, CaseEventsAssets.asset_id, event.event_id, event.case_id,
+        ),
+        'event_iocs_roles': get_event_roles(
+            CaseEventsIoc, CaseEventsIoc.ioc_id, event.event_id, event.case_id,
+        ),
+    }
 
 
 class Events:
@@ -70,7 +103,10 @@ class Events:
                 case_identifier, [CaseAccessLevel.read_only, CaseAccessLevel.full_access]):
             return ac_api_return_access_denied(caseid=case_identifier)
 
-        filters = _read_filter_args(request.args)
+        try:
+            filters = _read_filter_args(request.args)
+        except ValueError as e:
+            return response_api_error(str(e))
 
         try:
             page = max(1, int(request.args.get('page', 1)))
@@ -82,7 +118,13 @@ class Events:
         except (TypeError, ValueError):
             per_page = 0
 
-        payload = events_list_filtered(case_identifier, filters, page=page, per_page=per_page)
+        try:
+            payload = events_list_filtered(
+                case_identifier, filters, page=page, per_page=per_page,
+                include_stats=request.args.get('include_stats', '').lower() == 'true',
+            )
+        except SearchQueryError as e:
+            return response_api_error(e.get_message(), data=e.get_data())
         return response_api_success(payload)
 
     def create(self, case_identifier):
@@ -103,8 +145,11 @@ class Events:
             timeline_ids = request_data.get('timeline_ids')
 
             event = events_create(case_identifier, event, event_category_id, event_assets,
-                                  event_iocs, sync_iocs_assets, timeline_ids=timeline_ids)
+                                  event_iocs, sync_iocs_assets, timeline_ids=timeline_ids,
+                                  asset_roles=_read_event_roles(request_data, 'assets'),
+                                  ioc_roles=_read_event_roles(request_data, 'iocs'))
             result = self._schema.dump(event)
+            result.update(_dump_event_roles(event))
             # Stamp the timeline membership on the response so the SPA
             # doesn't need a second round-trip to know where the event
             # ended up.
@@ -128,6 +173,7 @@ class Events:
                 return ac_api_return_access_denied(caseid=event.case_id)
 
             result = self._schema.dump(event)
+            result.update(_dump_event_roles(event))
             # event_assets / event_iocs are association rows, not model
             # attributes: they're only present on the instance after a
             # schema load (create/update), so a plain read must stamp them.
@@ -162,9 +208,12 @@ class Events:
             timeline_ids = request_data.get('timeline_ids')
 
             event = events_update(event, event_category_id, event_assets, event_iocs,
-                                  event_sync_iocs_assets, timeline_ids=timeline_ids)
+                                  event_sync_iocs_assets, timeline_ids=timeline_ids,
+                                  asset_roles=_read_event_roles(request_data, 'assets'),
+                                  ioc_roles=_read_event_roles(request_data, 'iocs'))
 
             result = self._schema.dump(event)
+            result.update(_dump_event_roles(event))
             from app.business.case_timelines import get_event_timeline_ids
             result['timeline_ids'] = get_event_timeline_ids(event.event_id)
             notify(case_identifier, 'events', 'updated', identifier, object_data=result)
@@ -211,6 +260,11 @@ _MULTI_VALUE_FILTER_KEYS = (
 def _read_filter_args(args):
     filters: dict = {}
 
+    for key in ('query', 'lucene_query'):
+        value = args.get(key, '').strip()
+        if value:
+            filters[key] = value
+
     for query_key, filter_key in _MULTI_VALUE_FILTER_KEYS:
         values = args.getlist(query_key)
         if values:
@@ -237,6 +291,13 @@ def _read_filter_args(args):
         except (TypeError, ValueError):
             pass
 
+    timeline_ids = args.getlist('timeline_id')
+    if timeline_ids:
+        try:
+            filters['timeline_ids'] = [int(v) for v in timeline_ids]
+        except (TypeError, ValueError):
+            raise ValueError('timeline_id must contain integers') from None
+
     start_date = args.get('start_date')
     if start_date:
         filters['start_date'] = start_date
@@ -258,7 +319,13 @@ case_events_blueprint = Blueprint('case_events_rest_v2', __name__, url_prefix='/
 
 @case_events_blueprint.get('')
 @ac_api_requires()
-@api_doc(tags=['CaseEvents'], summary='List case events')
+@api_doc(tags=['CaseEvents'], summary='List case events',
+         query_params=[
+             ('query', 'string', 'Case-insensitive literal search in event title, description or source.'),
+             ('lucene_query', 'string', 'Lucene expression over title, description, source and tag.'),
+             ('timeline_id', 'integer[]', 'Include events from any of the selected timelines.'),
+             ('include_stats', 'boolean', 'Include histogram and field summaries for the complete result.'),
+         ])
 def list_events(case_identifier):
     return events.list(case_identifier)
 

@@ -262,6 +262,7 @@
 							<div class="flex w-full items-center justify-between gap-2">
 								<span class="min-w-0 truncate">{col.header}</span>
 
+								{#if col.header}
 								<div
 									class="flex shrink-0 items-center gap-0.5 opacity-40 transition-opacity hover:opacity-100"
 								>
@@ -291,6 +292,7 @@
 										{/if}
 									</button>
 								</div>
+								{/if}
 							</div>
 
 							{#if showColumnFilters && filterColumn === col.key}

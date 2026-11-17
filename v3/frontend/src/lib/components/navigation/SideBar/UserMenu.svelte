@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { logger } from '$lib/observability/logger';
+
 	import { translate as irisT, useLocale } from '$lib/i18n/context';
 	const irisLocale = useLocale();
 
@@ -26,7 +28,7 @@
 	// the just-populated user state on token-rotation 401s. Read the
 	// auth-store directly instead.
 	const logout = () => {
-		console.log('Logging out...');
+		logger.debug('Logging out...');
 
 		AuthService.logout();
 	};

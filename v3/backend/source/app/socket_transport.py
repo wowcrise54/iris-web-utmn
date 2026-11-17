@@ -4,6 +4,8 @@ import inspect
 import socketio
 from starlette.concurrency import run_in_threadpool
 from .web import current_app, request
+from .observability_logging import logging_context, request_id
+import logging
 
 class Namespace(socketio.AsyncNamespace):
     async def trigger_event(self, event, *args):
@@ -44,11 +46,16 @@ class SocketIO:
             args = (None,)
         args = args[:len(expected)]
         def invoke():
-            with self.app.request_context(environ):
+            identifier = request_id(environ.get('HTTP_X_REQUEST_ID'))
+            with logging_context(request_id=identifier, namespace=namespace), self.app.request_context(environ):
                 request.sid = sid
                 request.namespace = namespace
                 request.event = {'message': event, 'args': args}
-                return handler(*args)
+                result = handler(*args)
+                if event in ('connect', 'disconnect'):
+                    logging.getLogger('iris.api.socket').info('socket_' + event,
+                        extra={'result': 'rejected' if result is False else 'ok'})
+                return result
         return await run_in_threadpool(invoke)
 
     def on_namespace(self, namespace):

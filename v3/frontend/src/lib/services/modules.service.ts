@@ -21,6 +21,8 @@ export interface ModuleParameter {
 	value?: unknown;
 	mandatory: boolean;
 	section?: string;
+	has_value?: boolean;
+	connection_check?: Record<string, unknown>;
 }
 
 export interface ModuleListEntry {

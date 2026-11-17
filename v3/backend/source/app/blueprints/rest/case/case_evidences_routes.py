@@ -87,6 +87,8 @@ def case_add_rfile(caseid):
     evidence_schema = CaseEvidenceSchema()
     try:
         request_data = call_deprecated_on_preload_modules_hook('evidence_create', request.get_json(), caseid)
+        request_data.pop('id', None)
+        request_data.pop('case', None)
         evidence = evidence_schema.load(request_data)
 
         evidence = evidences_create(caseid, evidence)
@@ -104,7 +106,7 @@ def case_add_rfile(caseid):
 @ac_api_requires()
 def case_get_evidence(cur_id, caseid):
     crf = get_rfile(cur_id)
-    if not crf:
+    if not crf or crf.case_id != caseid:
         return response_error("Invalid evidence ID for this case")
 
     evidence_schema = CaseEvidenceSchema()
@@ -119,11 +121,13 @@ def case_edit_rfile(cur_id, caseid):
     evidence_schema = CaseEvidenceSchema()
     try:
         crf = get_rfile(cur_id)
-        if not crf:
+        if not crf or crf.case_id != caseid:
             return response_error('Invalid evidence ID for this case')
 
         request_data = call_deprecated_on_preload_modules_hook('evidence_update', request.get_json(), crf.case_id)
         request_data['id'] = crf.id
+        request_data['case_id'] = caseid
+        request_data.pop('case', None)
         evidence = evidence_schema.load(request_data, instance=crf, partial=True)
 
         evd = evidences_update(evidence)
@@ -143,7 +147,7 @@ def case_edit_rfile(cur_id, caseid):
 @ac_api_requires()
 def case_delete_rfile(cur_id, caseid):
     crf = get_rfile(cur_id)
-    if not crf:
+    if not crf or crf.case_id != caseid:
         return response_error('Invalid evidence ID for this case')
 
     evidences_delete(crf)
@@ -239,6 +243,10 @@ def case_comment_evidence_edit(cur_id, com_id, caseid):
 def case_comment_evidence_delete(cur_id, com_id, caseid):
     evidence = get_rfile(cur_id)
     if not evidence or evidence.case_id != caseid:
+        return response_error("Invalid comment ID")
+
+    comment = get_case_evidence_comment(cur_id, com_id)
+    if not comment or comment.comment_case_id != caseid:
         return response_error("Invalid comment ID")
 
     success, msg = delete_evidence_comment(iris_current_user.id, cur_id, com_id)

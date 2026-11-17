@@ -70,58 +70,74 @@ class Boundaries(unittest.TestCase):
             )
         return result
 
-    def test_all_foreign_selections_rejected_and_old_missing_retained(self):
+    def test_serialization_filters_obsolete_fields_and_links(self):
         mod = self.persistence()
-        empty = {key: {} for key in ["alerts", "assets", "iocs", "files", "tasks"]}
-        for key in logic.SELECTIONS:
-            selected = logic.deepcopy(logic.SELECTIONS)
-            selected[key] = [123] if key.endswith("_ids") else 123
-            with self.assertRaises(logic.CardValidationError):
-                mod.validate_scope(selected, empty)
-            mod.validate_scope(selected, empty, selected)
-
-    def test_header_state_uses_case_state_not_resolution_classification(self):
-        mod = self.persistence()
-        mod.AlertCaseAssociation.alert_id = Mock()
-        mod.AlertCaseAssociation.case_id = Mock()
-        mod.Alert.alert_id = Mock()
-        mod.Alert.alert_customer_id = Mock()
-        mod.Alert.query = Mock()
-        mod.Alert.query.join.return_value.filter.return_value.all.return_value = []
-        for cls in [mod.CaseAssets, mod.Ioc, mod.DataStoreFile, mod.CaseTasks]:
-            cls.query = Mock()
-            cls.query.filter_by.return_value.all.return_value = []
-        case = types.SimpleNamespace(
-            case_id=1,
-            client_id=1,
-            name="case",
-            description="",
-            client=None,
-            severity=None,
-            status_id=5,
-            close_date=None,
-            state=types.SimpleNamespace(state_name="Open"),
+        row = types.SimpleNamespace(
+            schema_version=1,
+            revision=2,
+            fields={
+                "description": {"value": "kept", "mode": "manual"},
+                "files": {"value": "secret", "mode": "manual"},
+            },
+            selections={"file_ids": [1]},
+            author_id=1,
+            author_name="actor",
+            created_at=None,
+            updated_at=None,
+            missing_sources=["file_ids"],
         )
-        self.assertEqual(mod.source_context(case, None)["meta"]["status"], "Open")
-        case.state = None
-        case.close_date = "2026-01-01"
-        self.assertEqual(mod.source_context(case, None)["meta"]["status"], "closed")
+        actual = mod.serialize_card(row)
+        self.assertEqual(set(actual["fields"]), {"description"})
+        self.assertEqual(actual["selections"], {})
+        self.assertEqual(actual["missing_sources"], [])
 
-    def test_task_status_consistency(self):
+    def test_db_read_preserves_legacy_author_position_before_filtering(self):
         mod = self.persistence()
-        collections = {
-            key: {} for key in ["alerts", "assets", "iocs", "files", "tasks"]
-        }
-        collections["tasks"] = {
-            1: types.SimpleNamespace(status=types.SimpleNamespace(status_name="Done"))
-        }
-        selected = logic.deepcopy(logic.SELECTIONS)
-        selected["planned_task_ids"] = [1]
+        row = types.SimpleNamespace(
+            schema_version=1,
+            revision=2,
+            fields={
+                "prepared_by": {"value": "Иванов", "mode": "manual"},
+                "prepared_position": {"value": "Аналитик", "mode": "manual"},
+            },
+            selections={},
+            author_id=1,
+            author_name="actor",
+            created_at=None,
+            updated_at=None,
+            missing_sources=[],
+        )
+        result = mod.serialize_card(row)
+        self.assertEqual(
+            result["fields"]["prepared_by"]["value"],
+            [{"name": "Иванов", "position": "Аналитик"}],
+        )
+        self.assertNotIn("prepared_position", result["fields"])
+        self.assertEqual(row.fields["prepared_position"]["value"], "Аналитик")
+
+    def test_source_context_reads_only_regulation_case_values(self):
+        mod = self.persistence()
+        case = types.SimpleNamespace(case_id=1, description="kept", severity=None)
+        context = mod.source_context(case, None)
+        self.assertEqual(context["meta"], {"case_id": 1})
+        self.assertEqual(set(context["automatic"]), {"id", "description"})
+        self.assertNotIn("sources", context)
+
+    def test_rejected_links_do_not_access_or_mutate_the_database(self):
+        mod = self.persistence()
         with self.assertRaises(logic.CardValidationError):
-            mod.validate_scope(selected, collections)
-        selected["planned_task_ids"] = []
-        selected["performed_task_ids"] = [1]
-        mod.validate_scope(selected, collections)
+            mod.save_incident_card(
+                1,
+                dict(
+                    schema_version=1,
+                    revision=0,
+                    fields={},
+                    selections={"planned_task_ids": [1]},
+                ),
+                9,
+            )
+        mod.db.session.add.assert_not_called()
+        mod.db.session.commit.assert_not_called()
 
     def test_stale_revision_rolls_back_after_parent_lock(self):
         mod = self.persistence()

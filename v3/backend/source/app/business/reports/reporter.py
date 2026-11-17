@@ -18,7 +18,8 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-import logging as log
+import logging
+log = logging.getLogger(__name__)
 import os
 from datetime import datetime
 
@@ -42,7 +43,7 @@ from app.business.reports.naming import resolve_output_path
 from app.iris_engine.utils.common import IrisJinjaEnv
 
 LOG_FORMAT = '%(asctime)s :: %(levelname)s :: %(module)s :: %(funcName)s :: %(message)s'
-log.basicConfig(level=log.INFO, format=LOG_FORMAT)
+# Logging is configured centrally at process startup.
 
 
 def _get_docid():
