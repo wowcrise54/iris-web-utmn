@@ -103,6 +103,8 @@ class CaseEventsAssets(db.Model):
     asset_id = Column(ForeignKey('case_assets.asset_id'))
     case_id = Column(ForeignKey('cases.case_id'))
 
+    role = Column(String(16), nullable=False, server_default='involved')
+
     event = relationship('CasesEvent')
     asset = relationship('CaseAssets')
     case = relationship('Cases')
@@ -115,6 +117,8 @@ class CaseEventsIoc(db.Model):
     event_id = Column(ForeignKey('cases_events.event_id'))
     ioc_id = Column(ForeignKey('ioc.ioc_id'))
     case_id = Column(ForeignKey('cases.case_id'))
+
+    role = Column(String(16), nullable=False, server_default='involved')
 
     event = relationship('CasesEvent')
     ioc = relationship('Ioc')

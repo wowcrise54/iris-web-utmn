@@ -19,7 +19,8 @@
 		edges: VisEdge[];
 		options?: Options;
 		className?: string;
-		onClick?: (detail: { nodeId?: IdType }) => void;
+		preservePositions?: boolean;
+		onClick?: (detail: { nodeId?: IdType; edgeId?: IdType }) => void;
 		onContextMenu?: (detail: { x: number; y: number; nodeId?: IdType }) => void;
 		// Callback fired once the underlying vis-network `Network` is
 		// constructed. Consumers use it to drive imperative APIs the
@@ -41,6 +42,7 @@
 		edges,
 		options = {},
 		className = '',
+		preservePositions = false,
 		onClick,
 		onContextMenu,
 		onReady
@@ -88,7 +90,8 @@
 			// clicks) so consumers can drive selection panels without
 			// wiring the vis-network `selectNode` event separately.
 			const nodeId = network?.getNodeAt(params.pointer.DOM);
-			onClick?.({ nodeId });
+			const edgeId = nodeId === undefined ? network?.getEdgeAt(params.pointer.DOM) : undefined;
+			onClick?.({ nodeId, edgeId });
 		};
 
 		const handleContext = (params: NetworkEvent) => {
@@ -134,18 +137,23 @@
 		};
 	});
 
-	$effect(() => {
-		if (!nodesDataSet) return;
+	function syncDataset<T extends { id?: IdType }>(dataset: DataSet<T>, items: T[]) {
+		if (!preservePositions || items.some((item) => item.id === undefined)) {
+			dataset.clear();
+			dataset.add(items);
+			return;
+		}
+		const nextIds = new Set(items.map((item) => item.id));
+		dataset.remove(dataset.getIds().filter((id) => !nextIds.has(id)));
+		dataset.update(items as Parameters<DataSet<T>['update']>[0]);
+	}
 
-		nodesDataSet.clear();
-		nodesDataSet.add(nodes);
+	$effect(() => {
+		if (nodesDataSet) syncDataset(nodesDataSet, nodes);
 	});
 
 	$effect(() => {
-		if (!edgesDataSet) return;
-
-		edgesDataSet.clear();
-		edgesDataSet.add(edges);
+		if (edgesDataSet) syncDataset(edgesDataSet, edges);
 	});
 
 	$effect(() => {

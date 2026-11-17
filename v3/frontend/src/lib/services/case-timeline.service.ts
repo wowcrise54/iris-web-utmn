@@ -22,9 +22,20 @@ export type CaseTimelineListResponse = {
 	comments_map?: Record<number, number[]>;
 	state: CaseTimelineState;
 	pagination?: CaseTimelinePagination;
+	statistics?: CaseTimelineStatistics;
+};
+
+export type CaseTimelineStatistics = {
+	interval_seconds: number | null;
+	histogram: { start: string; count: number }[];
+	sources: { value: string; count: number }[];
+	categories: { value: string; count: number }[];
 };
 
 export type CaseTimelineFilterQuery = {
+	query?: string;
+	lucene_query?: string;
+	timeline_id?: number[];
 	asset?: string[];
 	asset_id?: number[];
 	ioc?: string[];
@@ -64,6 +75,8 @@ export interface CaseTimelineLinkedIoc {
 	description?: string | null;
 }
 
+export type EventGraphRole = 'source' | 'target' | 'involved';
+
 export interface CaseTimelineEvent {
 	event_id: number;
 	event_uuid?: string;
@@ -75,6 +88,8 @@ export interface CaseTimelineEvent {
 	category_name?: string;
 	event_assets?: number[];
 	event_iocs?: number[];
+	event_assets_roles?: Record<number, EventGraphRole>;
+	event_iocs_roles?: Record<number, EventGraphRole>;
 	assets?: CaseTimelineLinkedAsset[];
 	iocs?: CaseTimelineLinkedIoc[];
 	event_raw?: string;
@@ -102,6 +117,8 @@ export interface CreateCaseTimelineEventBody {
 	event_tz: string;
 	event_assets: number[];
 	event_iocs: number[];
+	event_assets_roles?: Record<number, EventGraphRole>;
+	event_iocs_roles?: Record<number, EventGraphRole>;
 	event_raw?: string;
 	event_source?: string;
 	event_in_summary?: boolean;
@@ -122,6 +139,8 @@ export interface UpdateCaseTimelineEventBody {
 	event_tz?: string;
 	event_assets?: number[];
 	event_iocs?: number[];
+	event_assets_roles?: Record<number, EventGraphRole>;
+	event_iocs_roles?: Record<number, EventGraphRole>;
 	event_raw?: string;
 	event_source?: string;
 	event_in_summary?: boolean;
@@ -141,9 +160,12 @@ export class CaseTimelineService {
 		caseId: number,
 		query: CaseTimelineFilterQuery = {},
 		options: ApiOptions = {},
-		paging: { page?: number; per_page?: number } = {}
+		paging: { page?: number; per_page?: number; include_stats?: boolean } = {}
 	): Promise<RequestResponse<CaseTimelineListResponse>> {
 		const params: Record<string, unknown> = {
+			query: query.query,
+			lucene_query: query.lucene_query,
+			timeline_id: query.timeline_id,
 			asset: query.asset,
 			asset_id: query.asset_id,
 			ioc: query.ioc,
@@ -159,7 +181,8 @@ export class CaseTimelineService {
 			end_date: query.end_date,
 			flag: query.flag !== undefined ? String(query.flag) : undefined,
 			page: paging.page,
-			per_page: paging.per_page
+			per_page: paging.per_page,
+			include_stats: paging.include_stats
 		};
 
 		const path = ApiService.withQuery(`/api/v2/cases/${caseId}/events`, params);
@@ -179,7 +202,8 @@ export class CaseTimelineService {
 				tim: data.tim,
 				comments_map: data.comments_map,
 				state: data.state,
-				pagination: data.pagination
+				pagination: data.pagination,
+				statistics: data.statistics
 			}
 		};
 	}

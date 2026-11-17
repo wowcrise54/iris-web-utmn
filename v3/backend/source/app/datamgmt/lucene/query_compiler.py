@@ -213,16 +213,8 @@ def _parse_datetime(text: str, position: int, end_of_day: bool = False):
     return parsed
 
 
-class AlertQueryCompiler:
-    """Compiles one expression. One instance per request — it caches the
-    name→id lookups it resolves, and those are only valid for as long as
-    the surrounding transaction is."""
-
-    def __init__(self, user_identifier=None):
-        self._user_identifier = user_identifier
-        self._lookup_cache = {}
-        self._status_cache = None
-
+class LuceneQueryCompiler:
+    """Compile boolean expressions with a resource-specific clause compiler."""
     def compile(self, node):
         return self._compile_node(node)
 
@@ -246,6 +238,15 @@ class AlertQueryCompiler:
             return self._compile_clause(node)
 
         raise SearchQueryError('Search expression could not be understood')
+
+
+class AlertQueryCompiler(LuceneQueryCompiler):
+    """Compile alert clauses and cache name-to-ID lookups for one request."""
+
+    def __init__(self, user_identifier=None):
+        self._user_identifier = user_identifier
+        self._lookup_cache = {}
+        self._status_cache = None
 
     # -- clauses ---------------------------------------------------------
 

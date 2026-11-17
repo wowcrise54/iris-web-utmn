@@ -44,6 +44,30 @@ beforeEach(() => {
 	removeEvent.mockResolvedValue({ ok: true } as never);
 });
 
+it('preserves the applied search on later pages and ignores pages from the previous search', async () => {
+	const timeline = createCaseTimelineContext(() => 1);
+	const firstPage = listResponse([1]);
+	listEvents.mockResolvedValueOnce({
+		...firstPage,
+		data: { ...firstPage.data, pagination: { ...firstPage.data.pagination, next_page: 2 } }
+	} as never);
+	await timeline.loadEvents({ query: 'first' });
+
+	let finishPage!: (response: Awaited<ReturnType<typeof listEvents>>) => void;
+	listEvents.mockReturnValueOnce(new Promise((resolve) => (finishPage = resolve)));
+	const pendingPage = timeline.loadMore();
+	expect(listEvents).toHaveBeenLastCalledWith(
+		1, { query: 'first' }, {}, expect.objectContaining({ page: 2 })
+	);
+
+	listEvents.mockResolvedValueOnce(listResponse([3]) as never);
+	await timeline.loadEvents({ query: 'second' });
+	finishPage(listResponse([2]) as never);
+	await pendingPage;
+
+	expect(timeline.list.eventIds).toEqual([3]);
+});
+
 describe('removeEvents', () => {
 	it('reports every id as removed when all deletions succeed', async () => {
 		const timeline = await seeded([1, 2, 3]);

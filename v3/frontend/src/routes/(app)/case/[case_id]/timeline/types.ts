@@ -1,4 +1,6 @@
 export type TimelineFilterData = {
+	query: string;
+	luceneQuery: string;
 	title: string;
 	description: string;
 	source: string;

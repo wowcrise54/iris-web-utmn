@@ -10,6 +10,7 @@
 	import { page } from '$app/state';
 	import {
 		ClockIcon,
+		ClipboardCheckIcon,
 		FileTextIcon,
 		FilesIcon,
 		ListChecksIcon,
@@ -30,6 +31,7 @@
 		{ label: irisT("Summary", $irisLocale), path: 'summary', icon: FileTextIcon },
 		{ label: irisT("Timelines", $irisLocale), path: 'timelines', icon: ClockIcon },
 		{ label: irisT("Tasks", $irisLocale), path: 'tasks', icon: ListChecksIcon },
+		{ label: irisT("Decision journal", $irisLocale), path: 'decisions', icon: ClipboardCheckIcon },
 		{ label: irisT("Notes", $irisLocale), path: 'notes', icon: FileTextIcon },
 		{ label: irisT("SitReps", $irisLocale), path: 'sitreps', icon: FilesIcon },
 		{ label: irisT("Cases", $irisLocale), path: 'cases', icon: WaypointsIcon },

@@ -13,7 +13,7 @@
 		CASE_TIMELINE_CTX,
 		type CaseTimelineContext
 	} from '$lib/contexts/case-timeline.context.svelte';
-	import type { CaseTimelineEvent } from '$lib/services/case-timeline.service';
+	import type { CaseTimelineEvent, EventGraphRole } from '$lib/services/case-timeline.service';
 	import type { CaseTimeline } from '$lib/services/case-timelines.service';
 	import TimelineEventForm, { type TimelineEventFormData } from './timeline-event-form.svelte';
 
@@ -75,6 +75,10 @@
 	const timeline = getContext<CaseTimelineContext>(CASE_TIMELINE_CTX);
 
 	let isSaving = $state(false);
+	let assetRoles = $state<Record<number, EventGraphRole>>({});
+	let iocRoles = $state<Record<number, EventGraphRole>>({});
+	const selectedRoles = (ids: number[], roles: Record<number, EventGraphRole>) =>
+		Object.fromEntries(ids.map((id) => [id, roles[id] ?? 'involved']));
 
 	const dateFromEvent = (value?: string): string => {
 		if (!value) return new Date().toISOString().slice(0, 10);
@@ -162,6 +166,8 @@
 			custom_attributes: (event?.custom_attributes ?? {}) as Record<string, Record<string, unknown>>
 		};
 
+		assetRoles = { ...event?.event_assets_roles };
+		iocRoles = { ...event?.event_iocs_roles };
 		isSaving = false;
 	};
 
@@ -198,6 +204,8 @@
 				event_tz: form.event_tz,
 				event_assets: form.event_assets,
 				event_iocs: form.event_iocs,
+				event_assets_roles: selectedRoles(form.event_assets, assetRoles),
+				event_iocs_roles: selectedRoles(form.event_iocs, iocRoles),
 				event_raw: form.event_raw,
 				event_source: form.event_source,
 				event_in_summary: form.event_in_summary,
@@ -246,6 +254,18 @@
 	});
 </script>
 
+{#snippet rolePicker(label: string, role: EventGraphRole, change: (role: EventGraphRole) => void)}
+	<label class="flex items-center justify-between gap-3 text-sm">
+		<span class="min-w-0 break-words">{label}</span>
+		<select class="rounded-md border bg-background px-2 py-1" value={role}
+			onchange={(e) => change(e.currentTarget.value as EventGraphRole)}>
+			<option value="involved">{irisT('Involved', $irisLocale)}</option>
+			<option value="source">{irisT('Source', $irisLocale)}</option>
+			<option value="target">{irisT('Target', $irisLocale)}</option>
+		</select>
+	</label>
+{/snippet}
+
 <Dialog.Root
 	bind:open
 	onOpenChange={(nextOpen) => {
@@ -273,6 +293,19 @@
 				{onAddIoc}
 				onUpdateField={updateField}
 			/>
+			{#if form.event_in_graph && (form.event_assets.length || form.event_iocs.length)}
+				<fieldset class="mt-4 space-y-2 rounded-md border p-3">
+					<legend class="px-1 text-sm font-medium">{irisT('Roles in the investigation graph', $irisLocale)}</legend>
+					{#each form.event_assets as id (id)}
+						{@render rolePicker(assets.find((asset) => asset.asset_id === id)?.asset_name ?? `Asset #${id}`,
+							assetRoles[id] ?? 'involved', (role) => (assetRoles[id] = role))}
+					{/each}
+					{#each form.event_iocs as id (id)}
+						{@render rolePicker(iocs.find((ioc) => ioc.ioc_id === id)?.ioc_value ?? `IOC #${id}`,
+							iocRoles[id] ?? 'involved', (role) => (iocRoles[id] = role))}
+					{/each}
+				</fieldset>
+			{/if}
 		</div>
 
 		<div class="flex shrink-0 items-center justify-end gap-2 border-t px-6 py-4">

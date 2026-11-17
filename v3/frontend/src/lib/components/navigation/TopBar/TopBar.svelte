@@ -115,6 +115,7 @@
 		{ label: irisT("IOC", $irisLocale), path: 'iocs' },
 		{ label: irisT("Timeline", $irisLocale), path: 'timeline' },
 		{ label: irisT("Graph", $irisLocale), path: 'graph' },
+		{ label: irisT("Response trackers", $irisLocale), path: 'trackers' },
 		{ label: irisT("Tasks", $irisLocale), path: 'tasks' },
 		{ label: irisT("Evidence", $irisLocale), path: 'evidence' }
 	];

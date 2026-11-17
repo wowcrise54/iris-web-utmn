@@ -4,6 +4,7 @@ import type {
 	CaseTimelineEventIdentifier,
 	CaseTimelineFilterQuery,
 	CaseTimelineState,
+	CaseTimelineStatistics,
 	CreateCaseTimelineEventBody,
 	UpdateCaseTimelineEventBody
 } from '$lib/services/case-timeline.service';
@@ -39,6 +40,7 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 		perPage: number;
 		total: number;
 		allLoaded: boolean;
+		statistics: CaseTimelineStatistics | null;
 	}>({
 		eventIds: [],
 		status: 'idle',
@@ -50,7 +52,8 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 		nextPage: null,
 		perPage: DEFAULT_PER_PAGE,
 		total: 0,
-		allLoaded: false
+		allLoaded: false,
+		statistics: null
 	});
 
 	const ui = $state<UIState>({
@@ -98,19 +101,26 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 		list.eventIds = sortEvents(ordered).map(getEventId);
 	};
 
+	let loadGeneration = 0;
+
 	const loadEvents = async (query: CaseTimelineFilterQuery = {}, options: ApiOptions = {}) => {
 		const caseId = getCaseId();
 		if (caseId === null) return;
+		const generation = ++loadGeneration;
 
 		list.status = 'loading';
 		list.error = null;
 		list.query = query;
+		list.nextPage = null;
 		list.allLoaded = false;
+		list.statistics = null;
 
 		const res = await CaseTimelineService.listEvents(caseId, query, options, {
 			page: 1,
-			per_page: list.perPage
+			per_page: list.perPage,
+			include_stats: true
 		});
+		if (generation !== loadGeneration || caseId !== getCaseId()) return;
 
 		if (!res.ok || res.error || res.data === null || typeof res.data === 'string') {
 			list.status = 'error';
@@ -120,6 +130,7 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 
 		replaceEventsState(res.data.timeline ?? res.data.tim ?? []);
 		list.state = res.data.state ?? null;
+		list.statistics = res.data.statistics ?? null;
 
 		const pagination = res.data.pagination;
 		if (pagination) {
@@ -142,16 +153,18 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 		const caseId = getCaseId();
 		if (caseId === null) return;
 		if (list.nextPage === null) return;
-		if (list.status === 'loading' || list.status === 'loading_more') return;
+		if (list.status === 'loading' || list.status === 'loading_more' || list.status === 'loading_all') return;
 
 		list.status = 'loading_more';
 
+		const generation = loadGeneration;
 		const nextPage = list.nextPage;
 
 		const res = await CaseTimelineService.listEvents(caseId, list.query, options, {
 			page: nextPage,
 			per_page: list.perPage
 		});
+		if (generation !== loadGeneration || caseId !== getCaseId()) return;
 
 		if (!res.ok || res.error || res.data === null || typeof res.data === 'string') {
 			list.status = 'error';
@@ -188,12 +201,14 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 	const loadAll = async (options: ApiOptions = {}) => {
 		const caseId = getCaseId();
 		if (caseId === null) return;
+		if (list.status === 'loading' || list.status === 'loading_more') return;
 		if (list.nextPage === null) {
 			list.allLoaded = true;
 			return;
 		}
 		if (list.status === 'loading_all') return;
 
+		const generation = loadGeneration;
 		list.status = 'loading_all';
 
 		try {
@@ -203,6 +218,7 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 					page: nextPage,
 					per_page: list.perPage
 				});
+				if (generation !== loadGeneration || caseId !== getCaseId()) return;
 
 				if (!res.ok || res.error || res.data === null || typeof res.data === 'string') {
 					list.error = res.error?.message ?? 'Failed to load timeline events';
@@ -224,7 +240,9 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 			}
 			list.allLoaded = true;
 		} finally {
-			if (list.status === 'loading_all') list.status = 'idle';
+			if (generation === loadGeneration && caseId === getCaseId() && list.status === 'loading_all') {
+				list.status = 'idle';
+			}
 		}
 	};
 
@@ -376,6 +394,7 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 	};
 
 	const reset = () => {
+		loadGeneration++;
 		for (const k of Object.keys(byId)) delete byId[Number(k)];
 
 		list.eventIds = [];
@@ -388,6 +407,7 @@ export const createCaseTimelineContext = (getCaseId: () => number | null) => {
 		list.nextPage = null;
 		list.total = 0;
 		list.allLoaded = false;
+		list.statistics = null;
 
 		ui.selectedEventId = undefined;
 	};

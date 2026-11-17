@@ -3,6 +3,10 @@
 	const irisLocale = useLocale();
 
 	import { mode } from 'mode-watcher';
+	import { getContext, tick } from 'svelte';
+	import { CASE_ACCESS_CTX, type CaseAccessContext } from '$lib/contexts/case-access.context.svelte';
+	import GraphEditDialog from './graph-edit-dialog.svelte';
+	import type { GraphEdit, GraphEdge, GraphGroup as Group, GraphNode, GraphView, GraphViewState } from './types';
 	import type { IdType, Network, Options } from 'vis-network';
 	import DOMPurify from 'dompurify';
 	import {
@@ -20,14 +24,10 @@
 		ExternalLinkIcon
 	} from 'lucide-svelte';
 	import iocSvg from 'lucide-static/icons/link.svg?raw';
+	import assetSvg from 'lucide-static/icons/hard-drive.svg?raw';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import type { Asset } from '$lib/types/resources/asset';
-	import type { Ioc } from '$lib/types/resources/ioc';
-	import { CaseTimelineService } from '$lib/services/case-timeline.service';
-	import { CaseAssetsService } from '$lib/services/case-assets.service';
-	import { CaseIocsService } from '$lib/services/case-iocs.service';
-	import type { CaseTimelineEvent } from '$lib/services/case-timeline.service';
+	import { ApiService } from '$lib/services/api.service';
 	import { Button } from '$lib/components/ui/button';
 	import Input from '$lib/components/ui/input/input.svelte';
 	import VisNetwork, {
@@ -39,7 +39,10 @@
 	} from '$lib/components/common/VisNetwork';
 	import CaseWorkspace from '../components/CaseWorkspace.svelte';
 
-	type Group = 'asset' | 'ioc';
+	const access = getContext<CaseAccessContext | undefined>(CASE_ACCESS_CTX);
+	const canEdit = $derived(access?.canEdit() ?? false);
+	let edit = $state<GraphEdit | null>(null);
+	let activeViewId = $state<number | null>(null);
 
 	// Local node model used for the details rail. Mirrors what the
 	// AlertClusterCorrelationGraph feeds into its rail so the two graphs
@@ -69,21 +72,35 @@
 			icon: isDark ? '#60a5fa' : '#2563eb',
 			border: isDark ? '#60a5fa' : '#1d4ed8',
 			label: isDark ? '#93c5fd' : '#1e40af'
+		},
+		node: {
+			icon: isDark ? '#c4b5fd' : '#7c3aed',
+			border: isDark ? '#a78bfa' : '#7c3aed',
+			label: isDark ? '#ddd6fe' : '#5b21b6'
 		}
 	});
 
+	const assetFallbackIcon = $derived(svgToDataUrl(withStroke(assetSvg, palette.asset.icon)));
 	const iocIcon = $derived(svgToDataUrl(withStroke(iocSvg, palette.ioc.icon)));
 
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let events = $state<CaseTimelineEvent[]>([]);
-	let assets = $state<Asset[]>([]);
-	let iocs = $state<Ioc[]>([]);
+	type GraphResponse = {
+		nodes: GraphNode[];
+		edges: GraphEdge[];
+		events: { id: number; title: string; date: string | null }[];
+		views: GraphView[];
+	};
+	const emptyGraph = (): GraphResponse => ({ nodes: [], edges: [], events: [], views: [] });
+	let graph = $state<GraphResponse>(emptyGraph());
+	const activeView = $derived(graph.views.find((item) => item.id === activeViewId));
+	let selectedEdgeId = $state<string | null>(null);
+	let loadVersion = 0;
 	let network = $state<Network | null>(null);
 
 	// UX state
 	let searchQuery = $state('');
-	let visibleGroups = $state<Record<Group, boolean>>({ asset: true, ioc: true });
+	let visibleGroups = $state<Record<Group, boolean>>({ asset: true, ioc: true, node: true });
 	let selectedNodeId = $state<string | null>(null);
 	let physicsEnabled = $state(true);
 	// Set to true whenever we WANT the next stabilization pass to end
@@ -154,100 +171,55 @@
 		}
 	} satisfies Options);
 
-	// Build asset/ioc nodes + event-derived edges. This is the case-
-	// specific data shape — same output type as the alert-cluster graph
-	// so the rest of the pipeline (search, filter, details rail) is
-	// identical.
 	const graphData = $derived.by(() => {
-		const graphEvents = events.filter((e) => e.event_in_graph !== false);
-		const assetByName = new Map([
-			...assets.map((a) => [a.asset_name, a] as [string, typeof a]),
-			...assets.map(
-				(a) => [`${a.asset_name} (${a.asset_type.asset_name})`, a] as [string, typeof a]
-			)
-		]);
-		const iocByValue = new Map(iocs.map((i) => [i.ioc_value, i]));
-
-		const nodeMap = new Map<string, CaseGraphNode>();
-		const edgeMap = new Map<string, VisEdge>();
-
-		for (const event of graphEvents) {
-			const eventNodeIds: string[] = [];
-
-			for (const ea of event.assets ?? []) {
-				const asset = assetByName.get(ea.name);
-				const nodeId = asset ? `a${asset.asset_id}` : `a-name-${ea.name}`;
-				if (!nodeMap.has(nodeId)) {
-					if (asset) {
-						const iconFile =
-							asset.asset_compromise_status_id === 1
-								? asset.asset_type.asset_icon_compromised
-								: asset.asset_type.asset_icon_not_compromised;
-						const titleParts = [asset.asset_ip, asset.asset_description].filter(Boolean);
-						nodeMap.set(nodeId, {
-							id: nodeId,
-							group: 'asset',
-							label: asset.asset_name,
-							title: titleParts.length ? titleParts.join(' — ') : undefined,
-							image: `/static/assets/img/graph/${iconFile}`
-						});
-					} else {
-						const titleParts = [ea.ip, ea.description].filter(Boolean);
-						nodeMap.set(nodeId, {
-							id: nodeId,
-							group: 'asset',
-							label: ea.name,
-							title: titleParts.length ? titleParts.join(' — ') : undefined
-						});
+		const byPair = new Map<string, GraphEdge[]>();
+		for (const edge of graph.edges) {
+			const pair = JSON.stringify([edge.source, edge.target].sort());
+			const parallel = byPair.get(pair) ?? [];
+			parallel.push(edge);
+			byPair.set(pair, parallel);
+		}
+		const edges: VisEdge[] = [];
+		for (const parallel of byPair.values()) {
+			parallel.sort((a, b) => a.key.localeCompare(b.key));
+			for (const [index, edge] of parallel.entries()) {
+				// Curvature is relative to source → target. Reverse its sign for
+				// the opposite orientation so both arrows remain selectable.
+				const lane = (index - (parallel.length - 1) / 2) * (edge.source < edge.target ? 1 : -1);
+				edges.push({
+					id: edge.key,
+					from: edge.source,
+					to: edge.target,
+					arrows: edge.directed ? 'to' : '',
+					dashes: !edge.directed,
+					label: edge.label,
+					smooth: {
+						enabled: lane !== 0,
+						type: lane > 0 ? 'curvedCW' : 'curvedCCW',
+						roundness: Math.abs(lane) / parallel.length
 					}
-				}
-				eventNodeIds.push(nodeId);
-			}
-
-			for (const ei of event.iocs ?? []) {
-				const ioc = iocByValue.get(ei.name);
-				if (!ioc) continue;
-
-				const nodeId = `b${ioc.ioc_id}`;
-				if (!nodeMap.has(nodeId)) {
-					nodeMap.set(nodeId, {
-						id: nodeId,
-						group: 'ioc',
-						label: ioc.ioc_value,
-						title: ioc.ioc_description ?? undefined
-					});
-				}
-				eventNodeIds.push(nodeId);
-			}
-
-			for (let i = 0; i < eventNodeIds.length; i++) {
-				for (let j = i + 1; j < eventNodeIds.length; j++) {
-					const from = eventNodeIds[i];
-					const to = eventNodeIds[j];
-					const fromIsAsset = from.startsWith('a');
-					const toIsAsset = to.startsWith('a');
-					if (fromIsAsset === toIsAsset) continue;
-					const key = [from, to].sort().join('|');
-					if (!edgeMap.has(key)) {
-						edgeMap.set(key, {
-							from,
-							to,
-							title: `${event.event_date.slice(0, 10)} — ${event.event_title}`,
-							dashes: true
-						});
-					}
-				}
+				});
 			}
 		}
-
-		return { nodes: [...nodeMap.values()], edges: [...edgeMap.values()] };
+		return {
+			nodes: graph.nodes.map((node): CaseGraphNode => ({
+				id: node.key,
+				group: node.kind,
+				label: node.label,
+				title: [node.subtitle, node.description].filter(Boolean).join(' — ') || undefined,
+				image: node.icon ?? undefined
+			})),
+			edges
+		};
 	});
+	const selectedEdge = $derived(graph.edges.find((edge) => edge.key === selectedEdgeId));
+	const selectedEventIds = $derived(new Set(selectedEdge?.event_ids));
+	const supportingEvents = $derived(graph.events.filter((event) => selectedEventIds.has(event.id)));
 
 	const groupCounts = $derived.by<Record<Group, number>>(() => {
-		const counts: Record<Group, number> = { asset: 0, ioc: 0 };
+		const counts: Record<Group, number> = { asset: 0, ioc: 0, node: 0 };
 		for (const n of graphData.nodes) {
-			if (n.group === 'asset') counts.asset++;
-			else if (n.group === 'ioc') counts.ioc++;
+			counts[n.group]++;
 		}
 		return counts;
 	});
@@ -266,7 +238,7 @@
 
 	const searchHitCount = $derived(searchQuery.trim() ? matches.size : 0);
 	const hasActiveFilter = $derived(
-		searchQuery.trim().length > 0 || !visibleGroups.asset || !visibleGroups.ioc
+		searchQuery.trim().length > 0 || !visibleGroups.asset || !visibleGroups.ioc || !visibleGroups.node
 	);
 
 	const orderedMatches = $derived.by<string[]>(() => {
@@ -296,7 +268,6 @@
 				id: node.id,
 				group: node.group,
 				label: shortLabel(node.label),
-				title: node.title,
 				borderWidth: 2,
 				borderWidthSelected: 4,
 				color: {
@@ -332,6 +303,7 @@
 					...base,
 					shape: 'circularImage',
 					image: applyAssetImageTheme(node.image, isDark),
+					brokenImage: assetFallbackIcon,
 					size: 22
 				} as VisNode;
 			}
@@ -352,7 +324,7 @@
 				return {
 					...e,
 					color: bothHit
-						? undefined
+						? options.edges.color
 						: {
 								color: isDark ? 'rgba(51,65,85,0.4)' : 'rgba(203,213,225,0.6)',
 								opacity: 0.5
@@ -386,7 +358,7 @@
 			if (n) out.push(n);
 		}
 		return out.sort((a, b) => {
-			const order = { asset: 0, ioc: 1 } as const;
+			const order = { asset: 0, ioc: 1, node: 2 } as const;
 			return order[a.group] - order[b.group];
 		});
 	});
@@ -399,6 +371,8 @@
 		try {
 			if (selectedNodeId) {
 				network.selectNodes([selectedNodeId]);
+			} else if (selectedEdgeId) {
+				network.selectEdges([selectedEdgeId]);
 			} else {
 				network.unselectAll();
 			}
@@ -408,6 +382,7 @@
 	});
 
 	const focusNode = (nodeId: string) => {
+		selectedEdgeId = null;
 		selectedNodeId = nodeId;
 		if (!network) return;
 		try {
@@ -452,13 +427,10 @@
 		matchCursor = 0;
 	});
 
-	const handleClick = (detail: { nodeId?: IdType }) => {
+	const handleClick = (detail: { nodeId?: IdType; edgeId?: IdType }) => {
 		contextMenu = { open: false, x: 0, y: 0 };
-		if (typeof detail.nodeId === 'string') {
-			selectedNodeId = detail.nodeId;
-		} else {
-			selectedNodeId = null;
-		}
+		selectedNodeId = typeof detail.nodeId === 'string' ? detail.nodeId : null;
+		selectedEdgeId = typeof detail.edgeId === 'string' ? detail.edgeId : null;
 	};
 
 	const openContextMenu = (detail: { x: number; y: number; nodeId?: IdType }) => {
@@ -475,12 +447,17 @@
 	};
 
 	const openNode = (node: CaseGraphNode) => {
+		if (node.group === 'node' && canEdit) {
+			const item = graph.nodes.find((item) => item.key === node.id);
+			if (item) edit = { ...item, resource: 'nodes' };
+			return;
+		}
 		if (node.group === 'asset') {
-			const numericId = node.id.match(/^a(\d+)$/)?.[1];
+			const numericId = node.id.match(/^asset:(\d+)$/)?.[1];
 			if (!numericId) return;
 			goto(`/case/${caseId}/assets/${numericId}`);
 		} else if (node.group === 'ioc') {
-			goto(`/case/${caseId}/iocs/${node.id.slice(1)}`);
+			goto(`/case/${caseId}/iocs/${node.id.slice('ioc:'.length)}`);
 		}
 	};
 
@@ -497,44 +474,99 @@
 		});
 	};
 
-	const load = async () => {
+	const load = async (identifier: number, reset = true) => {
+		const version = ++loadVersion;
 		loading = true;
 		error = null;
+		if (reset) {
+			graph = emptyGraph();
+			edit = null;
+			activeViewId = null;
+			searchQuery = '';
+			visibleGroups = { asset: true, ioc: true, node: true };
+		}
 		contextMenu = { open: false, x: 0, y: 0 };
 		selectedNodeId = null;
-		// Fresh data means a fresh layout pass; re-arm auto-freeze so
-		// vis-network stabilizes the new node set, then freezes again.
-		physicsEnabled = true;
-		autoFreezeArmed = true;
-
-		const [eventsRes, assetsRes, iocsRes] = await Promise.all([
-			CaseTimelineService.listEvents(caseId, {}, { fetch }),
-			CaseAssetsService.list(caseId, { per_page: 500 }, { fetch }),
-			CaseIocsService.list(caseId, { per_page: 500 }, { fetch })
-		]);
-
-		if (
-			!eventsRes.ok ||
-			!assetsRes.ok ||
-			!iocsRes.ok ||
-			typeof eventsRes.data === 'string' ||
-			typeof assetsRes.data === 'string' ||
-			typeof iocsRes.data === 'string'
-		) {
-			error = 'Failed to load graph data';
-			loading = false;
-			return;
+		selectedEdgeId = null;
+		if (reset) {
+			physicsEnabled = true;
+			autoFreezeArmed = true;
 		}
 
-		events = eventsRes.data?.timeline ?? eventsRes.data?.tim ?? [];
-		assets = assetsRes.data?.data ?? [];
-		iocs = iocsRes.data?.data ?? [];
-		loading = false;
+		try {
+			const response = await ApiService.get<GraphResponse>(`/api/v2/cases/${identifier}/graph`, { fetch });
+			if (version !== loadVersion) return;
+			if (!response.ok || !response.data || typeof response.data === 'string') {
+				error = 'Failed to load graph data';
+				return;
+			}
+			graph = response.data;
+		} catch {
+			if (version === loadVersion) error = 'Failed to load graph data';
+		} finally {
+			if (version === loadVersion) loading = false;
+		}
 	};
 
 	$effect(() => {
-		load();
+		void load(caseId);
+		return () => { loadVersion++; };
 	});
+
+	const readViewState = (): GraphViewState | null => network ? {
+		positions: network.getPositions(),
+		center: network.getViewPosition(),
+		scale: network.getScale(),
+		search: searchQuery,
+		show_assets: visibleGroups.asset,
+		show_iocs: visibleGroups.ioc,
+		show_manual_nodes: visibleGroups.node
+	} : null;
+
+	const restoreView = async (view: GraphView) => {
+		const identifier = caseId;
+		activeViewId = view.id;
+		autoFreezeArmed = false;
+		physicsEnabled = false;
+		searchQuery = view.state.search;
+		visibleGroups = {
+			asset: view.state.show_assets, ioc: view.state.show_iocs, node: view.state.show_manual_nodes
+		};
+		selectedNodeId = null;
+		selectedEdgeId = null;
+		await tick();
+		if (caseId !== identifier || activeViewId !== view.id || !network) return;
+		for (const id of visibleNodeIds) {
+			const position = view.state.positions[id];
+			if (position) network.moveNode(id, position.x, position.y);
+		}
+		network.moveTo({ position: view.state.center, scale: view.state.scale });
+	};
+
+	const saveEdit = async (item: GraphEdit, body: Record<string, unknown>) => {
+		const identifier = caseId;
+		const path = `/api/v2/cases/${identifier}/graph/${item.resource}`;
+		if (!item.remove && item.resource === 'views') {
+			const state = readViewState();
+			if (!state) return false;
+			body.state = state;
+		}
+		try {
+			const result = item.remove
+				? await ApiService.delete(`${path}/${item.id}`, { fetch })
+				: item.id
+					? await ApiService.put(`${path}/${item.id}`, body, { fetch })
+					: await ApiService.post(path, body, { fetch });
+			if (!result.ok) return false;
+			if (caseId === identifier) {
+				if (item.remove && item.resource === 'views' && activeViewId === item.id) activeViewId = null;
+				await load(identifier, false);
+			}
+			return true;
+		} catch {
+			return false;
+		}
+	};
 </script>
 
 <svelte:head>
@@ -642,9 +674,57 @@
 						<PlayIcon class="h-3.5 w-3.5" />
 					{/if}
 				</Button>
-				<Button variant="ghost" size="xs" onclick={load} title={irisT("Refresh graph", $irisLocale)} disabled={loading}>
+				<Button variant="ghost" size="xs" onclick={() => load(caseId, false)} title={irisT("Refresh graph", $irisLocale)} disabled={loading}>
 					<RefreshCwIcon class="h-3.5 w-3.5 {loading ? 'animate-spin' : ''}" />
 				</Button>
+			</div>
+		</div>
+
+		<div class="flex flex-wrap items-center gap-2 border-b px-3 py-2">
+			{#if canEdit}
+				<Button variant="outline" size="xs" disabled={loading} onclick={() => (edit = { resource: 'nodes' })}>
+					{irisT('Add graph node', $irisLocale)}
+				</Button>
+				<Button variant="outline" size="xs" disabled={loading || graph.nodes.length < 2}
+					onclick={() => (edit = { resource: 'edges', source: selectedNodeId ?? undefined })}>
+					{irisT('Add connection', $irisLocale)}
+				</Button>
+			{/if}
+			<Button variant={visibleGroups.node ? 'secondary' : 'ghost'} size="xs"
+				aria-pressed={visibleGroups.node} onclick={() => toggleGroup('node')}>
+				{irisT('Manual nodes', $irisLocale)} {groupCounts.node}
+			</Button>
+			<div class="ml-auto flex flex-wrap items-center gap-2">
+				<select class="max-w-56 rounded-md border bg-background px-2 py-1 text-xs"
+					aria-label={irisT('Saved graph views', $irisLocale)} value={activeViewId ?? ''}
+					onchange={(e) => {
+						const view = graph.views.find((item) => item.id === Number(e.currentTarget.value));
+						if (view) void restoreView(view);
+					}}>
+					<option value="" disabled>{irisT('Saved graph views', $irisLocale)}</option>
+					{#each graph.views as view (view.id)}
+						<option value={view.id}>{view.label}</option>
+					{/each}
+				</select>
+				{#if activeView}
+					<Button variant="ghost" size="xs" disabled={loading} onclick={() => restoreView(activeView)}>
+						{irisT('Restore graph view', $irisLocale)}
+					</Button>
+				{/if}
+				{#if canEdit}
+					<Button variant="outline" size="xs" disabled={!network || loading}
+						onclick={() => (edit = { resource: 'views' })}>{irisT('Save graph view', $irisLocale)}</Button>
+					{#if activeView}
+						<Button variant="outline" size="xs" disabled={!network || loading}
+							onclick={() => (edit = { ...activeView, resource: 'views' })}>
+							{irisT('Update graph view', $irisLocale)}
+						</Button>
+						<Button variant="ghost" size="xs" disabled={loading}
+							onclick={() => (edit = { ...activeView, resource: 'views', remove: true })}>
+							{irisT('Delete view', $irisLocale)}
+						</Button>
+					{/if}
+				{/if}
 			</div>
 		</div>
 
@@ -657,6 +737,7 @@
 						{edges}
 						{options}
 						className="h-full w-full"
+						preservePositions
 						onClick={handleClick}
 						onContextMenu={openContextMenu}
 						onReady={handleReady}
@@ -694,7 +775,7 @@
 					</div>
 				{:else if error}
 					<div class="absolute inset-0 flex items-center justify-center text-sm text-destructive">
-						{error}
+						{irisT(error, $irisLocale)}
 					</div>
 				{:else if !graphData.nodes.length}
 					<div
@@ -714,7 +795,7 @@
 							variant="outline"
 							size="xs"
 							onclick={() => {
-								visibleGroups = { asset: true, ioc: true };
+								visibleGroups = { asset: true, ioc: true, node: true };
 								searchQuery = '';
 							}}
 						>
@@ -735,16 +816,61 @@
 					</span>
 				</div>
 
-				{#if graphData.nodes.length > 0 && !hasActiveFilter && !selectedNodeId}
+				{#if graphData.nodes.length > 0 && !hasActiveFilter && !selectedNodeId && !selectedEdgeId}
 					<div
 						class="pointer-events-none absolute left-2 top-2 max-w-xs rounded-md border bg-background/80 px-2.5 py-1.5 text-2xs text-muted-foreground shadow-sm backdrop-blur-sm"
 					>
-						{irisT("Click a node to see details. Edges link assets and IOCs sharing a timeline event.", $irisLocale)}
+						{irisT("Select a node or connection to see its details.", $irisLocale)}
 					</div>
 				{/if}
 			</div>
 
-			{#if selectedNode}
+			{#if selectedEdge}
+				<aside class="flex w-80 shrink-0 flex-col overflow-hidden border-l bg-card"
+					aria-label={irisT('Selected connection details', $irisLocale)}>
+					<header class="flex items-start justify-between gap-2 border-b px-4 py-3">
+						<div class="min-w-0 text-sm font-medium">
+							{#if selectedEdge.label}<div>{selectedEdge.label}</div>{/if}
+							{nodeById.get(selectedEdge.source)?.label}
+							{selectedEdge.directed ? '→' : '↔'}
+							{nodeById.get(selectedEdge.target)?.label}
+						</div>
+						<Button variant="ghost" size="xs" onclick={() => (selectedEdgeId = null)}
+							title={irisT('Close details', $irisLocale)}>
+							<XIcon class="h-3.5 w-3.5" />
+						</Button>
+					</header>
+					<div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+						{#if canEdit && selectedEdge.id}
+							<div class="mb-3 flex gap-2">
+								<Button variant="outline" size="xs" onclick={() => (edit = { ...selectedEdge, resource: 'edges' })}>
+									{irisT('Edit connection', $irisLocale)}
+								</Button>
+								<Button variant="ghost" size="xs" onclick={() => (edit = { ...selectedEdge, resource: 'edges', remove: true })}>
+									{irisT('Delete', $irisLocale)}
+								</Button>
+							</div>
+						{/if}
+						<h2 class="mb-2 text-xs font-medium">{irisT('Supporting events', $irisLocale)}</h2>
+						{#if !supportingEvents.length}
+							<p class="text-xs text-muted-foreground">{irisT('No linked events', $irisLocale)}</p>
+						{/if}
+						<ul class="space-y-2">
+							{#each supportingEvents as event (event.id)}
+								<li>
+									<a class="block rounded border px-2 py-1.5 text-xs hover:bg-muted"
+										href={`/case/${caseId}/timeline?event=${event.id}`}>
+										{event.title}
+										{#if event.date}
+											<span class="block text-muted-foreground">{event.date.replace('T', ' ')}</span>
+										{/if}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				</aside>
+			{:else if selectedNode}
 				<aside
 					class="flex w-80 shrink-0 flex-col overflow-hidden border-l bg-card"
 					aria-label={irisT("Selected node details", $irisLocale)}
@@ -793,7 +919,7 @@
 								class="mb-1.5 flex items-center justify-between text-2xs uppercase tracking-wide text-muted-foreground"
 							>
 								<span>
-									{selectedNode.group === 'asset' ? irisT("Linked IOCs", $irisLocale) : irisT("Linked assets", $irisLocale)}
+									{irisT("Connected nodes", $irisLocale)}
 								</span>
 								<span class="tabular-nums">{selectedNeighbours.length}</span>
 							</div>
@@ -824,6 +950,21 @@
 					</div>
 
 					<footer class="border-t px-4 py-3">
+						{#if selectedNode.group === 'node'}
+							{#if canEdit}
+								{@const item = graph.nodes.find((node) => node.key === selectedNode.id)}
+								{#if item}
+									<div class="flex gap-2">
+										<Button variant="outline" size="xs" onclick={() => (edit = { ...item, resource: 'nodes' })}>
+											{irisT('Edit graph node', $irisLocale)}
+										</Button>
+										<Button variant="ghost" size="xs" onclick={() => (edit = { ...item, resource: 'nodes', remove: true })}>
+											{irisT('Delete', $irisLocale)}
+										</Button>
+									</div>
+								{/if}
+							{/if}
+						{:else}
 						<Button
 							variant="default"
 							size="xs"
@@ -833,9 +974,14 @@
 							{irisT("Open", $irisLocale)} {selectedNode.group}
 							<ExternalLinkIcon class="h-3 w-3" />
 						</Button>
+						{/if}
 					</footer>
 				</aside>
 			{/if}
 		</div>
 	</div>
 </CaseWorkspace>
+
+{#if edit}
+	<GraphEditDialog {edit} nodes={graph.nodes} onSave={saveEdit} onClose={() => (edit = null)} />
+{/if}

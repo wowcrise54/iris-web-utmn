@@ -154,6 +154,8 @@ describe('CaseTimelineService', () => {
 			status: 200,
 			data: {
 				tim: [] as CaseTimelineEvent[],
+				statistics: { interval_seconds: 60, histogram: [{ start: '2026-07-22T10:00:00Z', count: 2 }],
+					sources: [], categories: [] },
 				state: { object_last_update: '2026-07-22T10:00:00', object_state: 1 },
 				pagination: { total: 0, per_page: 25, current_page: 1, last_page: 1, next_page: null }
 			}
@@ -164,6 +166,9 @@ describe('CaseTimelineService', () => {
 		const res = await CaseTimelineService.listEvents(
 			73,
 			{
+				query: 'load_50% & restart',
+				lucene_query: 'title:"PowerShell Start" OR source:Sysmon',
+				timeline_id: [8, 9],
 				asset: ['host-a', 'host-b'],
 				asset_id: [45],
 				ioc: ['1.2.3.4'],
@@ -174,12 +179,18 @@ describe('CaseTimelineService', () => {
 				flag: true
 			},
 			{ skipTokenRefresh: true },
-			{ page: 2, per_page: 25 }
+			{ page: 2, per_page: 25, include_stats: true }
 		);
 
 		expect(ApiService.get).toHaveBeenCalledTimes(1);
 		const [url] = (ApiService.get as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
 		expect(url).toMatch(/^\/api\/v2\/cases\/73\/events\?/);
+		expect(new URL(url, 'https://iris.example').searchParams.get('query')).toBe(
+			'load_50% & restart'
+		);
+		expect(new URL(url, 'https://iris.example').searchParams.get('lucene_query')).toBe(
+			'title:"PowerShell Start" OR source:Sysmon'
+		);
 		// Array values become repeated keys; scalar values stay single-valued.
 		expect(url).toContain('asset=host-a');
 		expect(url).toContain('asset=host-b');
@@ -192,11 +203,14 @@ describe('CaseTimelineService', () => {
 		expect(url).toContain('flag=true');
 		expect(url).toContain('page=2');
 		expect(url).toContain('per_page=25');
+		expect(url).toContain('include_stats=true');
+		expect(new URL(url, 'https://iris.example').searchParams.getAll('timeline_id')).toEqual(['8', '9']);
 		// Legacy `q=<JSON>` shape must NOT reappear.
 		expect(url).not.toContain('q=');
 		expect(res.data).toMatchObject({
 			timeline: [],
 			tim: [],
+			statistics: mockResponse.data.statistics,
 			pagination: mockResponse.data.pagination
 		});
 	});
