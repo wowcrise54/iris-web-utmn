@@ -1,6 +1,7 @@
-"""Public API transport. Keep raw report fields, including vendor extensions."""
+"""Streamable HTTP client for the built-in PT Sandbox MCP server."""
+from datetime import datetime
 import json
-import re
+from uuid import UUID
 from urllib.parse import urlsplit
 
 import requests
@@ -22,32 +23,15 @@ def validate_url(value):
     if not isinstance(value, str):
         raise SandboxError('PT Sandbox URL is required')
     url = value.strip().rstrip('/')
-    p = urlsplit(url)
+    try:
+        p = urlsplit(url)
+        p.port
+    except ValueError:
+        raise SandboxError("Invalid PT Sandbox MCP address") from None
     if (p.scheme != 'https' or not p.hostname or p.username or p.password
-            or p.query or p.fragment or p.path not in ('', '/api/v1')):
-        raise SandboxError('Use an HTTPS address without credentials; /api/v1 is optional')
-    return url if p.path else url + '/api/v1'
-
-
-def log_references(report):
-    """Only log entries, not executable artifacts or attacker-controlled URLs."""
-    found = {}
-
-    def visit(node):
-        if isinstance(node, dict):
-            for entry in node.get('logs', []) if isinstance(node.get('logs'), list) else []:
-                if not isinstance(entry, dict):
-                    continue
-                uri = str(entry.get('file_uri') or '')[:200]
-                found.setdefault(uri, dict(file_uri=uri, file_name=str(entry.get('file_name') or 'log')[:240],
-                                           type=str(entry.get('type') or 'unknown')[:80]))
-            for value in node.values():
-                visit(value)
-        elif isinstance(node, list):
-            for value in node:
-                visit(value)
-    visit(report)
-    return list(found.values())
+            or p.query or p.fragment or p.path not in ('', '/mcp')):
+        raise SandboxError('Use an HTTPS address without credentials; /mcp is optional')
+    return url if p.path else url + '/mcp'
 
 
 def report_summary(report):
@@ -70,67 +54,132 @@ def report_summary(report):
             'scan_state': result.get('scan_state'), 'detections': detections}
 
 
+def decode_rows(result):
+    try:
+        if result.get('isError'):
+            raise ValueError
+        structured = result.get('structuredContent')
+        raw = structured['result'] if structured is not None else result['content'][0]['text']
+        data = json.loads(raw)
+        columns, rows = data['columns'], data['rows']
+        if (not isinstance(columns, list) or not all(isinstance(c, str) for c in columns)
+                or len(set(columns)) != len(columns) or not isinstance(rows, list)):
+            raise ValueError
+        if not all(isinstance(row, list) for row in rows):
+            raise ValueError
+        return [dict(zip(columns, row, strict=True)) for row in rows]
+    except (KeyError, IndexError, AttributeError, TypeError, ValueError):
+        raise SandboxError('PT Sandbox MCP returned an invalid query result') from None
+
+
 class SandboxClient:
     def __init__(self, url, token, ca_bundle=None, *, verify_tls=True):
         self.url = validate_url(url)
-        if not isinstance(token, str) or not token.strip() or '\n' in token or '\r' in token:
-            raise SandboxError('PT Sandbox API token is required')
+        if not isinstance(token, str) or not token.strip() or any(c in token for c in ('\n', '\r')):
+            raise SandboxError('PT Sandbox MCP token is required')
         self.session = requests.Session()
         self.session.trust_env = False
-        self.session.headers.update({'X-API-Key': token, 'Accept': 'application/json'})
+        self.session.headers.update({'Authorization': f'Bearer {token}',
+                                     'Accept': 'application/json, text/event-stream'})
         self.verify = (ca_bundle or True) if parse_verify_tls(verify_tls) else False
+        self.request_id = 0
 
     def close(self):
-        self.session.close()
-
-    def request(self, path, *, method='POST', payload=None, file=None, limit=32 * 1024 * 1024):
         try:
-            with self.session.request(method, self.url + '/' + path, json=payload, data=file,
-                                      headers={'Content-Type': 'application/octet-stream'} if file else None,
-                                      verify=self.verify, timeout=(10, 120), stream=True,
-                                      allow_redirects=False) as response:
-                if response.status_code != 200:
-                    raise SandboxError(f'PT Sandbox HTTP {response.status_code}')
-                chunks, size = [], 0
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    if size > limit:
-                        raise SandboxError('PT Sandbox response exceeds configured size limit')
-                    chunks.append(chunk)
-                raw = b''.join(chunks)
-            if path == 'storage/downloadArtifact':
-                return raw
-            body = json.loads(raw)
-            if not isinstance(body, dict) or body.get('errors') or not isinstance(body.get('data'), (dict, list)):
-                raise SandboxError('PT Sandbox returned an error or invalid response')
-            if path != 'engines/sandbox/getImages' and not isinstance(body['data'], dict):
-                raise SandboxError('PT Sandbox returned an invalid response')
-            return body['data']
-        except (requests.RequestException, ValueError, TypeError):
-            # Neither remote bodies nor request headers belong in application logs.
-            raise SandboxError('PT Sandbox connection, TLS or response error') from None
+            if 'Mcp-Session-Id' in self.session.headers:
+                with self.session.delete(self.url, verify=self.verify, timeout=(3, 3),
+                                         allow_redirects=False, stream=True):
+                    pass
+        except requests.RequestException:
+            pass
+        finally:
+            self.session.close()
 
-    def check_connection(self):
-        health = self.request('maintenance/checkHealth', method='GET')
-        version = self.request('maintenance/getVersion', method='GET').get('version', '')
-        images = self.request('engines/sandbox/getImages')
-        return {'health': str(health.get('status', 'unknown'))[:80], 'version': str(version)[:80],
-                'version_matches': bool(re.match(r'^5\.37(?:\.|$)', str(version))), 'images': images}
-
-    def upload(self, file):
-        data = self.request('storage/uploadScanFile', file=file)
-        if not isinstance(data.get('file_uri'), str):
-            raise SandboxError('PT Sandbox did not return a file URI')
-        return data['file_uri']
-
-    def start(self, file_uri, name, image_id, duration, passwords):
-        data = self.request('analysis/createScanTask', payload={
-            'file_uri': file_uri, 'file_name': name, 'async_result': True, 'short_result': False,
-            'options': {'analysis_depth': 2, 'passwords_for_unpack': passwords,
-                        'sandbox': {'enabled': True, 'image_id': image_id,
-                                    'analysis_duration': duration, 'save_video': True}}})
-        from uuid import UUID
+    def _rpc(self, method, params=None, *, notification=False):
+        body = {'jsonrpc': '2.0', 'method': method}
+        if params is not None:
+            body['params'] = params
+        if not notification:
+            self.request_id += 1
+            body['id'] = self.request_id
         try:
-            return str(UUID(data['scan_id']))
-        except (KeyError, ValueError, TypeError):
-            raise SandboxError('PT Sandbox did not return a valid scan ID') from None
+            with self.session.post(self.url, json=body, verify=self.verify, timeout=(5, 15),
+                                   stream=True, allow_redirects=False) as response:
+                expected = 202 if notification else 200
+                if response.status_code != expected:
+                    raise SandboxError(f'PT Sandbox MCP HTTP {response.status_code}')
+                if notification:
+                    return None
+                if method == 'initialize' and response.headers.get('Mcp-Session-Id'):
+                    self.session.headers['Mcp-Session-Id'] = response.headers['Mcp-Session-Id']
+                sse = response.headers.get('Content-Type', '').split(';')[0].strip() == 'text/event-stream'
+                for message in self._messages(response, sse):
+                    if message.get('id') != body['id']:
+                        continue
+                    if (message.get('jsonrpc') != '2.0' or 'error' in message
+                            or not isinstance(message.get('result'), dict)):
+                        raise SandboxError('PT Sandbox MCP rejected the request')
+                    return message['result']
+        except (requests.RequestException, ValueError, AttributeError, TypeError):
+            raise SandboxError('PT Sandbox MCP connection, TLS or response error') from None
+        raise SandboxError('PT Sandbox MCP response did not contain the requested result')
+
+    @staticmethod
+    def _messages(response, sse):
+        total = 0
+        pending = bytearray()
+        event = []
+        for chunk in response.iter_content(8192):
+            total += len(chunk)
+            if total > 1024 * 1024:
+                raise SandboxError('PT Sandbox MCP response exceeds 1 MiB')
+            pending.extend(chunk)
+            if sse:
+                while (newline := pending.find(b'\n')) >= 0:
+                    line = bytes(pending[:newline]).rstrip(b'\r')
+                    del pending[:newline + 1]
+                    if line.startswith(b'data:'):
+                        event.append(line[5:].lstrip(b' '))
+                    elif not line and event:
+                        yield json.loads(b'\n'.join(event))
+                        event.clear()
+        if not sse:
+            yield json.loads(pending)
+
+    def connect(self):
+        result = self._rpc('initialize', {
+            'protocolVersion': '2025-03-26', 'capabilities': {},
+            'clientInfo': {'name': 'IRIS PT Sandbox', 'version': '2.0.0'},
+        })
+        version = result.get('protocolVersion')
+        if version not in ('2025-03-26', '2025-06-18', '2025-11-25'):
+            raise SandboxError('Unsupported PT Sandbox MCP protocol version')
+        self.session.headers['MCP-Protocol-Version'] = version
+        self._rpc('notifications/initialized', notification=True)
+
+    def query(self, sql):
+        return decode_rows(self._rpc('tools/call', {'name': 'run_query', 'arguments': {'query': sql}}))
+
+    def check_connection(self, database):
+        self.connect()
+        tools = self._rpc('tools/list').get('tools', [])
+        if not any(isinstance(tool, dict) and tool.get('name') == 'run_query' for tool in tools):
+            raise SandboxError('PT Sandbox MCP does not offer run_query')
+        if self.query('SELECT 1 AS connection_ok') != [{'connection_ok': 1}]:
+            raise SandboxError('PT Sandbox MCP connection query returned an unexpected result')
+        self.query(self.task_sql(database, UUID(int=0), datetime(2000, 1, 1)))
+        return {'ok': True}
+
+    @staticmethod
+    def task_sql(database, scan_id, start):
+        if database not in ('scans_v2', 'scans_v2_repl'):
+            raise SandboxError('Unknown PT Sandbox database')
+        scan_id = UUID(str(scan_id))
+        start = start.strftime('%Y-%m-%d %H:%M:%S')
+        return (
+            'SELECT start, toString(scan_id) AS sid, status, action, entry_point_type, object_type, '
+            'object_name, correlated_verdict_threat_level AS verdict, '
+            'correlated_verdict_priority AS priority, verdict_is_final '
+            f'FROM {database}.tasks FINAL '
+            f"WHERE start = toDateTime('{start}', 'UTC') AND scan_id = toUUID('{scan_id}') LIMIT 1"
+        )

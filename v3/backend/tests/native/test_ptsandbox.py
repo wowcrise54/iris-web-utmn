@@ -1,10 +1,8 @@
 """Transport and worker failure contracts without booting IRIS or contacting an appliance."""
 import ast
-import datetime as dt
+from datetime import datetime
 import gzip
-import hashlib
 import importlib.util
-import io
 import json
 import sys
 from pathlib import Path
@@ -26,8 +24,9 @@ def client_module():
 
 
 class Response:
-    def __init__(self, body, status=200):
+    def __init__(self, body, status=200, headers=None):
         self.status_code = status
+        self.headers = headers or {}
         self.raw = body if isinstance(body, bytes) else json.dumps(body).encode()
 
     def __enter__(self):
@@ -37,12 +36,13 @@ class Response:
         return None
 
     def iter_content(self, size):
-        yield self.raw
+        for start in range(0, len(self.raw), size):
+            yield self.raw[start:start + size]
 
 
 def client_with_response(module, response):
     client = module.SandboxClient('https://sandbox.test', 'private-token')
-    client.session.request = Mock(return_value=response)
+    client.session.post = Mock(return_value=response)
     return client
 
 
@@ -54,16 +54,37 @@ def test_only_validated_https_appliance_addresses(client_module, url):
         client_module.validate_url(url)
 
 
-def test_upload_sends_original_stream_and_no_redirects(client_module):
-    client = client_with_response(client_module, Response({'data': {'file_uri': 'sfm:temporary'}, 'errors': []}))
-    content = io.BytesIO(b'sample')
-    assert client.upload(content) == 'sfm:temporary'
-    call = client.session.request.call_args
-    assert call.args[1] == 'https://sandbox.test/api/v1/storage/uploadScanFile'
-    assert call.kwargs['data'] is content
-    assert call.kwargs['verify'] is True
-    assert call.kwargs['allow_redirects'] is False
+def test_mcp_handshake_and_sse_query(client_module):
+    client = client_module.SandboxClient('https://sandbox.test', 'private-token')
+    result = {'columns': ['status', 'verdict_is_final'], 'rows': [['SUCCESS', 1]]}
+    message = {'jsonrpc': '2.0', 'id': 2, 'result': {
+        'structuredContent': {'result': json.dumps(result)}, 'isError': False,
+    }}
+    responses = [
+        Response({'jsonrpc': '2.0', 'id': 1, 'result': {'protocolVersion': '2025-03-26'}},
+                 headers={'Mcp-Session-Id': 'test-session'}),
+        Response(b'', 202),
+        Response(('event: message\r\ndata: ' + json.dumps(message) + '\r\n\r\n').encode(),
+                 headers={'Content-Type': 'text/event-stream; charset=utf-8'}),
+    ]
+    client.session.post = Mock(side_effect=responses)
+    client.session.delete = Mock(return_value=Response(b''))
+    client.connect()
+    assert client.query('SELECT 1') == [{'status': 'SUCCESS', 'verdict_is_final': 1}]
+    calls = client.session.post.call_args_list
+    assert [call.kwargs['json']['method'] for call in calls] == [
+        'initialize', 'notifications/initialized', 'tools/call',
+    ]
+    assert 'id' not in calls[1].kwargs['json']
+    assert calls[2].kwargs['json']['params'] == {'name': 'run_query', 'arguments': {'query': 'SELECT 1'}}
+    assert all(call.args == ('https://sandbox.test/mcp',) and not call.kwargs['allow_redirects']
+               for call in calls)
+    assert client.session.headers['Authorization'] == 'Bearer private-token'
+    assert client.session.headers['Mcp-Session-Id'] == 'test-session'
+    assert client.session.headers['MCP-Protocol-Version'] == '2025-03-26'
     assert client.session.trust_env is False
+    client.close()
+    assert client.session.delete.call_args.args == ('https://sandbox.test/mcp',)
 
 
 @pytest.mark.parametrize('setting,ca,expected', [(True, None, True), (False, None, False),
@@ -71,9 +92,9 @@ def test_upload_sends_original_stream_and_no_redirects(client_module):
     ('true', None, True), ('false', None, False)])
 def test_tls_setting_reaches_http_transport(client_module, setting, ca, expected):
     client = client_module.SandboxClient('https://sandbox.test', 'private-token', ca, verify_tls=setting)
-    client.session.request = Mock(return_value=Response({'data': {'status': 'ok'}}))
-    client.request('maintenance/checkHealth', method='GET')
-    assert client.session.request.call_args.kwargs['verify'] == expected
+    client.session.post = Mock(return_value=Response(b'', 202))
+    client._rpc('notifications/initialized', notification=True)
+    assert client.session.post.call_args.kwargs['verify'] == expected
 
 
 @pytest.mark.parametrize('value', [None, 0, 1, '', 'yes'])
@@ -82,44 +103,36 @@ def test_invalid_tls_setting_rejected(client_module, value):
         client_module.SandboxClient('https://sandbox.test', 'private-token', verify_tls=value)
 
 
-def test_report_unknown_fields_are_preserved(client_module):
-    report = {'result': {'verdict': 'DANGEROUS'}, 'vendor_extension': {'new': [1, 2]}}
-    client = client_with_response(client_module, Response({'data': report}))
-    assert client.request('analysis/report', payload={'scan_id': 'id'}) == report
+def test_size_limit_applies_to_mcp_response(client_module):
+    client = client_with_response(client_module, Response(b'x' * (1024 * 1024 + 1)))
+    with pytest.raises(client_module.SandboxError, match='exceeds'):
+        client.query('SELECT 1')
 
 
-def test_size_limit_applies_to_streamed_logs(client_module):
-    client = client_with_response(client_module, Response(b'12345'))
-    with pytest.raises(client_module.SandboxError, match='size limit'):
-        client.request('storage/downloadArtifact', payload={'file_uri': 'sha256:x'}, limit=4)
-
-
-@pytest.mark.parametrize('response', [Response({'data': {}, 'errors': [{'message': 'private-token'}]}),
-                                      Response(b'private-token', 302), Response(b'private-token', 401),
-                                      Response(b'private-token')])
+@pytest.mark.parametrize('response', [
+    Response({'jsonrpc': '2.0', 'id': 1, 'error': {'message': 'private-token'}}),
+    Response(b'private-token', 302), Response(b'private-token', 401),
+    Response(b'private-token'),
+])
 def test_server_bodies_and_tokens_are_never_echoed(client_module, response):
     client = client_with_response(client_module, response)
     with pytest.raises(client_module.SandboxError) as error:
-        client.request('analysis/report')
+        client.query('SELECT 1')
     assert 'private-token' not in str(error.value)
 
 
 def test_transport_error_is_redacted(client_module):
     client = client_with_response(client_module, None)
-    client.session.request.side_effect = requests.Timeout('private-token')
+    client.session.post.side_effect = requests.Timeout('private-token')
     with pytest.raises(client_module.SandboxError) as error:
-        client.request('analysis/report')
+        client.query('SELECT 1')
     assert 'private-token' not in str(error.value)
 
 
-def test_all_nested_log_references_collected_without_executable_artifacts(client_module):
-    uri = 'sha256:' + 'a' * 64
-    report = {'artifacts': [{'file_info': {'file_uri': 'sha256:' + 'b' * 64},
-               'engine_results': [{'details': {'sandbox': {'logs': [{'file_uri': uri, 'file_name': 'trace.zst'}],
-                    'stages': [{'logs': [{'file_uri': uri}, {'file_uri': 'https://evil.test'}]}]}}}]}]}
-    refs = client_module.log_references(report)
-    assert [r['file_uri'] for r in refs] == [uri, 'https://evil.test']
-    assert refs[0]['file_name'] == 'trace.zst'
+def test_malformed_query_result_rejected(client_module):
+    result = {'structuredContent': {'result': '{"columns":["status"],"rows":[["SUCCESS",1]]}'}}
+    with pytest.raises(client_module.SandboxError, match='invalid query result'):
+        client_module.decode_rows(result)
 
 
 def load_without_app_imports(relative_path, namespace):
@@ -167,25 +180,32 @@ def test_configured_tls_and_default_are_used_by_all_callers(business):
         business.prepare_parameter('verify_tls', 'invalid')
 
 
-def test_installed_module_gets_tls_setting_without_resetting_secrets_or_choices(business, monkeypatch):
-    interface = SimpleNamespace(_module_configuration=[{'param_name': 'verify_tls', 'type': 'bool', 'default': True}],
-                                _module_version='1.0.1')
+def test_legacy_module_requires_fresh_mcp_configuration(business, monkeypatch):
+    configuration = [
+        {'param_name': 'sandbox_url', 'default': ''}, {'param_name': 'sandbox_token', 'default': ''},
+        {'param_name': 'database', 'default': 'scans_v2'}, {'param_name': 'verify_tls', 'default': True},
+    ]
+    interface = SimpleNamespace(_module_configuration=configuration, _module_version='2.0.0', _module_description='MCP task import')
     monkeypatch.setitem(sys.modules, 'iris_ptsandbox_module.IrisPTSandboxInterface',
                         SimpleNamespace(IrisPTSandboxInterface=interface))
-    row = SimpleNamespace(module_config=[{'param_name': 'sandbox_token', 'value': 'encrypted:existing'},
-        {'param_name': 'sandbox_url', 'value': 'https://original.test', 'connection_check': {'ok': True}}], is_active=True)
+    row = SimpleNamespace(module_version='1.0.1', is_active=True, module_config=[
+        {'param_name': 'sandbox_token', 'value': 'encrypted:old'},
+        {'param_name': 'sandbox_url', 'value': 'https://original.test/api/v1', 'connection_check': {'ok': True}},
+        {'param_name': 'verify_tls', 'value': False},
+    ])
     namespace = business.sync_module_parameters.__globals__
     namespace['IrisModule'] = SimpleNamespace(query=Mock())
     namespace['IrisModule'].query.filter_by.return_value = [row]
     namespace['db'] = SimpleNamespace(session=Mock())
     business.sync_module_parameters()
-    assert row.module_config[0]['value'] == 'encrypted:existing'
-    assert row.module_config[1]['connection_check'] == {'ok': True}
-    assert row.is_active is True
-    assert row.module_config[-1]['value'] is True
-    row.module_config[-1]['value'] = False
+    assert {p['param_name']: p['value'] for p in row.module_config} == {
+        'sandbox_url': '', 'sandbox_token': '', 'database': 'scans_v2', 'verify_tls': False,
+    }
+    assert 'connection_check' not in row.module_config[0]
+    assert row.is_active is False
+    config = row.module_config
     business.sync_module_parameters()
-    assert len(row.module_config) == 3 and row.module_config[-1]['value'] is False
+    assert row.module_config is config
 
 
 def test_text_logs_are_paged_and_compressed_logs_supported(business):
@@ -202,78 +222,20 @@ def test_binary_logs_not_treated_as_model_instructions(business):
         business.text_page(SimpleNamespace(content=b'\x0a\x0d\x0d\x0a' + b'payload', id=1, name='network.pcapng'))
 
 
-@pytest.fixture
-def worker(client_module, tmp_path):
-    source = tmp_path / 'sample.bin'
-    source.write_bytes(b'safe unit-test sample')
-    scan = SimpleNamespace(id=1, case_id=7, file_id=8, module_id=2, requested_by=1,
-        war_room_id=None, notification_id=None, scan_id=None, file_name='sample.bin', status='queued',
-        sha256=hashlib.sha256(source.read_bytes()).hexdigest(), created_at=dt.datetime.utcnow(),
-        options={'url': 'https://sandbox.test/api/v1', 'image_id': 'win10', 'analysis_duration': 120})
+@pytest.mark.parametrize('old_status,new_status', [
+    ('queued', 'failed'), ('submitting', 'submission_unknown'), ('completed', 'completed'),
+])
+def test_pending_rest_job_is_retired_without_remote_requests(old_status, new_status):
+    scan = SimpleNamespace(status=old_status, report={'result': {'verdict': 'CLEAN'}})
     query = Mock()
-    query.filter_by.return_value.with_for_update.return_value.first.side_effect = lambda: scan
-    client = Mock()
-    client.check_connection.return_value = {'version_matches': True}
-    client.upload.return_value = 'sfm:temporary'
-    client.start.return_value = '12345678-1234-1234-1234-123456789abc'
-    cfg = {'sandbox_url': 'https://sandbox.test', 'max_file_mb': 100}
-
-    def task(**kwargs):
-        def decorate(fn):
-            fn.delay = Mock()
-            fn.apply_async = Mock()
-            return fn
-        return decorate
-    namespace = {'celery': SimpleNamespace(task=task, conf=SimpleNamespace(beat_schedule={})),
+    query.filter_by.return_value.with_for_update.return_value.first.return_value = scan
+    tasks = load_without_app_imports('app/iris_engine/ptsandbox/tasks.py', {
+        'celery': SimpleNamespace(task=lambda **kwargs: lambda fn: fn, conf=SimpleNamespace(beat_schedule={})),
         'db': SimpleNamespace(session=Mock()), 'SandboxScan': SimpleNamespace(query=query),
-        'SandboxError': client_module.SandboxError, 'validate_url': client_module.validate_url,
-        'log_references': client_module.log_references, 'module_config': Mock(return_value=(None, cfg)),
-        'client_from_config': Mock(return_value=client),
-        'datastore_get_local_file_path': Mock(return_value=(False, SimpleNamespace(file_local_name=str(source),
-                                                                               file_password='', file_is_ioc=False)))}
-    load_without_app_imports('app/iris_engine/ptsandbox/tasks.py', namespace)
-    namespace['_authorized'] = Mock(return_value=True)
-    namespace['_finish'] = Mock(side_effect=lambda scan, status, _error=None: setattr(scan, 'status', status))
-    return SimpleNamespace(ns=namespace, scan=scan, client=client)
-
-
-def test_successful_submission_schedules_poll_without_blocking(worker):
-    worker.ns['process_scan'](1)
-    assert worker.scan.status == 'running'
-    assert worker.scan.scan_id == '12345678-1234-1234-1234-123456789abc'
-    worker.ns['process_scan'].apply_async.assert_called_once_with(args=[1], countdown=30)
-
-
-def test_ambiguous_submission_is_never_automatically_repeated(worker):
-    worker.client.start.side_effect = worker.ns['SandboxError']('connection error')
-    worker.ns['process_scan'](1)
-    assert worker.scan.status == 'submission_unknown'
-    worker.ns['process_scan'](1)
-    worker.client.start.assert_called_once()
-    worker.ns['process_scan'].apply_async.assert_not_called()
-
-
-def test_preliminary_verdict_is_not_published_as_final(worker):
-    worker.scan.status, worker.scan.scan_id = 'running', 'existing'
-    worker.client.request.return_value = {'result': {'verdict': 'CLEAN'}, 'is_preflight': True}
-    worker.ns['process_scan'](1)
-    assert worker.scan.status == 'running'
-    assert worker.client.request.call_count == 1
-    worker.ns['_finish'].assert_not_called()
-
-
-def test_revoked_access_blocks_upload(worker):
-    worker.ns['_authorized'].return_value = False
-    worker.ns['process_scan'](1)
-    assert worker.scan.status == 'failed'
-    worker.client.upload.assert_not_called()
-
-
-def test_different_product_version_blocks_upload(worker):
-    worker.client.check_connection.return_value = {'version_matches': False}
-    worker.ns['process_scan'](1)
-    assert worker.scan.status == 'failed'
-    worker.client.upload.assert_not_called()
+    })
+    tasks.process_scan(1)
+    assert scan.status == new_status
+    assert scan.report == {'result': {'verdict': 'CLEAN'}}
 
 
 def test_text_source_citations_work_past_sixteen_mib(business):
@@ -284,3 +246,24 @@ def test_text_source_citations_work_past_sixteen_mib(business):
     page = business.text_page(log, offset=offset)
     assert offset>16*1024*1024
     assert page['text']=='последнее событие' and page['next_offset'] is None
+
+
+def test_task_query_is_bounded_to_exact_scan_and_utc_start(client_module):
+    scan_id = 'f549dadc-e402-11f1-a6f6-2fb4d4d5a685'
+    start = datetime(2026, 11, 19, 10, 21, 18)
+    query = client_module.SandboxClient.task_sql('scans_v2_repl', scan_id, start)
+    assert 'FROM scans_v2_repl.tasks FINAL' in query
+    assert "start = toDateTime('2026-11-19 10:21:18', 'UTC')" in query
+    assert f"AND scan_id = toUUID('{scan_id}') LIMIT 1" in query
+    with pytest.raises(client_module.SandboxError):
+        client_module.SandboxClient.task_sql('other', scan_id, start)
+
+
+@pytest.mark.parametrize('scan_id,started_at', [
+    ('invalid', '2026-11-19T10:21:18Z'),
+    ('f549dadc-e402-11f1-a6f6-2fb4d4d5a685', '2026-11-19T10:21:18+05:00'),
+    ('f549dadc-e402-11f1-a6f6-2fb4d4d5a685', '2026-11-19T10:21:18Z extra'),
+])
+def test_import_rejects_invalid_lookup_before_connecting(business, scan_id, started_at):
+    with pytest.raises(RuntimeError, match='task UUID and UTC start time'):
+        business.import_scan(1, scan_id, started_at, 3)

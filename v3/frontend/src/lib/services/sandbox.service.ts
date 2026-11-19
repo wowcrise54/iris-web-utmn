@@ -7,8 +7,9 @@ export interface SandboxLog {
 }
 export interface SandboxScan {
 	id: number; case_id: number; file_id: number | null; war_room_id: number | null; file_name: string;
-	sha256: string; status: string; scan_id: string | null; verdict: string | null; error: string | null;
+	sha256: string | null; status: string; scan_id: string | null; verdict: string | null; error: string | null;
 	created_at: string; finished_at: string | null; logs?: SandboxLog[]; report?: unknown;
+	remote_task?: { start: string; status: string; priority: number; verdict_is_final: number };
 	summary?: { scan_state: string | null; threat: string | null; detections: string[] };
 }
 export interface SandboxList { enabled: boolean; checks: SandboxScan[]; target_version: string }
@@ -19,22 +20,16 @@ export function isSandboxCapture(log: Pick<SandboxLog, 'name' | 'kind' | 'error'
 }
 
 export class SandboxService {
-	static fileInfo(caseId: number, fileId: number) {
-		return ApiService.get<{ file_name: string; size: number; is_stored_zip: boolean }>(`/cases/${caseId}/sandbox/files/${fileId}/submission-info`);
-	}
 	static list(caseId: number, before?: number) {
 		return ApiService.get<SandboxList>(ApiService.withQuery(`/cases/${caseId}/sandbox`, { before }));
 	}
 	static get(caseId: number, scanId: number) {
 		return ApiService.get<SandboxScan>(`/cases/${caseId}/sandbox/${scanId}`);
 	}
-	static create(caseId: number, fileId: number, warRoomId?: number) {
+	static create(caseId: number, scanId: string, startedAt: string) {
 		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox`, {
-			file_id: fileId, war_room_id: warRoomId, confirmed: true
+			scan_id: scanId, started_at: startedAt
 		});
-	}
-	static resume(caseId: number, scanId: number) {
-		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox/${scanId}/resume`, {});
 	}
 	static acknowledge(caseId: number, scanId: number) {
 		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox/${scanId}/acknowledge`, { confirmed: true });
