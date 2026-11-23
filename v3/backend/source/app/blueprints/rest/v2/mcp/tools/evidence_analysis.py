@@ -9,7 +9,7 @@ from app.models.errors import BusinessProcessingError
 
 @mcp_tool(name='iris_case_evidence_analyze',
     description='Start asynchronous local PCAP/PCAPNG analysis (case file_id OR sandbox scan_id+log_id), '
-                'or bounded Yuki analysis of sandbox logs (kind=sandbox, scan_id). No video/payload extraction. '
+                'or Yuki analysis of imported Sandbox ba_events (kind=sandbox, scan_id). No video/payload extraction. '
                 'Returns job id; do not busy-poll. Use iris_case_evidence_analysis_get when ready. '
                 'Does not modify case evidence; Sandbox summaries use the configured LLM and token budget.',
     input_schema={'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['pcap', 'sandbox']},

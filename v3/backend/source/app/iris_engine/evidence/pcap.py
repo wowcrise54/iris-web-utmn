@@ -23,8 +23,11 @@ def capture_bytes(raw):
             raw = source.read(MAX_INPUT + 1)
     elif raw.startswith(b'\x28\xb5\x2f\xfd'):
         import zstandard
-        with zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)) as source:
-            raw = source.read(MAX_INPUT + 1)
+        try:
+            with zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)) as source:
+                raw = source.read(MAX_INPUT + 1)
+        except zstandard.ZstdError as exc:
+            raise ValueError('Invalid compressed capture') from exc
     if len(raw) > MAX_INPUT:
         raise ValueError('Expanded capture exceeds 100 MiB limit')
     if raw[:4] not in MAGICS:

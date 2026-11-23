@@ -38,26 +38,6 @@ def validate_url(value):
     return url if p.path else url + '/mcp'
 
 
-def report_summary(report):
-    result = report.get('result', {}) if isinstance(report, dict) else {}
-    detections = []
-
-    def visit(node):
-        if isinstance(node, dict):
-            for item in node.get('detections', []) if isinstance(node.get('detections'), list) else []:
-                name = item.get('detect') if isinstance(item, dict) else None
-                if isinstance(name, str) and name not in detections and len(detections) < 8:
-                    detections.append(name[:160])
-            for value in node.values():
-                visit(value)
-        elif isinstance(node, list):
-            for value in node:
-                visit(value)
-    visit(report)
-    return {'verdict': result.get('verdict'), 'threat': result.get('threat'),
-            'scan_state': result.get('scan_state'), 'detections': detections}
-
-
 def decode_rows(result):
     try:
         if result.get('isError'):

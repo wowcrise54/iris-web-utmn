@@ -265,59 +265,28 @@ def test_adapters_do_not_mark_abrupt_stream_as_completed(events, monkeypatch, na
     assert response.close.called
 
 
-def test_sequential_pages_cover_all_sources_and_exclude_binary(monkeypatch, tmp_path):
+def test_yuki_pages_only_cover_behavioral_events(tmp_path):
     text = load(ENGINE / 'text.py', 'evidence_text_sequence_test')
-    raw = ('начало\n' + 'event command line\n' * 10000 + 'critical last event').encode()
-    entries = [SimpleNamespace(id=i, name=name, kind=kind, size=len(content), sha256=str(i), error=None, content=content)
-               for i, name, kind, content in [(1, 'events.log.gz', 'EVENT_NORMALIZED', gzip.compress(raw)),
-                                              (2, 'short.log', 'EVENT_CORRELATED', b'important short log'),
-                                              (3, 'video.mp4', 'SCREENSHOT', b'video')]]
-    query = Mock()
-    query.options.return_value.filter_by.return_value.order_by.return_value = entries
-    monkeypatch.setitem(sys.modules, 'app.models.sandbox', SimpleNamespace(SandboxLog=SimpleNamespace(query=query, content='content', id='id')))
-    namespace = dict(json=json, hashlib=__import__('hashlib'), defer=lambda x:x,
-        db=SimpleNamespace(session=Mock()), text_chunks=text.text_chunks, write_pages=text.write_pages,
+    behavior = {'events': [{'type': 'process', 'name': 'event command line' * 10000}],
+                'total': 401, 'truncated': True}
+    scan = SimpleNamespace(id=7, report={'legacy': 'excluded legacy report'})
+    namespace = dict(json=json, hashlib=__import__('hashlib'), write_pages=text.write_pages,
         TextPages=text.TextPages, cache_folder=lambda _:tmp_path, MAX_CACHE_BYTES=text.MAX_CACHE_BYTES,
-        ptsandbox=SimpleNamespace(get_scan=lambda *args:SimpleNamespace(id=7,report={
-            'large': 'r' * 120000, 'behavioral_events': {
-                'events': [{'type': 'process', 'name': 'mcp-event-fixture'}],
-                'total': 401, 'truncated': True,
-            },
-        })))
+        ptsandbox=SimpleNamespace(get_scan=lambda *args:scan, analysis_events=lambda scan:behavior))
     collect = extract(ENGINE / 'tasks.py', 'evidence_pages', namespace)
-    job = SimpleNamespace(id=9, case_id=2, source={'scan_id':7}, progress=0, result={})
+    job = SimpleNamespace(id=9, case_id=2, source={'scan_id':7}, progress=3,
+                          result={'text_analysis_version': 2, 'summary': 'legacy notes'})
     chunks, omissions = collect(job)
-    assert len(chunks) > 20
-    assert any('1 of 401 events' in omission for omission in omissions)
-    assert any('mcp-event-fixture' in chunks[i]['text'] and chunks[i]['source'] == 'sandbox:7:report'
-               for i in range(len(chunks)))
-    selected = [chunks[i] for i in range(len(chunks)) if chunks[i]['source']=='sandbox:7:log:1']
-    assert ''.join(page['text'] for page in selected).encode() == raw
-    assert selected[-1]['text'].endswith('critical last event')
-    assert all(page['end_offset']==selected[i+1]['offset'] for i,page in enumerate(selected[:-1]))
-    assert chunks.coverage(len(chunks))[1]['complete']
-    assert chunks.coverage(1)[1]['processed_pages']==0
-    assert chunks.coverage(len(chunks))[3]['excluded']
-    assert not chunks.references('[sandbox:7:log:1@999999999]')
-    assert chunks.references('[sandbox:7:log:1@0]')[0]['text'].startswith('начало')
-    # Cached pages are reused, without rerunning the decoder.
-    namespace['text_chunks'] = Mock(side_effect=AssertionError('must reuse cache'))
-    again, _ = collect(job)
-    assert len(again)==len(chunks)
-    # Rebuild a lost cache without losing a sequential checkpoint.
-    namespace['text_chunks'] = text.text_chunks
-    (tmp_path/'1.idx').unlink()
-    job.progress = 5
-    rebuilt, _ = collect(job)
-    assert job.progress == 5 and len(rebuilt) == len(chunks)
-    assert rebuilt[5] == chunks[5]
-    # Old sampled checkpoints must restart, not mix with a full-pass report.
-    job.result.pop('text_analysis_version')
-    job.result['summary'] = 'legacy sampled notes'
-    collect(job)
     assert job.progress == 0 and 'summary' not in job.result
     assert job.result['legacy_checkpoint_restarted']
-    entries[0].sha256='changed'
+    assert len(chunks) > 5 and '1 of 401 events' in omissions[0]
+    assert ''.join(chunks[i]['text'] for i in range(len(chunks))) == json.dumps(behavior, ensure_ascii=False)
+    assert chunks.coverage(len(chunks))[0]['complete']
+    (tmp_path/'0.idx').unlink()
+    job.progress = 5
+    rebuilt, _ = collect(job)
+    assert job.progress == 5 and rebuilt[5] == chunks[5]
+    behavior['total'] += 1
     with pytest.raises(ValueError, match='Source evidence changed'):
         collect(job)
 

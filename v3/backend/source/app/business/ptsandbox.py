@@ -1,18 +1,18 @@
-"""Case-scoped sandbox operations, secrets and bounded log reading."""
+"""Case-scoped Sandbox tasks, MCP events and stored PCAP access."""
 import copy
 import datetime as dt
+import re
 from uuid import UUID
 from sqlalchemy import func, select
 from pathlib import Path
 
 from sqlalchemy.orm import defer
 from app.db import db
-from app.iris_engine.evidence.text import text_chunks, BinaryLogError
 from app.models.models import IrisModule
 from app.models.sandbox import SandboxScan, SandboxLog
 from app.models.errors import BusinessProcessingError
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
-from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, report_summary, parse_verify_tls
+from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, parse_verify_tls
 
 MODULE = 'iris_ptsandbox_module'
 
@@ -122,11 +122,10 @@ def projection(scan, detail=False):
             if behavior:
                 result['behavioral_events'] = {'total': behavior['total'],
                     'included': len(behavior['events']), 'truncated': behavior['truncated']}
-        result['report'] = scan.report
-        result['summary'] = report_summary(scan.report)
         result['logs'] = [{'id': log.id, 'name': log.name, 'kind': log.kind, 'size': log.size,
                            'sha256': log.sha256, 'error': log.error}
-                          for log in SandboxLog.query.options(defer(SandboxLog.content)).filter_by(scan_id=scan.id).order_by(SandboxLog.id)]
+                          for log in SandboxLog.query.options(defer(SandboxLog.content))
+                          .filter_by(scan_id=scan.id).order_by(SandboxLog.id) if is_capture(log.name)]
     return result
 
 
@@ -223,36 +222,21 @@ def import_scan(case_id, scan_id, started_at, user_id, *, include_events=False):
     return projection(scan)
 
 
-def read_log(case_id, scan_id, log_id):
+def is_capture(name):
+    return bool(re.search(r'\.pcap(?:ng)?(?:\.(?:gz|zst))?$', name, re.IGNORECASE))
+
+
+def read_capture(case_id, scan_id, log_id):
     get_scan(case_id, scan_id)
-    log = SandboxLog.query.filter_by(scan_id=scan_id, id=log_id).first()
-    if not log:
-        raise LookupError('Unknown sandbox log')
+    log = SandboxLog.query.options(defer(SandboxLog.content)).filter_by(scan_id=scan_id, id=log_id).first()
+    if not log or not is_capture(log.name):
+        raise LookupError('Unknown Sandbox PCAP')
     return log
 
 
-def text_page(log, offset=0, length=12000):
-    if log.content is None:
-        raise BusinessProcessingError(log.error or 'Log is not available')
-    state, parts, position = {}, [], 0
-    wanted = max(0, int(offset))
-    length = min(12000, max(1, int(length)))
-    stream = text_chunks(bytes(log.content), state)
-    try:
-        for chunk in stream:
-            end = position + len(chunk)
-            if end > wanted:
-                parts.append(chunk[max(0, wanted - position):max(0, wanted + length + 1 - position)])
-            position = end
-            if position > wanted + length:
-                break
-    except BinaryLogError:
-        raise BusinessProcessingError('Binary log: download the original; textual analysis is unavailable') from None
-    except Exception:
-        raise BusinessProcessingError('Unable to decode this log; download the original') from None
-    finally:
-        stream.close()
-    text = ''.join(parts)
-    return {'log_id': log.id, 'name': log.name, 'offset': wanted, 'text': text[:length],
-            'next_offset': wanted + length if len(text) > length else None,
-            'truncated': state.get('truncated', False), 'untrusted_data': True}
+def analysis_events(scan):
+    report = scan.report or {}
+    behavior = report.get('behavioral_events') if scan.options.get('transport') == 'mcp' else None
+    if not behavior or not behavior.get('events'):
+        raise BusinessProcessingError('Load behavioral events before starting Yuki analysis')
+    return behavior

@@ -1,18 +1,13 @@
 """Read-only deployment smoke. Reads the local administrator key without printing it."""
-from types import SimpleNamespace
 import requests
-import zstandard
 
 from app import app
 from app.models.authorization import User, Permissions
 from app.iris_engine.access_control.utils import ac_get_effective_permissions_of_user
 from app.models.sandbox import SandboxScan
-from app.business.ptsandbox import text_page
 
 
 def main():
-    compressed = zstandard.ZstdCompressor().compress(b'bounded zstd runtime fixture')
-    assert text_page(SimpleNamespace(content=compressed, name='trace.zst', id=1))['text'] == 'bounded zstd runtime fixture'
     with app.app_context():
         user = next(u for u in User.query.filter_by(active=True).order_by(User.id)
                     if ac_get_effective_permissions_of_user(u) & Permissions.server_administrator.value)

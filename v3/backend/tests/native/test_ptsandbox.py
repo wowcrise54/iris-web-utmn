@@ -1,7 +1,6 @@
 """Transport and worker failure contracts without booting IRIS or contacting an appliance."""
 import ast
 from datetime import datetime
-import gzip
 import importlib.util
 import json
 import sys
@@ -147,14 +146,9 @@ def load_without_app_imports(relative_path, namespace):
 
 @pytest.fixture
 def business(client_module):
-    spec = importlib.util.spec_from_file_location('sandbox_text_helpers_test', SOURCE / 'app/iris_engine/evidence/text.py')
-    helpers = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(helpers)
     return load_without_app_imports('app/business/ptsandbox.py', {
         'BusinessProcessingError': RuntimeError, 'SandboxError': client_module.SandboxError,
-        'text_chunks': helpers.text_chunks, 'BinaryLogError': helpers.BinaryLogError,
         'SandboxClient': client_module.SandboxClient, 'validate_url': client_module.validate_url,
-        'report_summary': client_module.report_summary,
         'parse_verify_tls': client_module.parse_verify_tls,
         'encrypt_secret': lambda value: 'encrypted:' + value,
     })
@@ -208,20 +202,6 @@ def test_legacy_module_requires_fresh_mcp_configuration(business, monkeypatch):
     assert row.module_config is config
 
 
-def test_text_logs_are_paged_and_compressed_logs_supported(business):
-    log = SimpleNamespace(id=4, name='events.json.gz', content=gzip.compress(b'abcdefghijk'))
-    first = business.text_page(log, offset=0, length=4)
-    assert first['text'] == 'abcd' and first['next_offset'] == 4
-    second = business.text_page(log, offset=4, length=20)
-    assert second['text'] == 'efghijk' and second['next_offset'] is None
-    assert second['untrusted_data'] is True
-
-
-def test_binary_logs_not_treated_as_model_instructions(business):
-    with pytest.raises(RuntimeError, match='Binary log'):
-        business.text_page(SimpleNamespace(content=b'\x0a\x0d\x0d\x0a' + b'payload', id=1, name='network.pcapng'))
-
-
 @pytest.mark.parametrize('old_status,new_status', [
     ('queued', 'failed'), ('submitting', 'submission_unknown'), ('completed', 'completed'),
 ])
@@ -236,16 +216,6 @@ def test_pending_rest_job_is_retired_without_remote_requests(old_status, new_sta
     tasks.process_scan(1)
     assert scan.status == new_status
     assert scan.report == {'result': {'verdict': 'CLEAN'}}
-
-
-def test_text_source_citations_work_past_sixteen_mib(business):
-    raw = b'event\n' * 3000000 + 'последнее событие'.encode()
-    decoded = raw.decode()
-    offset = len(decoded)-len('последнее событие')
-    log = SimpleNamespace(id=4, name='large.log.gz', content=gzip.compress(raw))
-    page = business.text_page(log, offset=offset)
-    assert offset>16*1024*1024
-    assert page['text']=='последнее событие' and page['next_offset'] is None
 
 
 def test_task_query_is_bounded_to_exact_scan_and_utc_start(client_module):
@@ -298,3 +268,24 @@ def test_large_event_response_retries_with_smaller_chronology(client_module):
     assert behavior['truncated'] and behavior['total'] == 400
     assert client.query.call_args_list[1].args[0].endswith('LIMIT 400')
     assert client.query.call_args_list[2].args[0].endswith('LIMIT 200')
+
+
+@pytest.mark.parametrize('name,expected', [
+    ('traffic.pcap', True), ('traffic.PCAPNG.gz', True), ('traffic.pcap.zst', True),
+    ('events.log.gz', False), ('report.zip', False), ('traffic.pcap.zip', False),
+])
+def test_only_capture_filenames_are_allowed(business, name, expected):
+    assert business.is_capture(name) is expected
+
+
+def test_yuki_accepts_only_nonempty_mcp_events(business):
+    behavior = {'events': [{'type': 'process'}]}
+    assert business.analysis_events(SimpleNamespace(
+        options={'transport': 'mcp'}, report={'behavioral_events': behavior, 'legacy': 'ignored'}
+    )) is behavior
+    for scan in (
+        SimpleNamespace(options={}, report={'behavioral_events': behavior}),
+        SimpleNamespace(options={'transport': 'mcp'}, report={'behavioral_events': {'events': []}}),
+    ):
+        with pytest.raises(RuntimeError, match='Load behavioral events'):
+            business.analysis_events(scan)

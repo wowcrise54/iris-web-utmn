@@ -1,14 +1,14 @@
-"""Authenticated MCP task import and case-scoped report/log access."""
-import datetime as dt
+"""Authenticated MCP task import and case-scoped PCAP access."""
 import io
+import zlib
 from werkzeug.utils import secure_filename
 from app.web import Blueprint, request, send_file
 from app.blueprints.access_controls import ac_api_requires, ac_fast_check_current_user_has_case_access, ac_api_return_access_denied
 from app.blueprints.iris_user import iris_current_user
 from app.blueprints.rest.endpoints import response_api_success, response_api_error, response_api_created, response_api_not_found
 from app.business import ptsandbox as sandbox
-from app.db import db
 from app.models.authorization import CaseAccessLevel
+from app.iris_engine.evidence.pcap import capture_bytes
 from app.models.errors import BusinessProcessingError
 from app.blueprints.rest.api_doc import api_doc
 
@@ -69,7 +69,7 @@ def create_check(case_identifier):
 
 @case_sandbox_blueprint.get('/<int:identifier>')
 @ac_api_requires()
-@api_doc(tags=['PTSandbox'], summary='Get a case sandbox check and log metadata')
+@api_doc(tags=['PTSandbox'], summary='Get a case sandbox check and PCAP metadata')
 def get_check(case_identifier, identifier):
     if not access(case_identifier):
         return ac_api_return_access_denied()
@@ -79,39 +79,25 @@ def get_check(case_identifier, identifier):
         return response_api_not_found()
 
 
-@case_sandbox_blueprint.post('/<int:identifier>/acknowledge')
-@ac_api_requires()
-@api_doc(tags=['PTSandbox'], summary='Acknowledge manual investigation of an ambiguous submission')
-def acknowledge_unknown(case_identifier, identifier):
-    if not access(case_identifier, True):
-        return ac_api_return_access_denied()
-    raw = request.get_json() or {}
-    try:
-        scan = sandbox.get_scan(case_identifier, identifier)
-        if scan.status != 'submission_unknown' or not isinstance(raw, dict) or raw.get('confirmed') is not True:
-            return response_api_error('Confirm that you have checked the task in PT Sandbox')
-        scan.status = 'acknowledged'
-        scan.updated_at = dt.datetime.utcnow()
-        db.session.commit()
-        return response_api_success(sandbox.projection(scan))
-    except LookupError:
-        return response_api_not_found()
-
-
 @case_sandbox_blueprint.get('/<int:identifier>/logs/<int:log_id>')
 @ac_api_requires()
-@api_doc(tags=['PTSandbox'], summary='Download an original sandbox log or read a text page')
+@api_doc(tags=['PTSandbox'], summary='Download a stored Sandbox PCAP')
 def get_log(case_identifier, identifier, log_id):
     if not access(case_identifier):
         return ac_api_return_access_denied()
     try:
-        log = sandbox.read_log(case_identifier, identifier, log_id)
         if request.args.get('view') == 'text':
-            return response_api_success(sandbox.text_page(log, offset=max(0, request.args.get('offset', 0, type=int))))
+            return response_api_not_found()
+        log = sandbox.read_capture(case_identifier, identifier, log_id)
         if log.content is None:
-            return response_api_error(log.error or 'Log unavailable')
-        response = send_file(io.BytesIO(log.content), as_attachment=True,
-                             download_name=secure_filename(log.name) or 'sandbox-log.bin',
+            return response_api_error(log.error or 'PCAP unavailable')
+        raw = bytes(log.content)
+        try:
+            capture_bytes(raw)
+        except (ValueError, OSError, EOFError, zlib.error):
+            return response_api_error('Capture is invalid or exceeds 100 MiB')
+        response = send_file(io.BytesIO(raw), as_attachment=True,
+                             download_name=secure_filename(log.name) or 'sandbox.pcap',
                              mimetype='application/octet-stream')
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['Cache-Control'] = 'no-store'

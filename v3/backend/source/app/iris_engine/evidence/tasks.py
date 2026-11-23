@@ -9,13 +9,12 @@ from app.models.authorization import User, CaseAccessLevel
 from app.models.case_chat import CaseChatConversation, CaseChatMessage, ROLE_ASSISTANT
 from app.models.evidence_analysis import EvidenceAnalysis
 from app.models.chatbot_policy import ChatbotPolicy
-from sqlalchemy.orm import defer
 from app.business.access_controls import ac_fast_check_user_has_case_access
 from app.business import case_chat, ptsandbox
 from app.business.evidence_analysis import read_source
 from app.iris_engine.evidence.pcap import analyze_capture
 from app.iris_engine.evidence.summary import SUMMARY_TOKENS, FINAL_TOKENS, summary_messages
-from app.iris_engine.evidence.text import text_chunks, write_pages, TextPages, cache_folder, clear_cache, prune_caches, MAX_CACHE_BYTES
+from app.iris_engine.evidence.text import write_pages, TextPages, cache_folder, clear_cache, prune_caches, MAX_CACHE_BYTES
 from app.iris_engine.llm.client import load_config, get_llm_provider
 from app.iris_engine.llm.policy import resolve_for_conversation
 from app.iris_engine.llm.providers.base import TextDelta, MessageEnd, Error
@@ -35,13 +34,11 @@ def authorized(job):
 
 def evidence_pages(job):
     scan = ptsandbox.get_scan(job.case_id, job.source['scan_id'])
-    from app.models.sandbox import SandboxLog
-    entries = list(SandboxLog.query.options(defer(SandboxLog.content)).filter_by(scan_id=scan.id).order_by(SandboxLog.id))
-    report = json.dumps(scan.report or {}, ensure_ascii=False)
-    signature = hashlib.sha256(json.dumps([report, [(e.id, e.name, e.kind, e.size, e.sha256, e.error)
-                                                    for e in entries]], ensure_ascii=False).encode()).hexdigest()
+    behavior = ptsandbox.analysis_events(scan)
+    report = json.dumps(behavior, ensure_ascii=False)
+    signature = hashlib.sha256(report.encode()).hexdigest()
     result = dict(job.result or {})
-    if result.get('text_analysis_version') != 2:
+    if result.get('text_analysis_version') != 3:
         # Sampled checkpoints cannot establish sequential coverage; start those jobs at page zero.
         if job.progress:
             job.progress = 0
@@ -54,48 +51,19 @@ def evidence_pages(job):
     manifest = result.get('_text_manifest')
     if manifest is None or any(not (folder / f'{n}.{ext}').is_file()
                                for n in range(len(manifest)) for ext in ('text', 'idx')):
-        manifest, omissions, used = [], [], 0
-        behavior = (scan.report or {}).get('behavioral_events')
-        if behavior and behavior.get('truncated'):
+        omissions = []
+        if behavior['truncated']:
             omissions.append(f'sandbox:{scan.id}:report: behavioral event chronology is incomplete '
                              f'({len(behavior["events"])} of {behavior["total"]} events excluding raw packets)')
-        inputs = [(None, (report[i:i + 12000] for i in range(0, len(report), 12000)))]
-        inputs.extend((entry, None) for entry in entries)
-        for number, (entry, chunks) in enumerate(inputs):
-            state = {}
-            excluded = None
-            unavailable = False
-            label = f'sandbox:{scan.id}:report' if entry is None else f'sandbox:{scan.id}:log:{entry.id}'
-            url = f'/case/{job.case_id}/sandbox?scan={scan.id}'
-            if entry is not None:
-                url += f'&text_log={entry.id}'
-                if entry.kind in ('NETWORK', 'GRAPH', 'SCREENSHOT') or entry.name.lower().endswith('.mp4'):
-                    excluded = 'Non-text attachment; use its original viewer or PCAP analysis'
-                if excluded:
-                    chunks = iter(())
-                elif entry.content is None:
-                    unavailable = True
-                    chunks = iter(())
-                    omissions.append(f'{label}: source log unavailable')
-                else:
-                    chunks = text_chunks(bytes(entry.content), state)
-            try:
-                info = write_pages(folder, number, chunks, budget=max(0, MAX_CACHE_BYTES - used))
-            finally:
-                if entry is not None:
-                    db.session.expire(entry, ['content'])
-            used += info['size']
-            if state.get('truncated') or info['truncated']:
-                info['truncated'] = True
-                omissions.append(f'{label}: decoded log or cache size limit reached; coverage is incomplete')
-            if info['error']:
-                omissions.append(f'{label}: log decoding failed; coverage is incomplete')
-            if unavailable:
-                info['error'] = 'Unavailable'
-            manifest.append({**info, 'source': label, 'source_url': url,
-                             'log_id': entry.id if entry is not None else None, 'name': entry.name if entry is not None else 'Report', 'excluded': excluded})
+        label = f'sandbox:{scan.id}:report'
+        chunks = (report[i:i + 12000] for i in range(0, len(report), 12000))
+        info = write_pages(folder, 0, chunks, budget=MAX_CACHE_BYTES)
+        if info['truncated'] or info['error']:
+            omissions.append(f'{label}: event cache could not store all events')
+        manifest = [{**info, 'source': label, 'source_url': f'/case/{job.case_id}/sandbox?scan={scan.id}',
+                     'log_id': None, 'name': 'PT Sandbox ba_events', 'excluded': None}]
         result.update(_text_manifest=manifest, _text_omissions=omissions)
-    result.update(text_analysis_version=2, source_signature=signature)
+    result.update(text_analysis_version=3, source_signature=signature)
     job.result = result
     return TextPages(folder, manifest), result.get('_text_omissions', [])
 

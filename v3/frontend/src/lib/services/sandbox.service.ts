@@ -11,14 +11,12 @@ export interface SandboxTaskMatch {
 export interface SandboxScan {
 	id: number; case_id: number; file_id: number | null; war_room_id: number | null; file_name: string;
 	sha256: string | null; status: string; scan_id: string | null; verdict: string | null; error: string | null;
-	created_at: string; finished_at: string | null; logs?: SandboxLog[]; report?: unknown;
+	created_at: string; finished_at: string | null; logs?: SandboxLog[];
 	remote_task?: { start?: string; started_utc?: string; status: string; priority: number; verdict_is_final: number };
 	mcp_started_at?: string;
 	behavioral_events?: { total: number; included: number; truncated: boolean };
-	summary?: { scan_state: string | null; threat: string | null; detections: string[] };
 }
 export interface SandboxList { enabled: boolean; checks: SandboxScan[]; target_version: string }
-export interface LogPage { text: string; offset: number; next_offset: number | null; truncated: boolean }
 
 export function isSandboxCapture(log: Pick<SandboxLog, 'name' | 'kind' | 'error'>) {
 	return !log.error && /\.(pcap|pcapng)(\.(gz|zst))?$/i.test(log.name);
@@ -40,12 +38,6 @@ export class SandboxService {
 		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox`, {
 			scan_id: scanId, started_at: startedAt, include_events: true
 		});
-	}
-	static acknowledge(caseId: number, scanId: number) {
-		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox/${scanId}/acknowledge`, { confirmed: true });
-	}
-	static text(caseId: number, scanId: number, logId: number, offset = 0) {
-		return ApiService.get<LogPage>(`/cases/${caseId}/sandbox/${scanId}/logs/${logId}?view=text&offset=${offset}`);
 	}
 	static async download(caseId: number, scanId: number, log: SandboxLog) {
 		if (auth.isTokenExpired() && !auth.isRefreshTokenExpired()) await AuthService.refreshToken();

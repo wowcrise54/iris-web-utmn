@@ -76,10 +76,10 @@ def main():
             assert updated['id'] == created['id'] and updated['status'] == 'completed'
             imported = business.projection(db.session.get(SandboxScan, created['id']), detail=True)
             assert imported['remote_task']['priority'] == 200 and imported['verdict'] == 'CLEAN'
-            assert 'fixture.exe' in business.text_page(SandboxLog.query.filter_by(scan_id=old.id).one())['text']
+            assert business.projection(old, detail=True)['logs'] == []
             assert all('FROM scans_v2.tasks FINAL' in call.args[0] and scan_id in call.args[0]
                        for call in fake.query.call_args_list)
-            print('MCP import: preliminary → final, duplicate-free reimport and legacy log access passed')
+            print('MCP import: preliminary → final, duplicate-free reimport and legacy log exclusion passed')
         finally:
             session.remove()
             db.session = original_session

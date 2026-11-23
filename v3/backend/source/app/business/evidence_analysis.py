@@ -45,7 +45,7 @@ def read_source(case_id, source):
         if not path.is_file() or path.stat().st_size > MAX_INPUT:
             raise BusinessProcessingError('Source file is missing or exceeds 100 MiB')
         return path.read_bytes()
-    log = ptsandbox.read_log(case_id, source['scan_id'], source['log_id'])
+    log = ptsandbox.read_capture(case_id, source['scan_id'], source['log_id'])
     if log.content is None:
         raise BusinessProcessingError('Source log is unavailable')
     return bytes(log.content)
@@ -61,10 +61,10 @@ def start_job(case_id, user, body):
     valid = set(source) == {'scan_id'} if kind == 'sandbox' else set(source) in ({'file_id'}, {'scan_id', 'log_id'})
     if not valid:
         raise BusinessProcessingError('Select one case file or a Sandbox check/log')
-    if 'scan_id' in source:
-        ptsandbox.get_scan(case_id, source['scan_id'])
+    if kind == 'sandbox':
+        ptsandbox.analysis_events(ptsandbox.get_scan(case_id, source['scan_id']))
     if 'log_id' in source:
-        ptsandbox.read_log(case_id, source['scan_id'], source['log_id'])
+        ptsandbox.read_capture(case_id, source['scan_id'], source['log_id'])
     # Content validation runs in the worker; request handlers never read/decompress large binaries.
     if 'file_id' in source:
         error, file = ptsandbox.datastore_get_local_file_path(source['file_id'], case_id)
