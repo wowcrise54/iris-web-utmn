@@ -11,6 +11,10 @@ class SandboxError(Exception):
     pass
 
 
+class SandboxResponseTooLarge(SandboxError):
+    pass
+
+
 def parse_verify_tls(value):
     if isinstance(value, bool):
         return value
@@ -132,7 +136,7 @@ class SandboxClient:
         for chunk in response.iter_content(8192):
             total += len(chunk)
             if total > 1024 * 1024:
-                raise SandboxError('PT Sandbox MCP response exceeds 1 MiB')
+                raise SandboxResponseTooLarge('PT Sandbox MCP response exceeds 1 MiB')
             pending.extend(chunk)
             if sse:
                 while (newline := pending.find(b'\n')) >= 0:
@@ -170,16 +174,60 @@ class SandboxClient:
         self.query(self.task_sql(database, UUID(int=0), datetime(2000, 1, 1)))
         return {'ok': True}
 
+    TASK_COLUMNS = (
+        "toString(toTimeZone(start, 'UTC')) AS started_utc, toString(scan_id) AS sid, "
+        "status, action, entry_point_type, object_type, object_name, "
+        "correlated_verdict_threat_level AS verdict, correlated_verdict_priority AS priority, verdict_is_final"
+    )
+
     @staticmethod
-    def task_sql(database, scan_id, start):
+    def scan_filter(database, scan_id, start):
         if database not in ('scans_v2', 'scans_v2_repl'):
             raise SandboxError('Unknown PT Sandbox database')
         scan_id = UUID(str(scan_id))
         start = start.strftime('%Y-%m-%d %H:%M:%S')
+        return f"start = toDateTime('{start}', 'UTC') AND scan_id = toUUID('{scan_id}')"
+
+    @classmethod
+    def task_sql(cls, database, scan_id, start):
+        where = cls.scan_filter(database, scan_id, start)
+        return f'SELECT {cls.TASK_COLUMNS} FROM {database}.tasks FINAL WHERE {where} LIMIT 1'
+
+    @classmethod
+    def search_sql(cls, database, name, days):
+        if database not in ('scans_v2', 'scans_v2_repl'):
+            raise SandboxError('Unknown PT Sandbox database')
+        if type(days) is not int or not 1 <= days <= 90:
+            raise SandboxError('Search window must be between 1 and 90 days')
+        literal = name.encode('utf-8').hex()
         return (
-            'SELECT start, toString(scan_id) AS sid, status, action, entry_point_type, object_type, '
-            'object_name, correlated_verdict_threat_level AS verdict, '
-            'correlated_verdict_priority AS priority, verdict_is_final '
-            f'FROM {database}.tasks FINAL '
-            f"WHERE start = toDateTime('{start}', 'UTC') AND scan_id = toUUID('{scan_id}') LIMIT 1"
+            f'SELECT {cls.TASK_COLUMNS} FROM {database}.tasks FINAL '
+            f'WHERE start >= now() - INTERVAL {days} DAY '
+            f"AND positionCaseInsensitiveUTF8(object_name, unhex('{literal}')) > 0 "
+            'ORDER BY start DESC, scan_id DESC LIMIT 30'
         )
+
+    def task_events(self, database, scan_id, start):
+        where = self.scan_filter(database, scan_id, start) + " AND type != 'netpacket'"
+        table = f'{database}.ba_events'
+        counts = self.query(f'SELECT type, count() AS c FROM {table} WHERE {where} GROUP BY type ORDER BY c DESC')
+        total = sum(int(row['c']) for row in counts)
+        events = []
+        if total:
+            fields = (
+                "toString(toTimeZone(create_time, 'UTC')) AS t, type, node_id, stage_index, pid, target_pid, "
+                "name, arguments, process_action, process_name, ip, url, host, port, src_ip, dst_ip, country, "
+                "key, key_data, value, description, detect_name, mitre_threat_id, confidence"
+            )
+            sql = (f'SELECT {fields} FROM {table} WHERE {where} '
+                   'ORDER BY create_time, node_id, stage_index, type')
+            limit = min(400, total)
+            while True:
+                try:
+                    events = self.query(f'{sql} LIMIT {limit}')
+                    break
+                except SandboxResponseTooLarge:
+                    if limit == 1:
+                        raise
+                    limit = max(1, limit // 2)
+        return {'counts': counts, 'total': total, 'events': events, 'truncated': len(events) < total}

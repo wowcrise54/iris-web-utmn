@@ -117,6 +117,11 @@ def projection(scan, detail=False):
     if detail:
         if scan.options.get('transport') == 'mcp':
             result['remote_task'] = (scan.report or {}).get('task')
+            result['mcp_started_at'] = scan.options.get('started_at')
+            behavior = (scan.report or {}).get('behavioral_events')
+            if behavior:
+                result['behavioral_events'] = {'total': behavior['total'],
+                    'included': len(behavior['events']), 'truncated': behavior['truncated']}
         result['report'] = scan.report
         result['summary'] = report_summary(scan.report)
         result['logs'] = [{'id': log.id, 'name': log.name, 'kind': log.kind, 'size': log.size,
@@ -149,7 +154,24 @@ def checked_module_config():
     return module, cfg
 
 
-def import_scan(case_id, scan_id, started_at, user_id):
+def search_tasks(name, days):
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 255:
+        raise BusinessProcessingError('Enter a file name of up to 255 characters')
+    try:
+        _, cfg = checked_module_config()
+        client = client_from_config(cfg)
+        try:
+            client.connect()
+            rows = client.query(client.search_sql(cfg['database'], name.strip(), days))
+        finally:
+            client.close()
+        return [{**row, 'started_at': row['started_utc'].replace(' ', 'T') + 'Z'} for row in rows]
+    except (SandboxError, KeyError, AttributeError) as exc:
+        message = str(exc) if isinstance(exc, SandboxError) else 'Invalid PT Sandbox search response'
+        raise BusinessProcessingError(message) from None
+
+
+def import_scan(case_id, scan_id, started_at, user_id, *, include_events=False):
     try:
         if not isinstance(scan_id, str) or not isinstance(started_at, str):
             raise ValueError
@@ -166,13 +188,14 @@ def import_scan(case_id, scan_id, started_at, user_id):
         try:
             client.connect()
             rows = client.query(client.task_sql(cfg['database'], scan_id, start))
+            if not rows:
+                raise SandboxError('PT Sandbox task not found at that UTC start time')
+            row = rows[0]
+            if len(rows) != 1 or row.get('sid') != scan_id or row.get('verdict_is_final') not in (0, 1):
+                raise SandboxError('PT Sandbox returned an invalid task summary')
+            behavior = client.task_events(cfg['database'], scan_id, start) if include_events else None
         finally:
             client.close()
-        if not rows:
-            raise SandboxError('PT Sandbox task not found at that UTC start time')
-        row = rows[0]
-        if len(rows) != 1 or row.get('sid') != scan_id or row.get('verdict_is_final') not in (0, 1):
-            raise SandboxError('PT Sandbox returned an invalid task summary')
     except SandboxError as exc:
         raise BusinessProcessingError(str(exc)) from None
 
@@ -191,9 +214,11 @@ def import_scan(case_id, scan_id, started_at, user_id):
         scan.file_name = str(row.get('object_name') or scan_id)[:512]
         scan.status = 'completed' if final else 'preliminary'
         scan.verdict = str(row.get('verdict') or 'UNKNOWN')[:120]
-        scan.report = {'source': 'mcp', 'task': row}
+        scan.report = {**(scan.report or {}), 'source': 'mcp', 'task': row}
         scan.updated_at = dt.datetime.now(dt.UTC).replace(tzinfo=None)
         scan.finished_at = (scan.finished_at or scan.updated_at) if final else None
+    if behavior is not None:
+        scan.report = {**scan.report, 'behavioral_events': behavior}
     db.session.commit()
     return projection(scan)
 

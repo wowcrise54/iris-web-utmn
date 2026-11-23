@@ -55,6 +55,10 @@ def evidence_pages(job):
     if manifest is None or any(not (folder / f'{n}.{ext}').is_file()
                                for n in range(len(manifest)) for ext in ('text', 'idx')):
         manifest, omissions, used = [], [], 0
+        behavior = (scan.report or {}).get('behavioral_events')
+        if behavior and behavior.get('truncated'):
+            omissions.append(f'sandbox:{scan.id}:report: behavioral event chronology is incomplete '
+                             f'({len(behavior["events"])} of {behavior["total"]} events excluding raw packets)')
         inputs = [(None, (report[i:i + 12000] for i in range(0, len(report), 12000)))]
         inputs.extend((entry, None) for entry in entries)
         for number, (entry, chunks) in enumerate(inputs):

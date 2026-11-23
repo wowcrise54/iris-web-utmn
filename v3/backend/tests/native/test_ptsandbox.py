@@ -267,3 +267,34 @@ def test_task_query_is_bounded_to_exact_scan_and_utc_start(client_module):
 def test_import_rejects_invalid_lookup_before_connecting(business, scan_id, started_at):
     with pytest.raises(RuntimeError, match='task UUID and UTC start time'):
         business.import_scan(1, scan_id, started_at, 3)
+
+
+def test_task_search_uses_literal_filename(client_module):
+    name = "file'%_\u0422\u0435\u0441\u0442"
+    sql = client_module.SandboxClient.search_sql('scans_v2', name, 7)
+    assert name not in sql
+    assert name.encode().hex() in sql
+    assert 'INTERVAL 7 DAY' in sql
+    assert 'LIMIT 30' in sql
+
+
+def test_events_summary_precedes_bounded_chronology(client_module):
+    client = client_module.SandboxClient('https://sandbox.test', 'test-token')
+    client.query = Mock(side_effect=[[{'type': 'process', 'c': 500}], [{'type': 'process'}]])
+    payload = client.task_events('scans_v2', 'f549dadc-e402-11f1-a6f6-2fb4d4d5a685', datetime(2026, 11, 19))
+    assert payload['total'] == 500 and payload['truncated']
+    summary, events = (call.args[0] for call in client.query.call_args_list)
+    assert 'GROUP BY type' in summary
+    assert 'ORDER BY create_time' in events
+    assert all("toDateTime('2026-11-19 00:00:00', 'UTC')" in q and "type != 'netpacket'" in q
+               for q in (summary, events))
+
+
+def test_large_event_response_retries_with_smaller_chronology(client_module):
+    client = client_module.SandboxClient('https://sandbox.test', 'test-token')
+    client.query = Mock(side_effect=[[{'type': 'process', 'c': 400}],
+        client_module.SandboxResponseTooLarge('oversized'), [{'type': 'process'}]])
+    behavior = client.task_events('scans_v2', 'f549dadc-e402-11f1-a6f6-2fb4d4d5a685', datetime(2026, 11, 19))
+    assert behavior['truncated'] and behavior['total'] == 400
+    assert client.query.call_args_list[1].args[0].endswith('LIMIT 400')
+    assert client.query.call_args_list[2].args[0].endswith('LIMIT 200')

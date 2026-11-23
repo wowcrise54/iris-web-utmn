@@ -278,11 +278,19 @@ def test_sequential_pages_cover_all_sources_and_exclude_binary(monkeypatch, tmp_
     namespace = dict(json=json, hashlib=__import__('hashlib'), defer=lambda x:x,
         db=SimpleNamespace(session=Mock()), text_chunks=text.text_chunks, write_pages=text.write_pages,
         TextPages=text.TextPages, cache_folder=lambda _:tmp_path, MAX_CACHE_BYTES=text.MAX_CACHE_BYTES,
-        ptsandbox=SimpleNamespace(get_scan=lambda *args:SimpleNamespace(id=7,report={'large':'r'*120000})))
+        ptsandbox=SimpleNamespace(get_scan=lambda *args:SimpleNamespace(id=7,report={
+            'large': 'r' * 120000, 'behavioral_events': {
+                'events': [{'type': 'process', 'name': 'mcp-event-fixture'}],
+                'total': 401, 'truncated': True,
+            },
+        })))
     collect = extract(ENGINE / 'tasks.py', 'evidence_pages', namespace)
     job = SimpleNamespace(id=9, case_id=2, source={'scan_id':7}, progress=0, result={})
     chunks, omissions = collect(job)
-    assert not omissions and len(chunks)>20
+    assert len(chunks) > 20
+    assert any('1 of 401 events' in omission for omission in omissions)
+    assert any('mcp-event-fixture' in chunks[i]['text'] and chunks[i]['source'] == 'sandbox:7:report'
+               for i in range(len(chunks)))
     selected = [chunks[i] for i in range(len(chunks)) if chunks[i]['source']=='sandbox:7:log:1']
     assert ''.join(page['text'] for page in selected).encode() == raw
     assert selected[-1]['text'].endswith('critical last event')

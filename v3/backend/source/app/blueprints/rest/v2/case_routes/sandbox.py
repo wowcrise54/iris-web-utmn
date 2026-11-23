@@ -35,6 +35,22 @@ def list_checks(case_identifier):
         before=request.args.get('before', type=int)), 'target_version': '5.39'})
 
 
+@case_sandbox_blueprint.get('/search')
+@ac_api_requires()
+@api_doc(tags=['PTSandbox'], summary='Search PT Sandbox tasks by file name')
+def search_tasks(case_identifier):
+    if not access(case_identifier, True):
+        return ac_api_return_access_denied()
+    try:
+        days = int(request.args.get('days', '30'))
+    except ValueError:
+        return response_api_error('Search window must be between 1 and 90 days')
+    try:
+        return response_api_success({'tasks': sandbox.search_tasks(request.args.get('name'), days)})
+    except BusinessProcessingError as exc:
+        return response_api_error(exc.get_message())
+
+
 @case_sandbox_blueprint.post('')
 @ac_api_requires()
 @api_doc(tags=['PTSandbox'], summary='Import an existing PT Sandbox task summary', response_shape='created')
@@ -46,7 +62,7 @@ def create_check(case_identifier):
         return response_api_error('Expected a task UUID and UTC start time')
     try:
         return response_api_created(sandbox.import_scan(case_identifier, raw.get('scan_id'),
-                                    raw.get('started_at'), iris_current_user.id))
+                                    raw.get('started_at'), iris_current_user.id, include_events=raw.get('include_events') is True))
     except BusinessProcessingError as exc:
         return response_api_error(exc.get_message())
 

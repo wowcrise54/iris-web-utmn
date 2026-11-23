@@ -5,11 +5,16 @@ import { AuthService } from './auth.service';
 export interface SandboxLog {
 	id: number; name: string; kind: string; size: number | null; sha256: string | null; error: string | null;
 }
+export interface SandboxTaskMatch {
+	sid: string; started_at: string; object_name: string; status: string; verdict: string; verdict_is_final: number;
+}
 export interface SandboxScan {
 	id: number; case_id: number; file_id: number | null; war_room_id: number | null; file_name: string;
 	sha256: string | null; status: string; scan_id: string | null; verdict: string | null; error: string | null;
 	created_at: string; finished_at: string | null; logs?: SandboxLog[]; report?: unknown;
-	remote_task?: { start: string; status: string; priority: number; verdict_is_final: number };
+	remote_task?: { start?: string; started_utc?: string; status: string; priority: number; verdict_is_final: number };
+	mcp_started_at?: string;
+	behavioral_events?: { total: number; included: number; truncated: boolean };
 	summary?: { scan_state: string | null; threat: string | null; detections: string[] };
 }
 export interface SandboxList { enabled: boolean; checks: SandboxScan[]; target_version: string }
@@ -26,9 +31,14 @@ export class SandboxService {
 	static get(caseId: number, scanId: number) {
 		return ApiService.get<SandboxScan>(`/cases/${caseId}/sandbox/${scanId}`);
 	}
+	static search(caseId: number, name: string, days: number) {
+		return ApiService.get<{ tasks: SandboxTaskMatch[] }>(
+			ApiService.withQuery(`/cases/${caseId}/sandbox/search`, { name, days })
+		);
+	}
 	static create(caseId: number, scanId: string, startedAt: string) {
 		return ApiService.post<SandboxScan>(`/cases/${caseId}/sandbox`, {
-			scan_id: scanId, started_at: startedAt
+			scan_id: scanId, started_at: startedAt, include_events: true
 		});
 	}
 	static acknowledge(caseId: number, scanId: number) {

@@ -5,7 +5,7 @@
 	import { EvidenceAnalysisService } from '$lib/services/evidence-analysis.service';
 	import { useLocale } from '$lib/i18n/context';
 	import { Button } from '$lib/components/ui/button';
-	import { SandboxService, isSandboxCapture, type SandboxScan, type SandboxLog, type LogPage } from '$lib/services/sandbox.service';
+	import { SandboxService, isSandboxCapture, type SandboxScan, type SandboxTaskMatch, type SandboxLog, type LogPage } from '$lib/services/sandbox.service';
 	import { CASE_ACCESS_CTX, type CaseAccessContext } from '$lib/contexts/case-access.context.svelte';
 	import { CHAT_PANEL_CTX, type ChatPanelContext } from '$lib/contexts/chat-panel.context.svelte';
 	const locale = useLocale();
@@ -18,6 +18,9 @@
 	let loading = $state(true);
 	let busy = $state(false);
 	let error = $state('');
+	let filename = $state('');
+	let days = $state(30);
+	let matches = $state<SandboxTaskMatch[] | null>(null);
 	let scanId = $state('');
 	let startedAt = $state('');
 	let aiConsent = $state(false);
@@ -41,7 +44,7 @@
 		if (selected) await selectCheck(selected.id);
 	}
 	async function load() {
-		loading = true; error = ''; selected = null; logPage = null; aiConsent = false; scanId = ''; startedAt = '';
+		loading = true; error = ''; selected = null; logPage = null; aiConsent = false; filename = ''; days = 30; matches = null; scanId = ''; startedAt = '';
 		await refresh();
 		const requested = Number(page.url.searchParams.get('scan'));
 		if (requested) {
@@ -58,12 +61,26 @@
 		const res = await SandboxService.get(caseId, id);
 		if (res.ok && res.data && typeof res.data !== 'string') selected = res.data;
 	}
-	async function submit() {
-		if (!scanId.trim() || !startedAt.trim() || busy) return;
+	async function searchTasks() {
+		if (busy || !filename.trim()) return;
+		const requestedCase = caseId;
+		busy = true; error = ''; matches = null;
+		try {
+			const res = await SandboxService.search(requestedCase, filename.trim(), days);
+			if (caseId !== requestedCase) return;
+			if (res.ok && res.data && typeof res.data !== 'string') matches = res.data.tasks;
+			else error = res.error?.message ?? t('Поиск не удался', 'Search failed');
+		} finally { busy = false; }
+	}
+	async function submit(id = scanId.trim(), start = startedAt.trim()) {
+		if (!id || !start || busy) return;
+		const requestedCase = caseId;
 		busy = true; error = '';
 		try {
-			const res = await SandboxService.create(caseId, scanId.trim(), startedAt.trim());
+			const res = await SandboxService.create(requestedCase, id, start);
+			if (caseId !== requestedCase) return;
 			if (!res.ok || !res.data || typeof res.data === 'string') { error = res.error?.message ?? t('Не удалось привязать задание', 'Unable to import task'); return; }
+			logPage = null; aiConsent = false;
 			await selectCheck(res.data.id); await refresh();
 		} finally { busy = false; }
 	}
@@ -115,11 +132,37 @@
 		{#if enabled && access.canEdit()}
 			<section class="space-y-3 rounded-lg border p-4">
 				<h2 class="font-medium">{t('Привязать задание PT Sandbox', 'Link a PT Sandbox task')}</h2>
+				<form class="space-y-2" onsubmit={(event) => { event.preventDefault(); void searchTasks(); }}>
+					<label class="block text-sm" for="sandbox-filename">{t('Имя файла', 'File name')}</label>
+					<input id="sandbox-filename" bind:value={filename} maxlength="255" class="w-full rounded border bg-background p-2" />
+					<label class="block text-sm" for="sandbox-days">{t('Период поиска', 'Search window')}</label>
+					<select id="sandbox-days" bind:value={days} class="rounded border bg-background p-2">
+						<option value={7}>{t('7 дней', '7 days')}</option>
+						<option value={30}>{t('30 дней', '30 days')}</option>
+						<option value={90}>{t('90 дней', '90 days')}</option>
+					</select>
+					<Button type="submit" disabled={!filename.trim() || busy}>{t('Найти задания', 'Find tasks')}</Button>
+				</form>
+				{#if matches?.length}
+					<ul class="divide-y rounded border">
+						{#each matches as match (`${match.sid}:${match.started_at}`)}
+							<li class="flex flex-wrap items-center justify-between gap-2 p-2 text-sm">
+								<div class="min-w-0 break-all"><strong>{match.object_name}</strong>
+									<p>{match.started_at} · {match.status} · {match.verdict}{match.verdict_is_final ? '' : t(' (предварительный)', ' (preliminary)')}</p>
+								</div>
+								<Button variant="outline" disabled={busy} onclick={() => submit(match.sid, match.started_at)}>{t('Привязать и загрузить события', 'Link and load events')}</Button>
+							</li>
+						{/each}
+					</ul>
+					{#if matches.length === 30}<p class="text-sm">{t('Показаны 30 новых совпадений. Уточните имя файла или период.', 'Showing 30 newest matches. Refine the file name or search window.')}</p>{/if}
+				{:else if matches}<p role="status" class="text-sm">{t('Задания с таким именем файла не найдены.', 'No tasks matched this file name.')}</p>{/if}
+				<details class="space-y-2"><summary class="cursor-pointer text-sm">{t('Указать UUID вручную', 'Enter UUID manually')}</summary>
 				<label class="block text-sm" for="sandbox-task">Scan ID (UUID)</label>
 				<input id="sandbox-task" bind:value={scanId} class="w-full rounded border bg-background p-2" />
 				<label class="block text-sm" for="sandbox-start">{t('Время старта задания (UTC)', 'Task start time (UTC)')}</label>
 				<input id="sandbox-start" bind:value={startedAt} placeholder="YYYY-MM-DDTHH:MM:SSZ" class="w-full rounded border bg-background p-2" />
-				<Button disabled={!scanId.trim() || !startedAt.trim() || busy} onclick={submit}>{t('Получить результат', 'Import result')}</Button>
+				<Button disabled={!scanId.trim() || !startedAt.trim() || busy} onclick={() => submit()}>{t('Получить результат', 'Import result')}</Button>
+				</details>
 			</section>
 		{/if}
 		<section class="overflow-auto rounded-lg border">
@@ -135,7 +178,15 @@
 				<p>{statusLabel(selected.status)} · {selected.verdict ?? '—'}</p>
 				{#if selected.summary && !selected.remote_task}<p class="text-sm">{selected.summary.scan_state ?? ''} · {selected.summary.threat ?? ''} · {selected.summary.detections.join(', ')}</p>{/if}
 				{#if selected.remote_task}
-					<p class="text-sm">{t('Старт (UTC)', 'Started (UTC)')}: {selected.remote_task.start} · {t('Статус PT Sandbox', 'PT Sandbox status')}: {selected.remote_task.status} · {t('Приоритет', 'Priority')}: {selected.remote_task.priority}</p>
+					<p class="text-sm">{t('Старт (UTC)', 'Started (UTC)')}: {selected.remote_task.started_utc ?? selected.remote_task.start} · {t('Статус PT Sandbox', 'PT Sandbox status')}: {selected.remote_task.status} · {t('Приоритет', 'Priority')}: {selected.remote_task.priority}</p>
+				{/if}
+				{#if selected.behavioral_events}
+					<p class="text-sm">{t('События поведения', 'Behavioral events')}: {selected.behavioral_events.included} / {selected.behavioral_events.total}
+						{selected.behavioral_events.truncated ? t(' · Хронология ограничена', ' · Chronology is limited') : ''}
+					</p>
+				{/if}
+				{#if enabled && access.canEdit() && selected.scan_id && selected.mcp_started_at}
+					<Button variant="outline" disabled={busy} onclick={() => submit(selected?.scan_id ?? '', selected?.mcp_started_at ?? '')}>{t('Обновить события', 'Refresh events')}</Button>
 				{/if}
 				{#if selected.sha256}<p class="break-all font-mono text-xs">SHA-256: {selected.sha256}</p>{/if}
 				{#if selected.scan_id}<p class="text-xs">PT Sandbox ID: {selected.scan_id}</p>{/if}
@@ -154,7 +205,7 @@
 				{#if logPage}<div class="space-y-2"><p class="text-xs">{t('Смещение', 'Offset')}: {logPage.offset} {logPage.truncated ? t('· Показан ограниченный фрагмент; оригинал доступен для скачивания', '· Bounded preview; download the original for full data') : ''}</p><pre class="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded bg-muted p-3 text-xs">{logPage.text}</pre>
 					{#if logPage.next_offset !== null}<Button variant="outline" onclick={() => read(selected!.logs!.find(log => log.id === currentLogId)!, logPage!.next_offset!)}>{t('Следующий фрагмент', 'Next page')}</Button>{/if}
 				</div>{/if}
-				{#if selected.report && chat}<div class="space-y-2 border-t pt-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={aiConsent} />{t('Разрешаю передать отчёт и текстовые логи настроенному провайдеру Yuki', 'Send this report and textual logs to the configured Yuki provider')}</label><p class="text-sm text-muted-foreground">{t('Текстовые логи обрабатываются последовательно. Большие логи могут потребовать тысячи запросов к провайдеру; действуют дневные лимиты токенов.', 'Text logs are processed sequentially. Large logs may require thousands of provider requests; daily token budgets apply.')}</p><Button disabled={!aiConsent || busy} onclick={analyze}>{t('Проанализировать с Yuki', 'Analyze with Yuki')}</Button></div>{/if}
+				{#if selected.report && chat}<div class="space-y-2 border-t pt-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={aiConsent} />{t('Разрешаю передать отчёт, события и текстовые логи настроенному провайдеру Yuki', 'Send this report, events and textual logs to the configured Yuki provider')}</label><p class="text-sm text-muted-foreground">{t('Текстовые логи обрабатываются последовательно. Большие логи могут потребовать тысячи запросов к провайдеру; действуют дневные лимиты токенов.', 'Text logs are processed sequentially. Large logs may require thousands of provider requests; daily token budgets apply.')}</p><Button disabled={!aiConsent || busy} onclick={analyze}>{selected.behavioral_events ? t('Проанализировать события с Yuki', 'Analyze events with Yuki') : t('Проанализировать с Yuki', 'Analyze with Yuki')}</Button></div>{/if}
 			</section>
 		{/if}
 	</div>
