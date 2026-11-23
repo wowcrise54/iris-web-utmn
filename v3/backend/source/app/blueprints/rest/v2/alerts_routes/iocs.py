@@ -33,6 +33,8 @@ from app.blueprints.rest.endpoints import response_api_success
 from app.business.alerts import alerts_get
 from app.business.alerts import alerts_get_ioc
 from app.business.alerts import alerts_update_ioc
+from app.datamgmt.alerts.alerts_db import cache_similar_alert
+from app.models.alerts import SimilarAlertsCache
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import Permissions
 from app.models.errors import BusinessProcessingError
@@ -186,6 +188,8 @@ def create_alert_ioc(alert_identifier):
             return response_api_error('IOC type and TLP are required')
         ioc = IocSchema().load(data)
         ioc.user_id = iris_current_user.id
+        if not any((item.ioc_value, item.ioc_type_id) == (ioc.ioc_value, ioc.ioc_type_id) for item in alert.iocs):
+            cache_similar_alert(alert.alert_customer_id, [], [ioc], alert.alert_id, alert.alert_source_event_time)
         alert.iocs.append(ioc)
         db.session.add(ioc)
         db.session.flush()
@@ -207,6 +211,10 @@ def remove_alert_ioc(alert_identifier, identifier):
             return ac_api_return_access_denied()
         ioc = alerts_get_ioc(alert, identifier)
         alert.iocs.remove(ioc)
+        if not any((item.ioc_value, item.ioc_type_id) == (ioc.ioc_value, ioc.ioc_type_id) for item in alert.iocs):
+            db.session.query(SimilarAlertsCache).filter_by(
+                alert_id=alert.alert_id, ioc_value=ioc.ioc_value, ioc_type_id=ioc.ioc_type_id,
+            ).delete(synchronize_session=False)
         material_history(alert, f'removed IOC #{ioc.ioc_id}')
         return response_api_success(None)
     except ObjectNotFoundError:

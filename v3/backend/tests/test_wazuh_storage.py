@@ -6,7 +6,7 @@ import sys
 import types
 from unittest.mock import patch
 
-from sqlalchemy import Column, DateTime, Integer, String, select
+from sqlalchemy import Column, Integer, select
 import pytest
 import requests
 
@@ -15,8 +15,6 @@ from test_maxpatrol_storage import harness, load
 
 def test_activation_and_repeat_after_restart_preserve_analyst_edits(caplog):
     with harness() as h:
-        h.Alert.alert_description = Column(String)
-        h.Alert.alert_source_event_time = Column(DateTime)
         h.Alert.alert_severity_id = Column(Integer)
         h.Alert.alert_status_id = Column(Integer)
         models = load('app.models.wazuh', 'app/models/wazuh.py')

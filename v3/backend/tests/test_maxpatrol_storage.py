@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects import postgresql  # noqa: F401  register before temporary sys.modules isolation
@@ -67,6 +67,7 @@ def harness(*, json_deserializer=None):
         alert_uuid = Column(Uuid, unique=True)
         alert_title = Column(String)
         alert_description = Column(String)
+        alert_source_event_time = Column(DateTime)
         alert_customer_id = Column(Integer)
         alert_source = Column(String)
         alert_source_ref = Column(String)
@@ -74,11 +75,16 @@ def harness(*, json_deserializer=None):
         modification_history = Column(JSON)
         iocs = relationship(Ioc, secondary=association)
 
+        @property
+        def alert_id(self):
+            return self.id
+
     engine = create_engine('sqlite://', json_deserializer=json_deserializer)
     session = sessionmaker(bind=engine)()
     db = types.SimpleNamespace(Model=base, session=session, engine=engine)
     module_names = ('app', 'app.db', 'app.models', 'app.models.models', 'app.models.errors',
                     'app.models.alerts', 'app.models.iocs', 'app.business', 'app.business.alerts',
+                    'app.datamgmt', 'app.datamgmt.alerts', 'app.datamgmt.alerts.alerts_db',
                     'app.iris_engine', 'app.iris_engine.mail', 'app.iris_engine.mail.secrets')
     doubles = {name: types.ModuleType(name) for name in module_names}
     doubles['app.db'].db = db
@@ -89,6 +95,7 @@ def harness(*, json_deserializer=None):
     doubles['app.models.errors'].BusinessProcessingError = ValueError
     doubles['app.models.alerts'].Alert = Alert
     doubles['app.business.alerts'].alerts_create = Mock()
+    doubles['app.datamgmt.alerts.alerts_db'].cache_similar_alert = Mock()
     doubles['app.iris_engine.mail.secrets'].encrypt_secret = lambda value: 'encrypted:' + value
     doubles['app.iris_engine.mail.secrets'].decrypt_secret = lambda value: value.removeprefix('encrypted:') if value else None
     celery = types.SimpleNamespace(task=lambda **_kwargs: lambda f: f,
@@ -113,7 +120,8 @@ def harness(*, json_deserializer=None):
             config = business.configuration(row)
             yield types.SimpleNamespace(db=db, business=business, models=models, tasks=tasks,
                 store=business.IrisStore(1, config), config=config, Module=Module, Alert=Alert,
-                alerts=doubles['app.business.alerts'], extraction=extraction)
+                alerts=doubles['app.business.alerts'], extraction=extraction,
+                cache_similar_alert=doubles['app.datamgmt.alerts.alerts_db'].cache_similar_alert)
         finally:
             session.close()
             engine.dispose()
@@ -297,11 +305,16 @@ class StorageTests(unittest.TestCase):
             h.db.session.expire_all()
             self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
             self.assertIn('dst.fqdn', row.iocs[0].ioc_description)
+            h.cache_similar_alert.assert_called_once()
+            customer, assets, iocs, alert_id, _ = h.cache_similar_alert.call_args.args
+            self.assertEqual((customer, assets, [ioc.ioc_value for ioc in iocs], alert_id),
+                             (1, [], ['new.example.org'], row.alert_id))
             previous = row.alert_source_content
             row.alert_source_content = {'events': [{'src.ip': '192.0.2.1'}]}
             h.extraction.extract_alert_iocs(row, previous)
             h.db.session.commit()
             self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
+            self.assertEqual(h.cache_similar_alert.call_count, 1)
 
     def test_archived_oversized_incident_is_not_reloaded_into_worker_memory(self):
         with harness() as h:

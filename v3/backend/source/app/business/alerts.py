@@ -19,6 +19,7 @@
 import json
 from datetime import datetime
 from typing import Optional
+from sqlalchemy import inspect
 
 from app.business.access_controls import access_controls_user_has_customer_access
 from app.business.managed_assets import managed_assets_observe_alert
@@ -33,6 +34,7 @@ from app.models.assets import CaseAssets
 from app.web import g, has_request_context
 from app.auth_login import current_user as _flask_current_user
 from app.datamgmt.alerts.alerts_db import cache_similar_alert
+from app.datamgmt.alerts.alerts_db import refresh_alert_similarity
 from app.datamgmt.alerts.alerts_db import delete_similar_alert_cache
 from app.datamgmt.alerts.alerts_db import delete_related_alerts_cache
 from app.datamgmt.alerts.alerts_db import get_alert_by_id
@@ -180,9 +182,11 @@ def alerts_create(alert: Alert, iocs: list[Ioc], assets: list[CaseAssets]) -> Al
 
     db.session.add(alert)
     add_obj_history_entry(alert, 'Alert created')
+    if alert.assets or alert.iocs:
+        db.session.flush()
+        cache_similar_alert(alert.alert_customer_id, alert.assets, alert.iocs,
+                            alert.alert_id, alert.alert_source_event_time)
     db.session.commit()
-
-    cache_similar_alert(alert.alert_customer_id, assets, iocs, alert.alert_id, alert.alert_source_event_time)
 
     alert = call_modules_hook('on_postload_alert_create', alert)
 
@@ -531,6 +535,8 @@ def _updated_object_detail(activity_data) -> str:
 
 def alerts_update_ioc(alert: Alert, ioc: Ioc, activity_data) -> Ioc:
     """Persist analyst-supplied details (description, tags, TLP, enrichment) on an alert's IOC."""
+    attrs = inspect(ioc).attrs
+    identity_changed = attrs.ioc_value.history.has_changes() or attrs.ioc_type_id.history.has_changes()
     caller = _resolve_caller()
     ioc.user_id = caller.id
 
@@ -548,6 +554,8 @@ def alerts_update_ioc(alert: Alert, ioc: Ioc, activity_data) -> Ioc:
     # IOC's own history is not rendered there.
     add_obj_history_entry(alert, f'updated IOC "{ioc.ioc_value}"{detail}')
 
+    if identity_changed:
+        refresh_alert_similarity(alert)
     db.session.commit()
 
     ioc = call_modules_hook('on_postload_ioc_update', ioc, caseid=ioc.case_id)
@@ -560,6 +568,8 @@ def alerts_update_ioc(alert: Alert, ioc: Ioc, activity_data) -> Ioc:
 
 def alerts_update_asset(alert: Alert, asset: CaseAssets, activity_data) -> CaseAssets:
     """Persist analyst-supplied details (description, IP, domain, tags, enrichment) on an alert's asset."""
+    attrs = inspect(asset).attrs
+    identity_changed = attrs.asset_name.history.has_changes() or attrs.asset_type_id.history.has_changes()
     caller = _resolve_caller()
 
     # Same shared-row caveat as IOCs — see alerts_update_ioc. The
@@ -577,6 +587,8 @@ def alerts_update_asset(alert: Alert, asset: CaseAssets, activity_data) -> CaseA
     add_obj_history_entry(asset, f'updated asset{detail}')
     add_obj_history_entry(alert, f'updated asset "{asset.asset_name}"{detail}')
 
+    if identity_changed:
+        refresh_alert_similarity(alert)
     db.session.commit()
 
     asset = call_modules_hook('on_postload_asset_update', asset, caseid=asset.case_id)
