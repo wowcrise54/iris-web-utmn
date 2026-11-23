@@ -289,3 +289,32 @@ def test_yuki_accepts_only_nonempty_mcp_events(business):
     ):
         with pytest.raises(RuntimeError, match='Load behavioral events'):
             business.analysis_events(scan)
+
+
+def test_chat_tool_reads_summary_and_type_pages_in_current_case():
+    events = [{'type': 'ip', 'ip': '192.0.2.1'}, {'type': 'process', 'arguments': 'x' * 1000},
+              {'type': 'process', 'name': 'second'}]
+    source = {'events': events, 'counts': [{'type': 'process', 'c': 4}], 'total': 5, 'truncated': True}
+    business = SimpleNamespace(get_scan=Mock(return_value=SimpleNamespace(id=5, case_id=11)),
+                               analysis_events=Mock(return_value=source))
+    namespace = {
+        'mcp_tool': lambda **kwargs: lambda fn: fn,
+        'Permissions': SimpleNamespace(standard_user=1),
+        'BusinessProcessingError': RuntimeError,
+        'MCPError': RuntimeError,
+        'sandbox': business,
+    }
+    tools = load_without_app_imports('app/blueprints/rest/v2/mcp/tools/sandbox.py', namespace)
+    args = {'case_identifier': 11, 'scan_id': 5}
+    summary = tools.sandbox_events(args)
+    assert summary['counts'] == source['counts'] and summary['truncated']
+    assert 'events' not in summary
+    page = tools.sandbox_events({**args, 'event_type': 'process', 'limit': 1})
+    assert page['next_offset'] == 1 and page['matching_imported'] == 2
+    assert page['events'][0]['clipped_fields'] == ['arguments']
+    last = tools.sandbox_events({**args, 'event_type': 'process', 'offset': 1})
+    assert last['next_offset'] is None and last['events'][0]['name'] == 'second'
+    business.get_scan.assert_called_with(11, 5)
+    business.get_scan.side_effect = LookupError
+    with pytest.raises(RuntimeError, match='not found in this case'):
+        tools.sandbox_events({**args, 'case_identifier': 12})

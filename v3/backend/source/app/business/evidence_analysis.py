@@ -6,7 +6,6 @@ from app.db import db
 from app.business import ptsandbox
 from app.models.evidence_analysis import EvidenceAnalysis
 from app.models.errors import BusinessProcessingError
-from app.models.case_chat import CaseChatConversation
 from app.models.authorization import User
 from app.iris_engine.evidence.pcap import MAX_INPUT
 
@@ -52,17 +51,17 @@ def read_source(case_id, source):
 
 
 def start_job(case_id, user, body):
-    if not isinstance(body, dict) or body.get('kind') not in ('pcap', 'sandbox'):
-        raise BusinessProcessingError('Select PCAP or Sandbox analysis')
-    kind = body['kind']
+    if isinstance(body, dict) and body.get('kind') == 'sandbox':
+        raise BusinessProcessingError('Analyze Sandbox events in Yuki chat')
+    if not isinstance(body, dict) or body.get('kind') != 'pcap':
+        raise BusinessProcessingError('Select PCAP analysis')
+    kind = 'pcap'
     source = {k: body[k] for k in ('file_id', 'scan_id', 'log_id') if body.get(k) is not None}
     if any(type(v) is not int or v <= 0 for v in source.values()):
         raise BusinessProcessingError('Invalid source identifier')
-    valid = set(source) == {'scan_id'} if kind == 'sandbox' else set(source) in ({'file_id'}, {'scan_id', 'log_id'})
+    valid = set(source) in ({'file_id'}, {'scan_id', 'log_id'})
     if not valid:
         raise BusinessProcessingError('Select one case file or a Sandbox check/log')
-    if kind == 'sandbox':
-        ptsandbox.analysis_events(ptsandbox.get_scan(case_id, source['scan_id']))
     if 'log_id' in source:
         ptsandbox.read_capture(case_id, source['scan_id'], source['log_id'])
     # Content validation runs in the worker; request handlers never read/decompress large binaries.
@@ -77,32 +76,12 @@ def start_job(case_id, user, body):
         return active
     if EvidenceAnalysis.query.filter_by(requested_by=user.id).filter(EvidenceAnalysis.status.in_(('queued', 'running'))).count() >= 2:
         raise BusinessProcessingError('Wait for an active analysis to finish (maximum 2)')
-    conversation_id = body.get('conversation_id')
-    if conversation_id is not None and (type(conversation_id) is not int or conversation_id <= 0):
-        raise BusinessProcessingError('Invalid conversation identifier')
-    if kind == 'sandbox':
-        from app.business import case_chat
-        from app.iris_engine.llm.client import load_config
-        from app.iris_engine.llm.policy import resolve_for_case
-        cfg = load_config(policy=resolve_for_case(case_id).policy)
-        if not cfg.enabled:
-            raise BusinessProcessingError('Yuki is disabled')
-        if conversation_id is not None:
-            conv = CaseChatConversation.query.filter_by(id=conversation_id, user_id=user.id, case_id=case_id).first()
-            if not conv or conv.archived_at is not None:
-                raise BusinessProcessingError('Select an active conversation owned by you in this case')
-        else:
-            conv = case_chat.create_conversation(user=user, case_id=case_id, model=cfg.model,
-                                                 title=f"PT Sandbox #{source['scan_id']}")
-            conversation_id = conv.id
-    else:
-        conversation_id = None
     # Serialize the per-user resource quota, including requests from different tabs.
     db.session.query(User).filter(User.id == user.id).with_for_update().one()
     if EvidenceAnalysis.query.filter_by(requested_by=user.id).filter(EvidenceAnalysis.status.in_(('queued', 'running'))).count() >= 2:
         raise BusinessProcessingError('Wait for an active analysis to finish (maximum 2)')
     job = EvidenceAnalysis(case_id=case_id, requested_by=user.id, kind=kind, source=source,
-                           source_key=key, conversation_id=conversation_id, result={})
+                           source_key=key, result={})
     try:
         db.session.add(job)
         db.session.commit()
@@ -120,6 +99,8 @@ def start_job(case_id, user, body):
 
 
 def retry_job(job):
+    if job.kind != 'pcap':
+        raise BusinessProcessingError('Analyze Sandbox events in Yuki chat')
     if job.status != 'failed':
         raise BusinessProcessingError('Only failed analyses can be continued')
     db.session.query(User).filter(User.id == job.requested_by).with_for_update().one()

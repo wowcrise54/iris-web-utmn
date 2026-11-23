@@ -16,7 +16,7 @@ def main():
         assert decrypt_secret(stored) == 'non-secret-runtime-fixture'
         assert public_config([{'param_name': 'sandbox_token', 'value': stored}])[0]['value'] == ''
         names = sorted(n for n in TOOL_REGISTRY if 'sandbox' in n)
-        assert names == ['iris_case_sandbox_list']
+        assert names == ['iris_case_sandbox_events_get', 'iris_case_sandbox_list']
         assert all(TOOL_REGISTRY[n].case_scoped and is_read_only(n) for n in names)
     client = app.test_client()
     for method, path in (('get', '/api/v2/cases/2/sandbox'), ('post', '/api/v2/cases/2/sandbox'),

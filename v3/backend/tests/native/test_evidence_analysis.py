@@ -265,31 +265,6 @@ def test_adapters_do_not_mark_abrupt_stream_as_completed(events, monkeypatch, na
     assert response.close.called
 
 
-def test_yuki_pages_only_cover_behavioral_events(tmp_path):
-    text = load(ENGINE / 'text.py', 'evidence_text_sequence_test')
-    behavior = {'events': [{'type': 'process', 'name': 'event command line' * 10000}],
-                'total': 401, 'truncated': True}
-    scan = SimpleNamespace(id=7, report={'legacy': 'excluded legacy report'})
-    namespace = dict(json=json, hashlib=__import__('hashlib'), write_pages=text.write_pages,
-        TextPages=text.TextPages, cache_folder=lambda _:tmp_path, MAX_CACHE_BYTES=text.MAX_CACHE_BYTES,
-        ptsandbox=SimpleNamespace(get_scan=lambda *args:scan, analysis_events=lambda scan:behavior))
-    collect = extract(ENGINE / 'tasks.py', 'evidence_pages', namespace)
-    job = SimpleNamespace(id=9, case_id=2, source={'scan_id':7}, progress=3,
-                          result={'text_analysis_version': 2, 'summary': 'legacy notes'})
-    chunks, omissions = collect(job)
-    assert job.progress == 0 and 'summary' not in job.result
-    assert job.result['legacy_checkpoint_restarted']
-    assert len(chunks) > 5 and '1 of 401 events' in omissions[0]
-    assert ''.join(chunks[i]['text'] for i in range(len(chunks))) == json.dumps(behavior, ensure_ascii=False)
-    assert chunks.coverage(len(chunks))[0]['complete']
-    (tmp_path/'0.idx').unlink()
-    job.progress = 5
-    rebuilt, _ = collect(job)
-    assert job.progress == 5 and rebuilt[5] == chunks[5]
-    behavior['total'] += 1
-    with pytest.raises(ValueError, match='Source evidence changed'):
-        collect(job)
-
 
 def test_text_cache_reaches_beyond_old_prefix_limit_and_keeps_exact_offsets(tmp_path):
     text = load(ENGINE / 'text.py', 'evidence_text_large_test')
@@ -347,80 +322,6 @@ def test_initial_provider_timeout_is_distinct_from_connection_failure(events, mo
     assert result[0].provider_code == 'timeout'
     assert 'private token' not in result[0].message
 
-
-@pytest.mark.parametrize('live_level', [20, 40])
-@pytest.mark.parametrize('response', ['text', 'text_limit', 'empty_limit', 'empty_stop', 'interrupted', 'empty_final_limit', 'empty_retry_exhausted', 'local_openai'])
-@pytest.mark.parametrize('output_limit', [0, 2048, 32768])
-def test_background_summary_preserves_pinned_chat_policy(events, live_level, response, output_limit, monkeypatch):
-    base, diagnostics = events
-    conv_type, policy_type = object(), object()
-    pinned = SimpleNamespace(id=11)
-    conv = SimpleNamespace(id=1, user_id=2, case_id=3, archived_at=None,
-                           resolved_policy_id=11, resolved_restriction_level=30)
-    session = Mock()
-    session.get.side_effect = lambda kind, identifier: conv if kind is conv_type else pinned
-    cfg = SimpleNamespace(enabled=True, model='model', max_output_tokens=output_limit, redact_ips=False, redact_emails=False, redact_hashes=False,
-                          daily_token_budget_per_user=0, daily_token_budget_org=0)
-    configure = Mock(return_value=cfg)
-    requests_seen = []
-    def stream(**kwargs):
-        requests_seen.append(kwargs)
-        if response in ('text', 'text_limit'):
-            yield base.TextDelta('summary')
-        if response != 'interrupted':
-            yield base.MessageEnd('end_turn' if response in ('text', 'empty_stop') else 'max_tokens', prompt_tokens=1, completion_tokens=1024)
-    provider = SimpleNamespace(name='test', stream_completion=stream)
-    if response == 'local_openai':
-        module = load(SOURCE/'app/iris_engine/llm/providers/openai.py', 'evidence_local_qwen_adapter')
-        fake = Mock(status_code=200)
-        fake.iter_lines.return_value = [
-            'data: '+json.dumps({'choices':[{'delta':{'reasoning_content':'private reasoning'},'finish_reason':None}]}),
-            'data: '+json.dumps({'choices':[{'delta':{'content':'summary'},'finish_reason':'stop'}]}),
-            'data: [DONE]']
-        def post(url, **kwargs):
-            requests_seen.append({'max_tokens':kwargs['json'].get('max_tokens')})
-            assert url=='http://local-model.test/v1/chat/completions'
-            return fake
-        monkeypatch.setattr(module.requests, 'post', post)
-        provider = module.OpenAIProvider(api_key='test', base_url='http://local-model.test')
-    summary = load(ENGINE / 'summary.py', 'evidence_policy_summary_test')
-    namespace = dict(db=SimpleNamespace(session=session), CaseChatConversation=conv_type, ChatbotPolicy=policy_type,
-        resolve_for_conversation=lambda _: SimpleNamespace(restriction_level=live_level, policy=SimpleNamespace(id=22)),
-        load_config=configure, get_llm_provider=Mock(return_value=provider),
-        case_chat=SimpleNamespace(sum_tokens_today=lambda **kw: 0, record_egress=Mock(return_value=SimpleNamespace(id=9)), finalise_egress=Mock()),
-        summary_messages=summary.summary_messages, redact_text=lambda value, **kwargs: value,
-        provider_events=diagnostics.provider_events, FINAL_TOKENS=2048, SUMMARY_TOKENS=1024,
-        TextDelta=base.TextDelta, MessageEnd=base.MessageEnd, Error=base.Error, log=Mock())
-    fn=extract(ENGINE / 'tasks.py', 'summarize', namespace)
-    job=SimpleNamespace(id=4, case_id=3, conversation_id=1, progress=0, result={})
-    if live_level > 30:
-        with pytest.raises(ValueError, match='policy changed'): fn(job, SimpleNamespace(id=2), '', None)
-        configure.assert_not_called()
-    else:
-        if response in ('empty_retry_exhausted', 'local_openai'):
-            job.result = {'summary_token_budget': 8192}
-        page = {'text': 'untrusted data'} if response in ('text_limit', 'empty_limit', 'empty_retry_exhausted', 'local_openai') else None
-        if response in ('text', 'text_limit', 'local_openai'):
-            assert fn(job, SimpleNamespace(id=2), 'notes', page) == 'summary'
-            if response == 'text_limit':
-                assert job.result['notes_limited'] == 1
-        elif response == 'empty_limit' and 0 < output_limit < 8192:
-            assert fn(job, SimpleNamespace(id=2), 'notes', page) is None
-            assert job.result['summary_token_budget'] == 8192
-        else:
-            message = {'empty_stop': 'empty answer', 'interrupted': 'stream ended',
-                       'empty_final_limit': 'token budget' if output_limit else 'output limit',
-                       'empty_limit': 'token budget' if output_limit else 'output limit',
-                       'empty_retry_exhausted': 'token budget' if output_limit else 'output limit'}[response]
-            with pytest.raises(ValueError, match=message):
-                fn(job, SimpleNamespace(id=2), 'notes', page)
-        configure.assert_called_once_with(policy=pinned)
-        assert len(requests_seen) == 1
-        if output_limit == 0:
-            assert requests_seen[0]['max_tokens'] is None
-            assert namespace['case_chat'].record_egress.call_args.kwargs['request_snapshot']['max_output_tokens'] is None
-        elif output_limit > 8192:
-            assert requests_seen[0]['max_tokens'] == output_limit
 
 
 def test_cache_expiry_and_cleanup_only_touch_private_job_files(monkeypatch, tmp_path):

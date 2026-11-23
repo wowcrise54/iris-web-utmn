@@ -1,4 +1,4 @@
-"""Derived analysis tools: offline PCAP metadata and bounded Sandbox summaries."""
+"""Derived analysis tools: offline PCAP metadata and historical analysis results."""
 from app.blueprints.rest.v2.mcp.registry import mcp_tool
 from app.blueprints.rest.v2.mcp.dispatch import MCPError
 from app.blueprints.iris_user import iris_current_user
@@ -9,10 +9,10 @@ from app.models.errors import BusinessProcessingError
 
 @mcp_tool(name='iris_case_evidence_analyze',
     description='Start asynchronous local PCAP/PCAPNG analysis (case file_id OR sandbox scan_id+log_id), '
-                'or Yuki analysis of imported Sandbox ba_events (kind=sandbox, scan_id). No video/payload extraction. '
+                'without video or payload extraction. For Sandbox events use iris_case_sandbox_events_get. '
                 'Returns job id; do not busy-poll. Use iris_case_evidence_analysis_get when ready. '
-                'Does not modify case evidence; Sandbox summaries use the configured LLM and token budget.',
-    input_schema={'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['pcap', 'sandbox']},
+                'Does not modify case evidence.',
+    input_schema={'type': 'object', 'properties': {'kind': {'type': 'string', 'enum': ['pcap']},
         'file_id': {'type': 'integer', 'minimum': 1}, 'scan_id': {'type': 'integer', 'minimum': 1},
         'log_id': {'type': 'integer', 'minimum': 1}}, 'required': ['kind'], 'additionalProperties': False},
     permissions=(Permissions.standard_user,), case_scoped=True, mvp=True)

@@ -642,19 +642,29 @@ export const createChatPanelContext = () => {
 			state.progress?.stage !== 'awaiting_approval'
 	);
 
-	const analyzeAlert = async (alertId: number, prompt: string): Promise<boolean> => {
+	const analyzeInChat = async (start: () => Promise<number | null>, prompt: string, error: string): Promise<boolean> => {
 		if (!canAnalyzeAlert || !prompt.trim()) return false;
 		openPanel();
 		try {
-			const id = await startWithScope({ kind: 'currentAlert', alertId });
+			const id = await start();
 			if (id == null || state.currentConversation?.id !== id) return false;
 			send(prompt);
 			return true;
 		} catch {
-			state.error = 'Could not start alert analysis. Please try again.';
+			state.error = error;
 			return false;
 		}
 	};
+
+	const analyzeAlert = (alertId: number, prompt: string) => analyzeInChat(
+		() => startWithScope({ kind: 'currentAlert', alertId }), prompt,
+		'Could not start alert analysis. Please try again.'
+	);
+
+	const analyzeSandbox = (caseId: number, scanId: number, prompt: string) => analyzeInChat(
+		() => startCaseConversation(caseId, `PT Sandbox #${scanId}`), prompt,
+		'Could not start Sandbox analysis. Please try again.'
+	);
 
 	const approveTool = (pendingToolCallId: number) => {
 		if (!state.currentConversation) return;
@@ -718,6 +728,7 @@ export const createChatPanelContext = () => {
 		sendOrStart,
 		startWithScope,
 		analyzeAlert,
+		analyzeSandbox,
 		get canAnalyzeAlert() {
 			return canAnalyzeAlert;
 		},

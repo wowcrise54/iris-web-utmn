@@ -96,11 +96,14 @@
 		if (!selected || !chat || !aiConsent || busy) return;
 		busy = true;
 		try {
-			const id = await chat.startCaseConversation(caseId, `PT Sandbox #${selected.id}`);
-			if (!id) { error = chat.state.error ?? 'Yuki unavailable'; return; }
-			const result = await EvidenceAnalysisService.start(caseId, {kind: 'sandbox', scan_id: selected.id, conversation_id: id});
-			if (result.ok && result.data && typeof result.data !== 'string') await goto(`/case/${caseId}/analysis?analysis=${result.data.id}`);
-			else error = result.error?.message ?? t('Не удалось запустить анализ', 'Could not start analysis');
+			const scanId = selected.id;
+			const prompt = t(
+				`Проанализируй события ba_events проверки PT Sandbox #${scanId} в инциденте #${caseId}. Вызови iris_case_sandbox_events_get с case_identifier=${caseId} и scan_id=${scanId}, чтобы получить сводку по типам. Затем запроси только нужные типы событий. Объясни наблюдаемое поведение, ключевые индикаторы и ограничения охвата. Не делай выводов по событиям, которых не видел.`,
+				`Analyze ba_events for PT Sandbox check #${scanId} in case #${caseId}. Call iris_case_sandbox_events_get with case_identifier=${caseId} and scan_id=${scanId} for counts by type. Then fetch only relevant event types. Explain observed behavior, key indicators, and coverage limits. Do not make claims about events you have not seen.`
+			);
+			if (!(await chat.analyzeSandbox(caseId, scanId, prompt))) {
+				error = chat.state.error ?? t('Не удалось запустить анализ в чате Yuki', 'Could not start analysis in Yuki chat');
+			}
 		} finally { busy = false; }
 	}
 
@@ -186,7 +189,7 @@
 				{#if (selected.behavioral_events?.included ?? 0) > 0 && chat}
 					<div class="space-y-2 border-t pt-3">
 						<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={aiConsent} />{t('Разрешаю передать события ba_events провайдеру Yuki', 'Send ba_events to the configured Yuki provider')}</label>
-						<Button disabled={!aiConsent || busy} onclick={analyze}>{t('Проанализировать события с Yuki', 'Analyze events with Yuki')}</Button>
+						<Button disabled={!aiConsent || busy || !chat.canAnalyzeAlert} onclick={analyze}>{t('Проанализировать события с Yuki', 'Analyze events with Yuki')}</Button>
 					</div>
 				{/if}
 			</section>

@@ -332,7 +332,7 @@
 						#{selected.id} · {irisT(labels[selected.status] ?? selected.status, $locale)}
 					</h2>
 					<span role="status">{selected.progress}/{selected.total || '?'}</span>
-					{#if selected.status === 'failed'}<Button onclick={resume} disabled={busy}
+					{#if selected.kind === 'pcap' && selected.status === 'failed'}<Button onclick={resume} disabled={busy}
 							>{irisT('Continue analysis', $locale)}</Button
 						>{/if}
 					{#if !['queued', 'running'].includes(selected.status) && chat}<Button
