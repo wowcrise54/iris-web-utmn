@@ -72,6 +72,20 @@ class IncidentsListTests(unittest.TestCase):
         payload = store.create.call_args.args[1]
         self.assertEqual(payload['alert_description'], 'Description from event')
 
+    def test_import_prefers_incident_correlation_text_over_other_events_and_description(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'one', 'description': 'Incident card description'}]
+        client.events.return_value = [
+            {'text': 'Raw child event text'},
+            {'correlation_type': 'event', 'text': 'Other correlation text'},
+            {'correlation_type': 'incident', 'text': '  '},
+            {'correlation_type': 'incident', 'text': 'Incident correlation text'},
+        ]
+        store.active.return_value = True
+        store.seen.return_value = False
+        self.assertEqual(self.m.collect(self.config, client, store), 1)
+        self.assertEqual(store.create.call_args.args[1]['alert_description'], 'Incident correlation text')
+
     def test_refresh_merges_list_fields_with_saved_extra_fields(self):
         client, store = Mock(), Mock()
         client.incidents.return_value = [{'id': 'existing', 'name': 'Updated name', 'status': 'New'}]

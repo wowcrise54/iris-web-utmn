@@ -373,6 +373,12 @@ def incident_description(value):
 
 
 def resolve_incident_description(detail, events):
+    for event in events:
+        if isinstance(event, dict) and event.get('correlation_type') == 'incident':
+            text = incident_description(event.get('text'))
+            if text is not None:
+                return text
+
     description = incident_description(detail.get('description')) if isinstance(detail, dict) else None
     if description is not None:
         return description

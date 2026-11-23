@@ -431,14 +431,15 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(h.store.stored_incident('one')['name'], 'Saved card')
             self.assertTrue(h.store.needs_event_refresh('one'))
             self.assertEqual(h.store.refresh_candidates(), ['one'])
-            incoming = {'events': [{'uuid': uid, 'text': 'normalized'}], 'event_tree': [{'uuid': uid}],
+            incoming = {'events': [{'uuid': uid, 'text': 'normalized', 'correlation_type': 'incident'}],
+                        'event_tree': [{'uuid': uid}],
                         'incident': {'id': 'one', 'description': 'Description from SIEM'},
                         'event_collection': {'version': 2, 'complete': True,
                             'collected_at': timestamp(datetime.now(timezone.utc))}}
             self.assertTrue(h.store.refresh_events('one', incoming))
             row = h.db.session.query(h.Alert).one()
             self.assertEqual(row.alert_title, 'Analyst title')
-            self.assertEqual(row.alert_description, 'Description from SIEM')
+            self.assertEqual(row.alert_description, 'normalized')
             row.alert_description = 'Analyst description'
             h.db.session.commit()
             self.assertTrue(h.store.refresh_events('one', incoming))
