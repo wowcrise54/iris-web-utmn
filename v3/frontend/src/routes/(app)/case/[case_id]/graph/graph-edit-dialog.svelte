@@ -2,11 +2,12 @@
 	import { translate as t, useLocale } from '$lib/i18n/context';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import type { GraphEdit, GraphNode } from './types';
+	import type { GraphEdit, GraphNode, GraphRelation, GraphRelationType } from './types';
 
-	let { edit, nodes, onSave, onClose }: {
+	let { edit, nodes, relationTypes, onSave, onClose }: {
 		edit: GraphEdit;
 		nodes: GraphNode[];
+		relationTypes: GraphRelationType[];
 		onSave: (edit: GraphEdit, body: Record<string, unknown>) => Promise<boolean>;
 		onClose: () => void;
 	} = $props();
@@ -17,6 +18,7 @@
 	let source = $state('');
 	let target = $state('');
 	let directed = $state(true);
+	let relation = $state<GraphRelation | ''>('');
 	let eventIds = $state('');
 	let saving = $state(false);
 	let error = $state('');
@@ -27,6 +29,7 @@
 		source = edit.source ?? '';
 		target = edit.target ?? '';
 		directed = edit.directed ?? true;
+		relation = edit.relation ?? '';
 		eventIds = edit.event_ids?.join(', ') ?? '';
 		error = '';
 	});
@@ -48,7 +51,7 @@
 				error = 'Choose two distinct nodes and enter valid event IDs.';
 				return;
 			}
-			Object.assign(body, { source, target, directed, event_ids: [...new Set(ids)] });
+			Object.assign(body, { source, target, directed, relation: relation || null, event_ids: [...new Set(ids)] });
 		}
 		saving = true;
 		error = '';
@@ -105,6 +108,15 @@
 					</label>
 					<label class="flex items-center gap-2 text-sm">
 						<input type="checkbox" bind:checked={directed} /> {t('Directed connection', $locale)}
+					</label>
+					<label class="block space-y-1 text-sm">
+						<span>{t('Connection type', $locale)}</span>
+						<select class="w-full rounded-md border bg-background px-2 py-1" bind:value={relation}>
+							<option value="">{t('Unspecified', $locale)}</option>
+							{#each relationTypes as type (type.id)}
+								<option value={type.name}>{t(type.label, $locale)}</option>
+							{/each}
+						</select>
 					</label>
 					<label class="block space-y-1 text-sm">
 						<span>{t('Supporting event IDs', $locale)}</span>

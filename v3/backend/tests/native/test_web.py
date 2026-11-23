@@ -455,3 +455,14 @@ def test_image_store_is_native_static_route_before_default_static(web, tmp_path)
         assert client.head('/static/assets/images/avatar.png').content == b''
         assert client.get('/static/assets/images/missing.png').status_code == 404
         assert client.get('/static/assets/images/%2e%2e/outside.txt').status_code == 404
+
+
+def test_packaged_graph_icons_are_served_at_existing_asset_urls(web):
+    source = Path(__file__).resolve().parents[2] / 'source'
+    app = web.IRISApp('iris_test_web', fs_root_path=str(source / 'app'), static_folder='../static')
+    client = app.test_client()
+    for filename in ('user.png', 'ioc_user.png', 'windows_server.png'):
+        response = client.get(f'/static/assets/img/graph/{filename}?theme=light')
+        assert response.status_code == 200
+        assert response.mimetype == 'image/png'
+        assert response.data.startswith(b'\x89PNG\r\n\x1a\n')

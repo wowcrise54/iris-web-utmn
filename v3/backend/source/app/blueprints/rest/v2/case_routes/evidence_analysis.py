@@ -26,7 +26,7 @@ def list_analyses(case_identifier):
 
 @case_analysis_blueprint.post('')
 @ac_api_requires()
-@api_doc(tags=['EvidenceAnalysis'], summary='Start bounded local PCAP or Yuki Sandbox analysis', response_shape='created')
+@api_doc(tags=['EvidenceAnalysis'], summary='Start bounded local PCAP analysis', response_shape='created')
 def start_analysis(case_identifier):
     if not access(case_identifier):
         return ac_api_return_access_denied()

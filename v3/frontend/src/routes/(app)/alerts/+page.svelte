@@ -231,6 +231,13 @@
 	// `bind:this` handle just for this.
 	let boardRefreshKey = $state(0);
 
+	const refreshModes = [
+		{ value: '0', label: 'Manual' },
+		{ value: '1', label: 'Every minute' },
+		{ value: '5', label: 'Every 5 minutes' }
+	] as const;
+	let refreshMode = $state<(typeof refreshModes)[number]>(refreshModes[0]);
+
 	let alertResolutions = $state<AlertResolution[]>([]);
 	let alertStatuses = $state<AlertStatus[]>([]);
 	let caseClassifications = $state<CaseClassification[]>([]);
@@ -666,6 +673,16 @@
 
 		void refreshAlerts();
 	};
+
+	$effect(() => {
+		const minutes = Number(refreshMode.value);
+		if (!defaultViewResolved || minutes === 0) return;
+
+		const timer = window.setInterval(() => {
+			if (status === 'ready') refreshCurrentView();
+		}, minutes * 60_000);
+		return () => window.clearInterval(timer);
+	});
 
 	/**
 	 * Remember the layout part of `next` in the user's profile.
@@ -1478,6 +1495,24 @@
 			>
 				{irisT("Refresh", $irisLocale)}
 			</Button>
+
+			<Select
+				type="single"
+				value={refreshMode.value}
+				onValueChange={(value) => {
+					const mode = refreshModes.find((mode) => mode.value === value);
+					if (mode) refreshMode = mode;
+				}}
+			>
+				<SelectTrigger class="h-7 w-auto gap-2 px-2.5" aria-label={irisT("Refresh interval", $irisLocale)}>
+					{irisT(refreshMode.label, $irisLocale)}
+				</SelectTrigger>
+				<SelectContent>
+					{#each refreshModes as mode (mode.value)}
+						<SelectItem value={mode.value}>{irisT(mode.label, $irisLocale)}</SelectItem>
+					{/each}
+				</SelectContent>
+			</Select>
 
 			{#if query.view === 'list'}
 				<!-- The card list has no column headers to sort from, so it

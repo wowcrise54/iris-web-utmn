@@ -1,26 +1,23 @@
-"""Case-scoped sandbox operations, secrets and bounded log reading."""
+"""Case-scoped Sandbox tasks, MCP events and stored PCAP access."""
 import copy
 import datetime as dt
-import hashlib
+import re
+from uuid import UUID
+from sqlalchemy import func, select
 from pathlib import Path
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import defer
 from app.db import db
-from app.iris_engine.evidence.text import text_chunks, BinaryLogError
 from app.models.models import IrisModule
 from app.models.sandbox import SandboxScan, SandboxLog
-from app.models.war_rooms import WarRoomCase
 from app.models.errors import BusinessProcessingError
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
-from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, report_summary, parse_verify_tls
-from app.datamgmt.datastore.datastore_db import datastore_get_local_file_path
+from app.iris_engine.ptsandbox.client import SandboxClient, SandboxError, validate_url, parse_verify_tls
 
 MODULE = 'iris_ptsandbox_module'
-ACTIVE = ('queued', 'uploading', 'submitting', 'running', 'collecting', 'submission_unknown')
 
 
-def module_config(module_id=None, *, active=True, require_image=True):
+def module_config(module_id=None, *, active=True):
     query = IrisModule.query.filter_by(module_name=MODULE)
     row = query.filter_by(id=module_id).first() if module_id else query.order_by(IrisModule.id).first()
     if not row or (active and not row.is_active):
@@ -30,8 +27,8 @@ def module_config(module_id=None, *, active=True, require_image=True):
     validate_url(cfg.get('sandbox_url'))
     if not cfg['sandbox_token']:
         raise SandboxError('PT Sandbox token is not configured')
-    if require_image and not cfg.get('image_id'):
-        raise SandboxError('PT Sandbox VM image ID is required')
+    if cfg.get('database') not in ('scans_v2', 'scans_v2_repl'):
+        raise SandboxError('Configure the PT Sandbox MCP database')
     return row, cfg
 
 
@@ -41,17 +38,22 @@ def client_from_config(cfg):
 
 
 def sync_module_parameters():
-    """Add the new setting to installed modules without replacing their configuration."""
+    """Update stored parameter definitions and clear obsolete REST credentials."""
     from iris_ptsandbox_module.IrisPTSandboxInterface import IrisPTSandboxInterface
-    parameter = next(p for p in IrisPTSandboxInterface._module_configuration if p['param_name'] == 'verify_tls')
+    interface = IrisPTSandboxInterface
+    version = interface._module_version
     for row in IrisModule.query.filter_by(module_name=MODULE):
-        if not any(p['param_name'] == 'verify_tls' for p in row.module_config or []):
-            config = copy.deepcopy(row.module_config or [])
-            for p in config:
-                if p['param_name'] == 'sandbox_url':
-                    p['param_description'] = 'PT Sandbox 5.37 appliance; /api/v1 is optional.'
-            row.module_config = [*config, {**parameter, 'value': True}]
-            row.module_version = IrisPTSandboxInterface._module_version
+        if row.module_version == version:
+            continue
+        old = {p['param_name']: p.get('value', p.get('default')) for p in row.module_config or []}
+        row.module_config = [
+            {**p, 'value': old.get(p['param_name'], p['default'])
+             if p['param_name'] in ('verify_tls', 'ca_bundle') else p['default']}
+            for p in interface._module_configuration
+        ]
+        row.module_description = interface._module_description
+        row.module_version = version
+        row.is_active = False
     db.session.commit()
 
 
@@ -60,20 +62,15 @@ def prepare_parameter(name, value, existing=None):
         if value in (None, '', '********') and existing:
             return existing
         if not isinstance(value, str) or not value.strip() or '\r' in value or '\n' in value:
-            raise BusinessProcessingError('API token is required')
+            raise BusinessProcessingError('MCP token is required')
         return encrypt_secret(value.strip())
     try:
         if name == 'verify_tls':
             value = parse_verify_tls(value)
         elif name == 'sandbox_url':
             validate_url(value)
-        elif name in ('analysis_duration', 'max_file_mb'):
-            lower, upper = (10, 600) if name == 'analysis_duration' else (1, 512)
-            if isinstance(value, bool) or not lower <= int(value) <= upper:
-                raise ValueError()
-            value = str(int(value))
-        elif name == 'image_id' and (not isinstance(value, str) or not value.strip() or len(value) > 200):
-            raise ValueError()
+        elif name == 'database' and value not in ('scans_v2', 'scans_v2_repl'):
+            raise SandboxError('Use scans_v2 or scans_v2_repl')
         elif name == 'ca_bundle' and value and (not isinstance(value, str) or not Path(value).is_file()):
             raise SandboxError('CA file is not available on the application server')
     except (SandboxError, ValueError, TypeError, OSError) as exc:
@@ -91,14 +88,11 @@ def public_config(parameters):
 
 
 def connection_check(module_id):
-    row, cfg = module_config(module_id, active=False, require_image=False)
+    row, cfg = module_config(module_id, active=False)
     client = client_from_config(cfg)
-    result = {'checked_at': dt.datetime.utcnow().isoformat(), 'target_version': '5.37'}
+    result = {'checked_at': dt.datetime.now(dt.UTC).isoformat(), 'target_version': '5.39', 'transport': 'mcp'}
     try:
-        result.update(client.check_connection())
-        result['ok'] = result['version_matches'] and result['health'].lower() in ('ok', 'healthy', 'good')
-        if not result['version_matches']:
-            result['error'] = 'Expected PT Sandbox 5.37; check the appliance address/version'
+        result.update(client.check_connection(cfg['database']))
     except SandboxError as exc:
         result.update(ok=False, error=str(exc))
     finally:
@@ -107,7 +101,7 @@ def connection_check(module_id):
     config = copy.deepcopy(row.module_config or [])
     for p in config:
         if p['param_name'] == 'sandbox_url':
-            p['connection_check'] = {k: v for k, v in result.items() if k != 'images'}
+            p['connection_check'] = result
     row.module_config = config
     db.session.commit()
     return result
@@ -121,11 +115,17 @@ def projection(scan, detail=False):
         value = getattr(scan, key)
         result[key] = value.isoformat() + 'Z' if value else None
     if detail:
-        result['report'] = scan.report
-        result['summary'] = report_summary(scan.report)
+        if scan.options.get('transport') == 'mcp':
+            result['remote_task'] = (scan.report or {}).get('task')
+            result['mcp_started_at'] = scan.options.get('started_at')
+            behavior = (scan.report or {}).get('behavioral_events')
+            if behavior:
+                result['behavioral_events'] = {'total': behavior['total'],
+                    'included': len(behavior['events']), 'truncated': behavior['truncated']}
         result['logs'] = [{'id': log.id, 'name': log.name, 'kind': log.kind, 'size': log.size,
                            'sha256': log.sha256, 'error': log.error}
-                          for log in SandboxLog.query.options(defer(SandboxLog.content)).filter_by(scan_id=scan.id).order_by(SandboxLog.id)]
+                          for log in SandboxLog.query.options(defer(SandboxLog.content))
+                          .filter_by(scan_id=scan.id).order_by(SandboxLog.id) if is_capture(log.name)]
     return result
 
 
@@ -144,78 +144,99 @@ def list_scans(case_id, limit=50, before=None):
     return [projection(s) for s in rows]
 
 
-def start_scan(case_id, file_id, user_id, *, confirmed=False, war_room_id=None, topic_id=None):
-    if confirmed is not True:
-        raise BusinessProcessingError('Confirm sending this file to PT Sandbox')
-    try:
-        module, cfg = module_config()
-    except SandboxError as exc:
-        raise BusinessProcessingError(str(exc)) from None
-    # A connection check proves the target product version before any sample leaves IRIS.
+def checked_module_config():
+    module, cfg = module_config()
     checked = next((p.get('connection_check') for p in module.module_config or []
                     if p['param_name'] == 'sandbox_url'), None)
-    if not checked or not checked.get('ok'):
-        raise BusinessProcessingError('Administrator must check the PT Sandbox 5.37 connection first')
-    error, file = datastore_get_local_file_path(file_id, case_id)
-    if error or not Path(file.file_local_name).is_file():
-        raise BusinessProcessingError('File is not available in this case')
-    if war_room_id and not WarRoomCase.query.filter_by(war_room_id=war_room_id, case_id=case_id).first():
-        raise BusinessProcessingError('The case is not linked to this war room')
-    path = Path(file.file_local_name)
-    if path.stat().st_size > int(cfg['max_file_mb']) * 1024 * 1024:
-        raise BusinessProcessingError('File exceeds the module size limit')
-    with path.open('rb') as source:
-        digest = hashlib.file_digest(source, 'sha256').hexdigest()
-    name = file.file_original_name + ('.zip' if file.file_is_ioc or file.file_password else '')
-    scan = SandboxScan(case_id=case_id, file_id=file_id, module_id=module.id, requested_by=user_id,
-                       war_room_id=war_room_id, topic_id=topic_id, file_name=name, sha256=digest,
-                       options={'url': validate_url(cfg['sandbox_url']), 'image_id': cfg['image_id'],
-                                'analysis_duration': int(cfg['analysis_duration'])}, status='queued')
+    if not checked or not checked.get('ok') or checked.get('transport') != 'mcp':
+        raise SandboxError('Administrator must verify the PT Sandbox MCP connection first')
+    return module, cfg
+
+
+def search_tasks(name, days):
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 255:
+        raise BusinessProcessingError('Enter a file name of up to 255 characters')
     try:
+        _, cfg = checked_module_config()
+        client = client_from_config(cfg)
+        try:
+            client.connect()
+            rows = client.query(client.search_sql(cfg['database'], name.strip(), days))
+        finally:
+            client.close()
+        return [{**row, 'started_at': row['started_utc'].replace(' ', 'T') + 'Z'} for row in rows]
+    except (SandboxError, KeyError, AttributeError) as exc:
+        message = str(exc) if isinstance(exc, SandboxError) else 'Invalid PT Sandbox search response'
+        raise BusinessProcessingError(message) from None
+
+
+def import_scan(case_id, scan_id, started_at, user_id, *, include_events=False):
+    try:
+        if not isinstance(scan_id, str) or not isinstance(started_at, str):
+            raise ValueError
+        scan_id = str(UUID(scan_id))
+        # ClickHouse stores the sorting key at second precision.
+        start = dt.datetime.strptime(started_at, '%Y-%m-%dT%H:%M:%SZ')
+        if start.strftime('%Y-%m-%dT%H:%M:%SZ') != started_at:
+            raise ValueError
+    except ValueError:
+        raise BusinessProcessingError('Provide a task UUID and UTC start time YYYY-MM-DDTHH:MM:SSZ') from None
+    try:
+        module, cfg = checked_module_config()
+        client = client_from_config(cfg)
+        try:
+            client.connect()
+            rows = client.query(client.task_sql(cfg['database'], scan_id, start))
+            if not rows:
+                raise SandboxError('PT Sandbox task not found at that UTC start time')
+            row = rows[0]
+            if len(rows) != 1 or row.get('sid') != scan_id or row.get('verdict_is_final') not in (0, 1):
+                raise SandboxError('PT Sandbox returned an invalid task summary')
+            behavior = client.task_events(cfg['database'], scan_id, start) if include_events else None
+        finally:
+            client.close()
+    except SandboxError as exc:
+        raise BusinessProcessingError(str(exc)) from None
+
+    source = {'transport': 'mcp', 'url': client.url, 'database': cfg['database'], 'started_at': started_at}
+    # Serialize writes for this imported task so concurrent retries reuse the case record.
+    key = f'ptsandbox:{case_id}:{client.url}:{cfg["database"]}:{started_at}:{scan_id}'
+    db.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0))))
+    scan = next((item for item in SandboxScan.query.filter_by(case_id=case_id, scan_id=scan_id)
+                 if item.options == source), None)
+    if scan is None:
+        scan = SandboxScan(case_id=case_id, module_id=module.id, requested_by=user_id,
+                           scan_id=scan_id, options=source)
         db.session.add(scan)
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        raise BusinessProcessingError('An active or unresolved check already exists for this file') from None
-    from app.iris_engine.ptsandbox.tasks import process_scan
-    try:
-        process_scan.delay(scan.id)
-    except Exception:
-        # Persistent queued rows are also recovered by the periodic worker task.
-        pass
+    final = bool(row['verdict_is_final'])
+    if scan.status != 'completed' or final:
+        scan.file_name = str(row.get('object_name') or scan_id)[:512]
+        scan.status = 'completed' if final else 'preliminary'
+        scan.verdict = str(row.get('verdict') or 'UNKNOWN')[:120]
+        scan.report = {**(scan.report or {}), 'source': 'mcp', 'task': row}
+        scan.updated_at = dt.datetime.now(dt.UTC).replace(tzinfo=None)
+        scan.finished_at = (scan.finished_at or scan.updated_at) if final else None
+    if behavior is not None:
+        scan.report = {**scan.report, 'behavioral_events': behavior}
+    db.session.commit()
     return projection(scan)
 
 
-def read_log(case_id, scan_id, log_id):
+def is_capture(name):
+    return bool(re.search(r'\.pcap(?:ng)?(?:\.(?:gz|zst))?$', name, re.IGNORECASE))
+
+
+def read_capture(case_id, scan_id, log_id):
     get_scan(case_id, scan_id)
-    log = SandboxLog.query.filter_by(scan_id=scan_id, id=log_id).first()
-    if not log:
-        raise LookupError('Unknown sandbox log')
+    log = SandboxLog.query.options(defer(SandboxLog.content)).filter_by(scan_id=scan_id, id=log_id).first()
+    if not log or not is_capture(log.name):
+        raise LookupError('Unknown Sandbox PCAP')
     return log
 
 
-def text_page(log, offset=0, length=12000):
-    if log.content is None:
-        raise BusinessProcessingError(log.error or 'Log is not available')
-    state, parts, position = {}, [], 0
-    wanted = max(0, int(offset))
-    length = min(12000, max(1, int(length)))
-    stream = text_chunks(bytes(log.content), state)
-    try:
-        for chunk in stream:
-            end = position + len(chunk)
-            if end > wanted:
-                parts.append(chunk[max(0, wanted - position):max(0, wanted + length + 1 - position)])
-            position = end
-            if position > wanted + length:
-                break
-    except BinaryLogError:
-        raise BusinessProcessingError('Binary log: download the original; textual analysis is unavailable') from None
-    except Exception:
-        raise BusinessProcessingError('Unable to decode this log; download the original') from None
-    finally:
-        stream.close()
-    text = ''.join(parts)
-    return {'log_id': log.id, 'name': log.name, 'offset': wanted, 'text': text[:length],
-            'next_offset': wanted + length if len(text) > length else None,
-            'truncated': state.get('truncated', False), 'untrusted_data': True}
+def analysis_events(scan):
+    report = scan.report or {}
+    behavior = report.get('behavioral_events') if scan.options.get('transport') == 'mcp' else None
+    if not behavior or not behavior.get('events'):
+        raise BusinessProcessingError('Load behavioral events before starting Yuki analysis')
+    return behavior

@@ -5,12 +5,14 @@ const mock = vi.hoisted(() => ({
 	handlers: {} as ChatSocketHandlers,
 	getConversation: vi.fn(),
 	createGlobalConversation: vi.fn(),
+	createCaseConversation: vi.fn(),
 	send: vi.fn()
 }));
 vi.mock('$lib/services/chat.service', () => ({
 	ChatService: {
 		getConversation: mock.getConversation,
-		createGlobalConversation: mock.createGlobalConversation
+		createGlobalConversation: mock.createGlobalConversation,
+		createCaseConversation: mock.createCaseConversation
 	},
 	ChatSocketClient: class {
 		constructor(handlers: ChatSocketHandlers) {
@@ -38,6 +40,16 @@ beforeEach(async () => {
 	chat = createChatPanelContext();
 	await chat.openConversation(1);
 	chat.send('hello');
+});
+
+it('opens case chat and sends a Sandbox analysis prompt directly', async () => {
+	mock.handlers.onAssistantEnd?.({ conversation_id: 1 });
+	mock.send.mockClear();
+	mock.createCaseConversation.mockResolvedValue({ ok: true, data: { id: 42 } });
+	expect(await chat.analyzeSandbox(17, 5, 'Analyze Sandbox events.')).toBe(true);
+	expect(chat.state.open).toBe(true);
+	expect(mock.createCaseConversation).toHaveBeenCalledWith(17, { title: 'PT Sandbox #5' });
+	expect(mock.send).toHaveBeenCalledExactlyOnceWith(42, 'Analyze Sandbox events.');
 });
 
 describe('one-click alert analysis', () => {

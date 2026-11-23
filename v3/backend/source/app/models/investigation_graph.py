@@ -21,6 +21,7 @@ class InvestigationGraphEdge(db.Model):
     source = Column(String(32), nullable=False)
     target = Column(String(32), nullable=False)
     label = Column(String(200), nullable=False)
+    relation = Column(String(32), nullable=True)
     directed = Column(Boolean, nullable=False)
     evidence = relationship(
         'InvestigationGraphEvidence', cascade='all, delete-orphan', lazy='selectin',
