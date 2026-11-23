@@ -29,6 +29,15 @@ def test_urls_domains_paths_and_lists():
     assert ('ip-src', '203.0.113.4') in found
 
 
+def test_event_field_references_are_not_domains():
+    found = extract_iocs({'events': [{
+        'datafield1': 'object.process.parent.id SUBJECT.PROCESS.ID object.process.id',
+        'datafield2': 'subject.account.name event_src.title example.id',
+        'object.query': 'object.example.id',
+    }]})
+    assert set(found) == {('domain', 'example.id'), ('domain', 'object.example.id')}
+
+
 def test_refresh_deduplicates_and_does_not_restore_removed_iocs():
     alert = SimpleNamespace(alert_source='MaxPatrol EDR',
         alert_source_content={'events': [{'src.ip': '192.0.2.1'}]}, iocs=[])

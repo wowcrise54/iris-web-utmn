@@ -21,7 +21,7 @@ class IncidentsListTests(unittest.TestCase):
         self.assertEqual(call.kwargs['body'], {
             'offset': 0, 'limit': 50, 'groups': {'filterType': 'no_filter'},
             'timeFrom': '2026-10-14T19:00:00.000Z', 'timeTo': None, 'filterTimeType': 'creation',
-            'filter': {'select': ['key', 'name', 'category', 'type', 'status', 'created', 'assigned'],
+            'filter': {'select': ['key', 'name', 'category', 'type', 'status', 'created', 'assigned', 'description'],
                 'where': 'status != "Closed"', 'orderby': [
                     {'field': 'created', 'sortOrder': 'descending'},
                     {'field': 'status', 'sortOrder': 'ascending'},
@@ -31,7 +31,7 @@ class IncidentsListTests(unittest.TestCase):
     def test_import_uses_only_list_and_events_requests(self):
         session = Mock()
         row = {'id': 'incident-id', 'key': 'INC-1', 'name': 'From list', 'status': 'New',
-               'created': '2026-10-21T08:00:00Z'}
+               'created': '2026-10-21T08:00:00Z', 'description': 'Incident details\n\nAffected host: workstation'}
 
         def respond(method, url, **_kwargs):
             response = Mock(status_code=200)
@@ -52,8 +52,15 @@ class IncidentsListTests(unittest.TestCase):
         self.assertEqual(session.request.call_count, 2)
         payload = store.create.call_args.args[1]
         self.assertEqual(payload['alert_title'], 'From list')
+        self.assertEqual(payload['alert_description'], row['description'])
         self.assertEqual(payload['alert_source_content']['incident'], row)
         self.assertEqual(payload['alert_source_content']['incident_source'], 'incidents_list_v2')
+
+    def test_missing_incident_description_has_no_placeholder(self):
+        now = datetime.now(timezone.utc)
+        for detail in ({}, {'description': '  '}, {'description': 'Incident Form MaxPatrol SIEM'}):
+            with self.subTest(detail=detail):
+                self.assertIsNone(self.m.alert_payload(self.config, 'one', detail, [], now)['alert_description'])
 
     def test_refresh_merges_list_fields_with_saved_extra_fields(self):
         client, store = Mock(), Mock()

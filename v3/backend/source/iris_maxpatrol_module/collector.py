@@ -364,6 +364,14 @@ def incident_event_window(detail, start, end):
     return start, end
 
 
+def incident_description(value):
+    if not isinstance(value, str) or value.strip().casefold() in {
+        '', 'incident from maxpatrol siem', 'incident form maxpatrol siem',
+    }:
+        return None
+    return value
+
+
 def alert_payload(config, incident_id, detail, events, now, *, event_materials=None):
     event_time = now
     if isinstance(detail.get('created'), str):
@@ -375,7 +383,7 @@ def alert_payload(config, incident_id, detail, events, now, *, event_materials=N
             pass
     return {
         'alert_title': detail.get('name') or f'SIEM incident {incident_id}',
-        'alert_description': detail.get('description') or 'Incident from MaxPatrol SIEM',
+        'alert_description': incident_description(detail.get('description')),
         'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': incident_id,
         'alert_source_link': config.url + '/#/incident/incidents/view/' + quote(incident_id, safe=''),
         'alert_severity_id': config.severity_id, 'alert_status_id': config.status_id,
@@ -500,7 +508,7 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
     return successes
 
 
-INCIDENT_SELECT_FIELDS = ['key', 'name', 'category', 'type', 'status', 'created', 'assigned']
+INCIDENT_SELECT_FIELDS = ['key', 'name', 'category', 'type', 'status', 'created', 'assigned', 'description']
 EVENT_SELECT_FIELDS = [
     '_checkpoint',
     '_meta',

@@ -66,6 +66,7 @@ def harness(*, json_deserializer=None):
         id = Column(Integer, primary_key=True)
         alert_uuid = Column(Uuid, unique=True)
         alert_title = Column(String)
+        alert_description = Column(String)
         alert_customer_id = Column(Integer)
         alert_source = Column(String)
         alert_source_ref = Column(String)
@@ -420,6 +421,7 @@ class StorageTests(unittest.TestCase):
             h.alerts.alerts_create = create
             uid = '00000006-050d-0642-f000-0000255d3663'
             h.store.create('one', {'alert_title': 'Analyst title', 'alert_customer_id': 1,
+                'alert_description': 'Incident from MaxPatrol SIEM',
                 'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
                 'alert_source_content': {'custom': 'preserved', 'incident': {'id': 'one', 'name': 'Saved card'},
                                          'events': [{'uuid': uid, 'body': 'raw'}]}})
@@ -430,11 +432,17 @@ class StorageTests(unittest.TestCase):
             self.assertTrue(h.store.needs_event_refresh('one'))
             self.assertEqual(h.store.refresh_candidates(), ['one'])
             incoming = {'events': [{'uuid': uid, 'text': 'normalized'}], 'event_tree': [{'uuid': uid}],
+                        'incident': {'id': 'one', 'description': 'Description from SIEM'},
                         'event_collection': {'version': 2, 'complete': True,
                             'collected_at': timestamp(datetime.now(timezone.utc))}}
             self.assertTrue(h.store.refresh_events('one', incoming))
             row = h.db.session.query(h.Alert).one()
             self.assertEqual(row.alert_title, 'Analyst title')
+            self.assertEqual(row.alert_description, 'Description from SIEM')
+            row.alert_description = 'Analyst description'
+            h.db.session.commit()
+            self.assertTrue(h.store.refresh_events('one', incoming))
+            self.assertEqual(row.alert_description, 'Analyst description')
             self.assertEqual(row.alert_source_content['custom'], 'preserved')
             self.assertEqual(row.alert_source_content['events'][0]['body'], 'raw')
             self.assertEqual(row.alert_source_content['events'][0]['text'], 'normalized')

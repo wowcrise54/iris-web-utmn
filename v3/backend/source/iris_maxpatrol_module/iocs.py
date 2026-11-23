@@ -3,6 +3,8 @@ import ipaddress
 import re
 from urllib.parse import urlsplit
 
+from iris_maxpatrol_module.collector import EVENT_SELECT_FIELDS
+
 FIELDS = (
     'src.ip', 'dst.ip', 'external_src.ip', 'external_dst.ip', 'event_src.ip',
     'dst.fqdn', 'object.query', 'external_dst.fqdn', 'external_src.fqdn',
@@ -16,6 +18,7 @@ IP = re.compile(r'(?<![\w.:])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![\w.]|:[0-9a-fA-F]*
 URL = re.compile(r'\b(?:https?|ftp)://[^\s<>"\x27]+', re.I)
 DOMAIN = re.compile(r'(?<![\w@\\/.-])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}(?![\w.-])')
 FILE_SUFFIXES = {'exe', 'dll', 'sys', 'bat', 'cmd', 'ps1', 'sh', 'txt', 'log', 'json', 'xml', 'pdf', 'zip', 'doc', 'docx'}
+EVENT_FIELD_NAMES = frozenset(field.lower() for field in EVENT_SELECT_FIELDS)
 STATE_KEY = '_iris_auto_iocs'
 
 
@@ -77,6 +80,8 @@ def extract_iocs(content):
                             add('domain', host, field)
                 for match in DOMAIN.finditer(value.rstrip('.')):
                     token = match.group().lower()
+                    if token in EVENT_FIELD_NAMES:
+                        continue
                     if len(token) <= 253 and (field.endswith('.fqdn') or token.rsplit('.', 1)[-1] not in FILE_SUFFIXES):
                         add('domain', token, field)
     return found
