@@ -195,19 +195,26 @@ class SandboxClient:
         events = []
         if total:
             fields = (
-                "toString(toTimeZone(create_time, 'UTC')) AS t, type, node_id, stage_index, pid, target_pid, "
-                "name, arguments, process_action, process_name, ip, url, host, port, src_ip, dst_ip, country, "
-                "key, key_data, value, description, detect_name, mitre_threat_id, confidence"
+                'node_id, stage_index, type, pid, target_pid, name, arguments, process_action, '
+                'process_name, ip, url, host, port, src_ip, dst_ip, country, key, key_data, value, '
+                'description, detect_name, mitre_threat_id, confidence'
             )
-            sql = (f'SELECT {fields} FROM {table} WHERE {where} '
-                   'ORDER BY create_time, node_id, stage_index, type')
-            limit = min(400, total)
-            while True:
+            # Tie-break by the returned fields so equal timestamps page consistently.
+            sql = (f"SELECT toString(toTimeZone(create_time, 'UTC')) AS t, {fields} "
+                   f'FROM {table} WHERE {where} ORDER BY create_time, {fields}')
+            target = min(1000, total)
+            page_size = target
+            while len(events) < target:
+                limit = min(page_size, target - len(events))
+                offset = f' OFFSET {len(events)}' if events else ''
                 try:
-                    events = self.query(f'{sql} LIMIT {limit}')
-                    break
+                    page = self.query(f'{sql} LIMIT {limit}{offset}')
                 except SandboxResponseTooLarge:
                     if limit == 1:
                         raise
-                    limit = max(1, limit // 2)
+                    page_size = limit // 2
+                    continue
+                events.extend(page)
+                if len(page) < limit:
+                    break
         return {'counts': counts, 'total': total, 'events': events, 'truncated': len(events) < total}

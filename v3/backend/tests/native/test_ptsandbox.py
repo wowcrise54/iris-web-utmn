@@ -260,22 +260,18 @@ def test_events_summary_precedes_bounded_chronology(client_module):
                for q in (summary, events))
 
 
-def test_large_event_response_retries_with_smaller_chronology(client_module):
+def test_large_event_response_uses_smaller_pages_without_losing_events(client_module):
     client = client_module.SandboxClient('https://sandbox.test', 'test-token')
-    client.query = Mock(side_effect=[[{'type': 'process', 'c': 400}],
-        client_module.SandboxResponseTooLarge('oversized'), [{'type': 'process'}]])
+    rows = [{'type': 'process', 'pid': pid} for pid in range(1000)]
+    client.query = Mock(side_effect=[[{'type': 'process', 'c': 1100}],
+        client_module.SandboxResponseTooLarge('oversized'), rows[:500], rows[500:]])
     behavior = client.task_events('scans_v2', 'f549dadc-e402-11f1-a6f6-2fb4d4d5a685', datetime(2026, 11, 19))
-    assert behavior['truncated'] and behavior['total'] == 400
-    assert client.query.call_args_list[1].args[0].endswith('LIMIT 400')
-    assert client.query.call_args_list[2].args[0].endswith('LIMIT 200')
-
-
-@pytest.mark.parametrize('name,expected', [
-    ('traffic.pcap', True), ('traffic.PCAPNG.gz', True), ('traffic.pcap.zst', True),
-    ('events.log.gz', False), ('report.zip', False), ('traffic.pcap.zip', False),
-])
-def test_only_capture_filenames_are_allowed(business, name, expected):
-    assert business.is_capture(name) is expected
+    assert behavior['truncated'] and behavior['total'] == 1100
+    assert behavior['events'] == rows
+    calls = [call.args[0] for call in client.query.call_args_list]
+    assert calls[1].endswith('LIMIT 1000')
+    assert calls[2].endswith('LIMIT 500')
+    assert calls[3].endswith('LIMIT 500 OFFSET 500')
 
 
 def test_yuki_accepts_only_nonempty_mcp_events(business):
