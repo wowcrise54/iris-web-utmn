@@ -21,7 +21,7 @@ class IncidentsListTests(unittest.TestCase):
         self.assertEqual(call.kwargs['body'], {
             'offset': 0, 'limit': 50, 'groups': {'filterType': 'no_filter'},
             'timeFrom': '2026-10-14T19:00:00.000Z', 'timeTo': None, 'filterTimeType': 'creation',
-            'filter': {'select': ['key', 'name', 'category', 'type', 'status', 'created', 'assigned', 'description'],
+            'filter': {'select': ['key', 'name', 'category', 'type', 'status', 'created', 'assigned'],
                 'where': 'status != "Closed"', 'orderby': [
                     {'field': 'created', 'sortOrder': 'descending'},
                     {'field': 'status', 'sortOrder': 'ascending'},
@@ -61,6 +61,16 @@ class IncidentsListTests(unittest.TestCase):
         for detail in ({}, {'description': '  '}, {'description': 'Incident Form MaxPatrol SIEM'}):
             with self.subTest(detail=detail):
                 self.assertIsNone(self.m.alert_payload(self.config, 'one', detail, [], now)['alert_description'])
+
+    def test_import_uses_incident_description_returned_in_events(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'one'}]
+        client.events.return_value = [{'incident.description': 'Description from event'}]
+        store.active.return_value = True
+        store.seen.return_value = False
+        self.assertEqual(self.m.collect(self.config, client, store), 1)
+        payload = store.create.call_args.args[1]
+        self.assertEqual(payload['alert_description'], 'Description from event')
 
     def test_refresh_merges_list_fields_with_saved_extra_fields(self):
         client, store = Mock(), Mock()

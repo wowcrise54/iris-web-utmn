@@ -11,7 +11,7 @@ from app.models.maxpatrol import MaxPatrolReceipt
 from app.iris_engine.mail.secrets import encrypt_secret, decrypt_secret
 from iris_maxpatrol_module.collector import (
     LOOKBACK_DESCRIPTION, Config, positive_int, event_uuid, render_event_tree, compact_alert_source,
-    incident_description,
+    incident_description, resolve_incident_description,
 )
 from iris_maxpatrol_module.edr import EDR_RESPONSE_PARAMETER, ENABLED_PARAMETER, execution_enabled
 
@@ -158,12 +158,11 @@ class IrisStore:
             links = materials.get('event_links') or links
             roots = [node.get('uuid') for node in materials.get('event_tree') or []]
         content.update(materials)
-        incident = content.get('incident')
-        if isinstance(incident, dict) and incident_description(alert.alert_description) is None:
-            description = incident_description(incident.get('description'))
+        content['events'] = [*events.values(), *unidentified]
+        if incident_description(alert.alert_description) is None:
+            description = resolve_incident_description(content.get('incident'), content['events'])
             if description is not None:
                 alert.alert_description = description
-        content['events'] = [*events.values(), *unidentified]
         content['event_links'] = links
         content['event_tree'] = render_event_tree(roots, events, links)
         alert.alert_source_content = compact_alert_source(content)

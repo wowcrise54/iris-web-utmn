@@ -372,6 +372,19 @@ def incident_description(value):
     return value
 
 
+def resolve_incident_description(detail, events):
+    description = incident_description(detail.get('description')) if isinstance(detail, dict) else None
+    if description is not None:
+        return description
+    candidates = {
+        description for event in events if isinstance(event, dict)
+        if (description := incident_description(event.get('incident.description'))) is not None
+    }
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
 def alert_payload(config, incident_id, detail, events, now, *, event_materials=None):
     event_time = now
     if isinstance(detail.get('created'), str):
@@ -383,7 +396,7 @@ def alert_payload(config, incident_id, detail, events, now, *, event_materials=N
             pass
     return {
         'alert_title': detail.get('name') or f'SIEM incident {incident_id}',
-        'alert_description': incident_description(detail.get('description')),
+        'alert_description': resolve_incident_description(detail, events),
         'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': incident_id,
         'alert_source_link': config.url + '/#/incident/incidents/view/' + quote(incident_id, safe=''),
         'alert_severity_id': config.severity_id, 'alert_status_id': config.status_id,
@@ -508,7 +521,7 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
     return successes
 
 
-INCIDENT_SELECT_FIELDS = ['key', 'name', 'category', 'type', 'status', 'created', 'assigned', 'description']
+INCIDENT_SELECT_FIELDS = ['key', 'name', 'category', 'type', 'status', 'created', 'assigned']
 EVENT_SELECT_FIELDS = [
     '_checkpoint',
     '_meta',
