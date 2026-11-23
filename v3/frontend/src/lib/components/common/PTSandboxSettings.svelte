@@ -20,16 +20,15 @@
 </script>
 
 <section class="my-4 space-y-3 rounded-md border p-4">
-	<h3 class="font-semibold">PT Sandbox 5.37</h3>
-	<p class="text-sm text-muted-foreground">{irisT('File checks from the incident and /sandbox check in the war room. Background analysis, a separate chat result, full report and original logs, optional Yuki analysis.', $locale)}</p>
-	<p class="text-sm">{irisT('Save the settings below, then check the connection. The check verifies the product version and lists VM images without uploading files.', $locale)}</p>
+	<h3 class="font-semibold">PT Sandbox 5.39 MCP</h3>
+	<p class="text-sm text-muted-foreground">{$locale === 'ru' ? 'Импорт сводок готовых заданий через штатный MCP PT Sandbox.' : 'Import existing task summaries through the built-in PT Sandbox MCP server.'}</p>
+	<p class="text-sm">{$locale === 'ru' ? 'Сохраните адрес, токен чтения MCP и базу, затем проверьте подключение.' : 'Save the MCP address, read token, and database, then check the connection.'}</p>
 	<Button variant="outline" disabled={busy} onclick={check}>{busy ? irisT('Checking connection…', $locale) : irisT('Check connection', $locale)}</Button>
 	{#if shown}
 		<p role="status" class={shown.ok ? 'text-sm text-green-600' : 'text-sm text-destructive'}>
-			{shown.ok ? irisT('Connection verified', $locale) : irisT('Connection not verified', $locale)} · {String(shown.version ?? '5.37')}
+			{shown.ok ? irisT('Connection verified', $locale) : irisT('Connection not verified', $locale)}
 			{#if shown.checked_at} · {String(shown.checked_at)}{/if}
 		</p>
 		{#if shown.error}<p class="text-sm text-destructive">{String(shown.error)}</p>{/if}
-		{#if shown.images}<details><summary class="cursor-pointer text-sm">{irisT('Available VM images', $locale)}</summary><pre class="max-h-56 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(shown.images, null, 2)}</pre></details>{/if}
 	{:else}<p class="text-sm text-muted-foreground">{irisT('Connection has not been checked for the saved settings.', $locale)}</p>{/if}
 </section>

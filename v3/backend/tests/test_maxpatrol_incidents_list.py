@@ -31,7 +31,7 @@ class IncidentsListTests(unittest.TestCase):
     def test_import_uses_only_list_and_events_requests(self):
         session = Mock()
         row = {'id': 'incident-id', 'key': 'INC-1', 'name': 'From list', 'status': 'New',
-               'created': '2026-10-21T08:00:00Z'}
+               'created': '2026-10-21T08:00:00Z', 'description': 'Incident details\n\nAffected host: workstation'}
 
         def respond(method, url, **_kwargs):
             response = Mock(status_code=200)
@@ -52,8 +52,39 @@ class IncidentsListTests(unittest.TestCase):
         self.assertEqual(session.request.call_count, 2)
         payload = store.create.call_args.args[1]
         self.assertEqual(payload['alert_title'], 'From list')
+        self.assertEqual(payload['alert_description'], row['description'])
         self.assertEqual(payload['alert_source_content']['incident'], row)
         self.assertEqual(payload['alert_source_content']['incident_source'], 'incidents_list_v2')
+
+    def test_missing_incident_description_has_no_placeholder(self):
+        now = datetime.now(timezone.utc)
+        for detail in ({}, {'description': '  '}, {'description': 'Incident Form MaxPatrol SIEM'}):
+            with self.subTest(detail=detail):
+                self.assertIsNone(self.m.alert_payload(self.config, 'one', detail, [], now)['alert_description'])
+
+    def test_import_uses_incident_description_returned_in_events(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'one'}]
+        client.events.return_value = [{'incident.description': 'Description from event'}]
+        store.active.return_value = True
+        store.seen.return_value = False
+        self.assertEqual(self.m.collect(self.config, client, store), 1)
+        payload = store.create.call_args.args[1]
+        self.assertEqual(payload['alert_description'], 'Description from event')
+
+    def test_import_prefers_incident_correlation_text_over_other_events_and_description(self):
+        client, store = Mock(), Mock()
+        client.incidents.return_value = [{'id': 'one', 'description': 'Incident card description'}]
+        client.events.return_value = [
+            {'text': 'Raw child event text'},
+            {'correlation_type': 'event', 'text': 'Other correlation text'},
+            {'correlation_type': 'incident', 'text': '  '},
+            {'correlation_type': 'incident', 'text': 'Incident correlation text'},
+        ]
+        store.active.return_value = True
+        store.seen.return_value = False
+        self.assertEqual(self.m.collect(self.config, client, store), 1)
+        self.assertEqual(store.create.call_args.args[1]['alert_description'], 'Incident correlation text')
 
     def test_refresh_merges_list_fields_with_saved_extra_fields(self):
         client, store = Mock(), Mock()

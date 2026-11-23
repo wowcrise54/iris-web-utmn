@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Table, Uuid, create_engine, select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.dialects import postgresql  # noqa: F401  register before temporary sys.modules isolation
@@ -66,6 +66,8 @@ def harness(*, json_deserializer=None):
         id = Column(Integer, primary_key=True)
         alert_uuid = Column(Uuid, unique=True)
         alert_title = Column(String)
+        alert_description = Column(String)
+        alert_source_event_time = Column(DateTime)
         alert_customer_id = Column(Integer)
         alert_source = Column(String)
         alert_source_ref = Column(String)
@@ -73,11 +75,16 @@ def harness(*, json_deserializer=None):
         modification_history = Column(JSON)
         iocs = relationship(Ioc, secondary=association)
 
+        @property
+        def alert_id(self):
+            return self.id
+
     engine = create_engine('sqlite://', json_deserializer=json_deserializer)
     session = sessionmaker(bind=engine)()
     db = types.SimpleNamespace(Model=base, session=session, engine=engine)
     module_names = ('app', 'app.db', 'app.models', 'app.models.models', 'app.models.errors',
                     'app.models.alerts', 'app.models.iocs', 'app.business', 'app.business.alerts',
+                    'app.datamgmt', 'app.datamgmt.alerts', 'app.datamgmt.alerts.alerts_db',
                     'app.iris_engine', 'app.iris_engine.mail', 'app.iris_engine.mail.secrets')
     doubles = {name: types.ModuleType(name) for name in module_names}
     doubles['app.db'].db = db
@@ -88,6 +95,7 @@ def harness(*, json_deserializer=None):
     doubles['app.models.errors'].BusinessProcessingError = ValueError
     doubles['app.models.alerts'].Alert = Alert
     doubles['app.business.alerts'].alerts_create = Mock()
+    doubles['app.datamgmt.alerts.alerts_db'].cache_similar_alert = Mock()
     doubles['app.iris_engine.mail.secrets'].encrypt_secret = lambda value: 'encrypted:' + value
     doubles['app.iris_engine.mail.secrets'].decrypt_secret = lambda value: value.removeprefix('encrypted:') if value else None
     celery = types.SimpleNamespace(task=lambda **_kwargs: lambda f: f,
@@ -112,7 +120,8 @@ def harness(*, json_deserializer=None):
             config = business.configuration(row)
             yield types.SimpleNamespace(db=db, business=business, models=models, tasks=tasks,
                 store=business.IrisStore(1, config), config=config, Module=Module, Alert=Alert,
-                alerts=doubles['app.business.alerts'], extraction=extraction)
+                alerts=doubles['app.business.alerts'], extraction=extraction,
+                cache_similar_alert=doubles['app.datamgmt.alerts.alerts_db'].cache_similar_alert)
         finally:
             session.close()
             engine.dispose()
@@ -296,11 +305,16 @@ class StorageTests(unittest.TestCase):
             h.db.session.expire_all()
             self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
             self.assertIn('dst.fqdn', row.iocs[0].ioc_description)
+            h.cache_similar_alert.assert_called_once()
+            customer, assets, iocs, alert_id, _ = h.cache_similar_alert.call_args.args
+            self.assertEqual((customer, assets, [ioc.ioc_value for ioc in iocs], alert_id),
+                             (1, [], ['new.example.org'], row.alert_id))
             previous = row.alert_source_content
             row.alert_source_content = {'events': [{'src.ip': '192.0.2.1'}]}
             h.extraction.extract_alert_iocs(row, previous)
             h.db.session.commit()
             self.assertEqual([ioc.ioc_value for ioc in row.iocs], ['new.example.org'])
+            self.assertEqual(h.cache_similar_alert.call_count, 1)
 
     def test_archived_oversized_incident_is_not_reloaded_into_worker_memory(self):
         with harness() as h:
@@ -420,6 +434,7 @@ class StorageTests(unittest.TestCase):
             h.alerts.alerts_create = create
             uid = '00000006-050d-0642-f000-0000255d3663'
             h.store.create('one', {'alert_title': 'Analyst title', 'alert_customer_id': 1,
+                'alert_description': 'Incident from MaxPatrol SIEM',
                 'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': 'one',
                 'alert_source_content': {'custom': 'preserved', 'incident': {'id': 'one', 'name': 'Saved card'},
                                          'events': [{'uuid': uid, 'body': 'raw'}]}})
@@ -429,12 +444,19 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(h.store.stored_incident('one')['name'], 'Saved card')
             self.assertTrue(h.store.needs_event_refresh('one'))
             self.assertEqual(h.store.refresh_candidates(), ['one'])
-            incoming = {'events': [{'uuid': uid, 'text': 'normalized'}], 'event_tree': [{'uuid': uid}],
+            incoming = {'events': [{'uuid': uid, 'text': 'normalized', 'correlation_type': 'incident'}],
+                        'event_tree': [{'uuid': uid}],
+                        'incident': {'id': 'one', 'description': 'Description from SIEM'},
                         'event_collection': {'version': 2, 'complete': True,
                             'collected_at': timestamp(datetime.now(timezone.utc))}}
             self.assertTrue(h.store.refresh_events('one', incoming))
             row = h.db.session.query(h.Alert).one()
             self.assertEqual(row.alert_title, 'Analyst title')
+            self.assertEqual(row.alert_description, 'normalized')
+            row.alert_description = 'Analyst description'
+            h.db.session.commit()
+            self.assertTrue(h.store.refresh_events('one', incoming))
+            self.assertEqual(row.alert_description, 'Analyst description')
             self.assertEqual(row.alert_source_content['custom'], 'preserved')
             self.assertEqual(row.alert_source_content['events'][0]['body'], 'raw')
             self.assertEqual(row.alert_source_content['events'][0]['text'], 'normalized')

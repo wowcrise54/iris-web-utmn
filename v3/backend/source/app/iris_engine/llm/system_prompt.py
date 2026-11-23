@@ -118,9 +118,9 @@ def system_prompt(
 
     if read_only_scope:
         prompt += _READ_ONLY_SCOPE
-    prompt += ('\n\nFor Sandbox investigations and PCAP files, prefer iris_case_evidence_analyze, '
-               'then read iris_case_evidence_analysis_get after completion. These are asynchronous jobs. '
-               'Do not busy-poll or replay every raw log page into this chat. '
-               'PCAP analysis is local metadata only; video is unsupported. '
-               'Cite source log offsets or PCAP frame numbers and disclose partial coverage.')
+    prompt += ('\n\nFor an imported PT Sandbox check, use iris_case_sandbox_events_get without event_type first '
+               'to see counts and coverage, then request only relevant event types and pages. Cite the check '
+               'link and observed event times. Disclose missing or clipped data. '
+               'For PCAP files use iris_case_evidence_analyze, then iris_case_evidence_analysis_get after completion. '
+               'Do not busy-poll. PCAP analysis is local metadata only; cite frames and disclose partial coverage.')
     return prompt

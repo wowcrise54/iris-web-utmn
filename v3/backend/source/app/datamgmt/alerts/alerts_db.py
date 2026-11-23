@@ -1355,7 +1355,7 @@ def search_alert_resolution_by_name(resolution_status_name: str, exact_match: Fa
 
 def cache_similar_alert(customer_id, assets: list[CaseAssets], iocs: list[Ioc], alert_id, creation_date):
     """
-    Cache similar alerts
+    Stage similarity entries in the caller's transaction.
 
     args:
         customer_id (int): The ID of the customer
@@ -1380,7 +1380,11 @@ def cache_similar_alert(customer_id, assets: list[CaseAssets], iocs: list[Ioc], 
                                          created_at=creation_date)
         db.session.add(cache_entry)
 
-    db.session.commit()
+
+def refresh_alert_similarity(alert):
+    db.session.query(SimilarAlertsCache).filter_by(alert_id=alert.alert_id).delete(synchronize_session=False)
+    cache_similar_alert(alert.alert_customer_id, alert.assets, alert.iocs,
+                        alert.alert_id, alert.alert_source_event_time)
 
 
 def register_related_alerts(new_alert=None, assets_list=None, iocs_list=None):

@@ -364,6 +364,33 @@ def incident_event_window(detail, start, end):
     return start, end
 
 
+def incident_description(value):
+    if not isinstance(value, str) or value.strip().casefold() in {
+        '', 'incident from maxpatrol siem', 'incident form maxpatrol siem',
+    }:
+        return None
+    return value
+
+
+def resolve_incident_description(detail, events):
+    for event in events:
+        if isinstance(event, dict) and event.get('correlation_type') == 'incident':
+            text = incident_description(event.get('text'))
+            if text is not None:
+                return text
+
+    description = incident_description(detail.get('description')) if isinstance(detail, dict) else None
+    if description is not None:
+        return description
+    candidates = {
+        description for event in events if isinstance(event, dict)
+        if (description := incident_description(event.get('incident.description'))) is not None
+    }
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return None
+
+
 def alert_payload(config, incident_id, detail, events, now, *, event_materials=None):
     event_time = now
     if isinstance(detail.get('created'), str):
@@ -375,7 +402,7 @@ def alert_payload(config, incident_id, detail, events, now, *, event_materials=N
             pass
     return {
         'alert_title': detail.get('name') or f'SIEM incident {incident_id}',
-        'alert_description': detail.get('description') or 'Incident from MaxPatrol SIEM',
+        'alert_description': resolve_incident_description(detail, events),
         'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': incident_id,
         'alert_source_link': config.url + '/#/incident/incidents/view/' + quote(incident_id, safe=''),
         'alert_severity_id': config.severity_id, 'alert_status_id': config.status_id,

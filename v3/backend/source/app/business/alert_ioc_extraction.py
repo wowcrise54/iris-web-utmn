@@ -17,11 +17,17 @@ def extract_alert_iocs(alert, previous_content=None):
             IocType.type_name.in_({key[0] for key in pending})).all()}
         pending, seen = pending_iocs(alert, {identifier: name for name, identifier in types.items()})
         tlp = db.session.query(Tlp).filter_by(tlp_name='amber').one()
+        added = []
         for (kind, value), fields in pending.items():
             if kind not in types:
                 # Retry after the catalogue is repaired instead of losing candidates.
                 seen.remove([kind, value])
                 continue
-            alert.iocs.append(Ioc(ioc_value=value, ioc_type_id=types[kind],
+            added.append(Ioc(ioc_value=value, ioc_type_id=types[kind],
                 ioc_tlp_id=tlp.tlp_id, ioc_description='Automatically extracted from MaxPatrol: ' + ', '.join(fields)))
+        alert.iocs.extend(added)
+        if added and alert.alert_id is not None:
+            from app.datamgmt.alerts.alerts_db import cache_similar_alert
+
+            cache_similar_alert(alert.alert_customer_id, [], added, alert.alert_id, alert.alert_source_event_time)
     alert.alert_source_content = {**alert.alert_source_content, STATE_KEY: seen}
