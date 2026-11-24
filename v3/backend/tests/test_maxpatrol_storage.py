@@ -34,6 +34,16 @@ def harness(*, json_deserializer=None):
 
     association = Table('alert_iocs', base.metadata,
         Column('alert_id', ForeignKey('alerts.id')), Column('ioc_id', ForeignKey('ioc.id')))
+    asset_links = Table('alert_assets', base.metadata,
+        Column('alert_id', ForeignKey('alerts.id')), Column('asset_id', ForeignKey('case_assets.asset_id')))
+
+    class CaseAssets(base):
+        __tablename__ = 'case_assets'
+        asset_id = Column(Integer, primary_key=True)
+        asset_name = Column(String)
+        asset_ip = Column(String)
+        asset_description = Column(String)
+        date_added = Column(DateTime)
 
     class IocType(base):
         __tablename__ = 'ioc_type'
@@ -74,6 +84,7 @@ def harness(*, json_deserializer=None):
         alert_source_content = Column(JSON)
         modification_history = Column(JSON)
         iocs = relationship(Ioc, secondary=association)
+        assets = relationship(CaseAssets, secondary=asset_links)
 
         @property
         def alert_id(self):
@@ -83,7 +94,7 @@ def harness(*, json_deserializer=None):
     session = sessionmaker(bind=engine)()
     db = types.SimpleNamespace(Model=base, session=session, engine=engine)
     module_names = ('app', 'app.db', 'app.models', 'app.models.models', 'app.models.errors',
-                    'app.models.alerts', 'app.models.iocs', 'app.business', 'app.business.alerts',
+                    'app.models.alerts', 'app.models.iocs', 'app.models.assets', 'app.business', 'app.business.alerts',
                     'app.datamgmt', 'app.datamgmt.alerts', 'app.datamgmt.alerts.alerts_db',
                     'app.iris_engine', 'app.iris_engine.mail', 'app.iris_engine.mail.secrets')
     doubles = {name: types.ModuleType(name) for name in module_names}
@@ -94,6 +105,7 @@ def harness(*, json_deserializer=None):
     doubles['app.models.iocs'].Tlp = Tlp
     doubles['app.models.errors'].BusinessProcessingError = ValueError
     doubles['app.models.alerts'].Alert = Alert
+    doubles['app.models.assets'].CaseAssets = CaseAssets
     doubles['app.business.alerts'].alerts_create = Mock()
     doubles['app.datamgmt.alerts.alerts_db'].cache_similar_alert = Mock()
     doubles['app.iris_engine.mail.secrets'].encrypt_secret = lambda value: 'encrypted:' + value
@@ -146,6 +158,39 @@ class StorageTests(unittest.TestCase):
             util.add_obj_history_entry(alert, 'Alert created', commit=True)
             self.assertEqual(list(alert.modification_history.values()), [
                 {'user': 'system', 'user_id': None, 'action': 'Alert created'}])
+
+    def test_import_and_refresh_attach_siem_assets_and_keep_analyst_edits(self):
+        with harness() as h:
+            def create(alert, *, iocs, assets):
+                alert.assets = assets
+                h.db.session.add(alert)
+                h.db.session.commit()
+
+            h.alerts.alerts_create = create
+            incident_id = 'asset-test'
+            first = {'assigned_src_host': 'PC-01', 'assigned_src_ip': '10.0.0.1',
+                     'dst.ip': '203.0.113.10'}
+            h.store.create(incident_id, {'alert_customer_id': h.config.customer_id,
+                'alert_source': 'MaxPatrol SIEM', 'alert_source_ref': incident_id,
+                'alert_source_content': {'events': [first, first]}})
+            alert = h.store._imported_alert(incident_id)
+            self.assertEqual([(asset.asset_name, asset.asset_ip) for asset in alert.assets],
+                             [('PC-01', '10.0.0.1')])
+            alert.assets[0].asset_name = 'Analyst name'
+            alert.assets[0].asset_description = 'Analyst notes'
+            h.db.session.commit()
+
+            later = {'assigned_src_host': 'pc-01', 'assigned_src_ip': '10.0.0.1',
+                     'assigned_dst_ip': '2001:0db8::2', 'event_src.asset': str(uuid4()),
+                     'event_src.fqdn': 'sensor.example.test.', 'event_src.ip': '10.0.0.3'}
+            for _ in range(2):
+                self.assertTrue(h.store.refresh_events(incident_id, {'events': [later]}))
+            alert = h.store._imported_alert(incident_id)
+            self.assertEqual(sorted((asset.asset_name, asset.asset_ip) for asset in alert.assets),
+                             [('2001:db8::2', '2001:db8::2'), ('Analyst name', '10.0.0.1'),
+                              ('sensor.example.test', '10.0.0.3')])
+            self.assertEqual(next(asset.asset_description for asset in alert.assets
+                                  if asset.asset_name == 'Analyst name'), 'Analyst notes')
 
     def test_refresh_policy_expires_old_imports_and_throttles_incomplete_graphs(self):
         with harness() as h:

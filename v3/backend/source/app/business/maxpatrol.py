@@ -1,6 +1,7 @@
 """Native module settings and transactional incident ingestion."""
 import copy
 from datetime import datetime, timedelta, timezone
+from ipaddress import ip_address
 from itertools import chain
 from uuid import UUID, uuid5
 
@@ -18,6 +19,53 @@ from iris_maxpatrol_module.edr import EDR_RESPONSE_PARAMETER, ENABLED_PARAMETER,
 MODULE = 'iris_maxpatrol_module'
 NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
 EVENT_REFRESH_WINDOW = timedelta(hours=24)
+
+
+def _asset_text(value):
+    if isinstance(value, str):
+        value = value.strip()
+        if len(value) <= 253 and value.isprintable() and not any(char.isspace() for char in value):
+            return value.rstrip('.') or None
+    return None
+
+
+def _asset_ip(value):
+    try:
+        return str(ip_address(value)) if isinstance(value, str) else None
+    except ValueError:
+        return None
+
+
+def _new_siem_assets(content, existing=()):
+    events = content.get('events') if isinstance(content, dict) else None
+    if not isinstance(events, list) or not events:
+        return []
+
+    from app.models.assets import CaseAssets
+
+    names = {name.casefold() for asset in existing if (name := _asset_text(asset.asset_name))}
+    addresses = {address for asset in existing if (address := _asset_ip(asset.asset_ip))}
+    added = []
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        for role in ('src', 'dst', 'event_src'):
+            host = _asset_text(event.get(f'assigned_{role}_host')) if role != 'event_src' else None
+            address = _asset_ip(event.get(f'assigned_{role}_ip')) if role != 'event_src' else None
+            if event_uuid({'uuid': event.get(f'{role}.asset')}):
+                host = host or next((name for field in ('fqdn', 'host', 'hostname')
+                                     if (name := _asset_text(event.get(f'{role}.{field}')))), None)
+                address = address or _asset_ip(event.get(f'{role}.ip'))
+            name = host or address
+            if not name or name.casefold() in names or address in addresses:
+                continue
+            added.append(CaseAssets(asset_name=name, asset_ip=address, date_added=now,
+                                    asset_description='Automatically extracted from MaxPatrol SIEM'))
+            names.add(name.casefold())
+            if address:
+                addresses.add(address)
+    return added
 
 
 def event_collected_at(state):
@@ -175,6 +223,12 @@ class IrisStore:
         alert.alert_source_content = compact_alert_source(content)
         from app.business.alert_ioc_extraction import extract_alert_iocs
         extract_alert_iocs(alert, previous_content)
+        assets = _new_siem_assets(content, alert.assets)
+        if assets:
+            from app.datamgmt.alerts.alerts_db import cache_similar_alert
+
+            alert.assets.extend(assets)
+            cache_similar_alert(alert.alert_customer_id, assets, [], alert.alert_id, alert.alert_source_event_time)
         db.session.commit()
         return True
 
@@ -193,7 +247,7 @@ class IrisStore:
         db.session.add(MaxPatrolReceipt(source_key=self.config.source_key, incident_id=incident_id,
                                        alert_uuid=alert_uuid,
                                        imported_at=datetime.now(timezone.utc).replace(tzinfo=None)))
-        alerts_create(alert, iocs=[], assets=[])
+        alerts_create(alert, iocs=[], assets=_new_siem_assets(alert.alert_source_content))
 
     def rollback(self):
         db.session.rollback()
