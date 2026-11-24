@@ -76,6 +76,50 @@ class SubeventTests(unittest.TestCase):
     def test_malformed_child_ids_do_not_claim_complete(self):
         self.assertFalse(self.m.build_event_materials([event(A, ['not-a-uuid'])])['event_collection']['complete'])
 
+    def test_client_recovers_missing_descendants_using_captured_browser_parameters(self):
+        from datetime import datetime, timezone
+        start = datetime(2020, 1, 1, 9, tzinfo=timezone.utc)
+        end = datetime(2020, 1, 1, 11, tzinfo=timezone.utc)
+        self.client.request = Mock(side_effect=[{'events': [event(A, [B])]},
+                                                {'events': [event(B, [C]), event(C)]}])
+
+        result = self.m.build_event_materials(self.client.events('incident', start, end))
+
+        self.assertTrue(result['event_collection']['complete'])
+        self.assertEqual(result['event_tree'][0]['subevents'][0]['subevents'][0]['uuid'], C)
+        self.assertEqual(self.client.request.call_count, 2)
+        child_request = self.client.request.call_args
+        self.assertEqual(child_request.kwargs['params'], {'eventId': A, 'field': 'subevents', 'time': T,
+                                                         'limit': 250, 'offset': 0, 'noCount': 'true'})
+        self.assertEqual(child_request.kwargs['body']['timeFrom'], int(start.timestamp()))
+        self.assertEqual(child_request.kwargs['body']['timeTo'], int(end.timestamp()))
+
+    def test_failed_subevent_request_keeps_original_events_and_missing_links(self):
+        from datetime import datetime, timezone
+        now = datetime(2020, 1, 1, 10, tzinfo=timezone.utc)
+        self.client.request = Mock(side_effect=[{'events': [event(A, [B])]},
+                                                self.m.SIEMError('temporary failure')])
+
+        result = self.m.build_event_materials(self.client.events('incident', now, now))
+
+        self.assertEqual(self.client.request.call_count, 2)
+        self.assertEqual(result['events'], [event(A, [B])])
+        self.assertEqual(result['event_collection']['missing_uuids'], [B])
+
+    def test_subevent_pagination_uses_the_same_request_budget(self):
+        from datetime import datetime, timezone
+        now = datetime(2020, 1, 1, 10, tzinfo=timezone.utc)
+        self.client.request = Mock(side_effect=[{'events': [event(A, [B])]}] +
+            [{'events': [event(C)] * 250, 'token': 'next'}] * 2)
+
+        with patch.object(self.m, 'MAX_SUBEVENT_REQUESTS_PER_INCIDENT', 2):
+            result = self.m.build_event_materials(self.client.events('incident', now, now))
+
+        self.assertEqual(self.client.request.call_count, 3)
+        self.assertEqual(self.client.request.call_args.kwargs['params']['offset'], 250)
+        self.assertEqual(self.client.request.call_args.kwargs['params']['token'], 'next')
+        self.assertEqual(result['event_collection']['missing_uuids'], [B])
+
     def test_refresh_outside_incident_discovery_window(self):
         client, store = Mock(), Mock()
         client.incidents.return_value = []

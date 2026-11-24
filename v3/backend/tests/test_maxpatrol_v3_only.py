@@ -13,7 +13,7 @@ class V3OnlyTests(unittest.TestCase):
     def setUp(self):
         self.m = base_tests.MaxPatrolTests().core()
 
-    def test_missing_child_never_triggers_other_event_routes(self):
+    def test_rejected_subevent_query_does_not_fall_back_to_other_routes(self):
         config = self.m.Config.from_values({'siem_url': 'https://siem.local', 'api_token': 'test-token'})
         session = Mock()
 
@@ -33,7 +33,8 @@ class V3OnlyTests(unittest.TestCase):
         store.seen.return_value = False
         self.m.collect(config, client, store)
         self.assertEqual([call.args[1] for call in session.request.call_args_list],
-                         ['https://siem.local/api/events/v3/events/'])
+                         ['https://siem.local/api/events/v3/events/', 'https://siem.local/api/events/v3/events'])
+        self.assertEqual(session.request.call_args.kwargs['params']['field'], 'subevents')
         content = store.create.call_args.args[1]['alert_source_content']
         self.assertEqual(content['event_collection']['missing_uuids'], [B])
         self.assertFalse(content['event_collection']['complete'])

@@ -17,6 +17,7 @@ from iris_maxpatrol_module.logging_utils import context_logger, logging_context
 log = context_logger(__name__)
 REQUEST_REVISION = 'mp10-inline-clean-json-3'
 MAX_EVENT_REFRESHES_PER_POLL = 5
+MAX_SUBEVENT_REQUESTS_PER_INCIDENT = 5
 LOOKBACK_DESCRIPTION = '1–8760; capped at 24 hours on every poll, including the first.'
 
 
@@ -244,15 +245,15 @@ class Client:
 
     def events(self, incident_id, start, end):
         events, offset, previous, token = [], 0, None, None
+        body = {'filter': 'select(' + ', '.join(EVENT_SELECT_FIELDS) + ') | sort(time desc)',
+                'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())}
         while True:
             params = {'incidentId': incident_id, 'offset': offset, 'limit': 250, 'noCount': 'true'}
             if token:
                 params['token'] = token
             log.info('MaxPatrol events request: api=v3 offset=%s time_from=%s time_to=%s fields=%s',
                      offset, int(start.timestamp()), int(end.timestamp()), len(EVENT_SELECT_FIELDS))
-            data = self.request('POST', '/api/events/v3/events/', params=params,
-                body={'filter': 'select(' + ', '.join(EVENT_SELECT_FIELDS) + ') | sort(time desc)',
-                      'timeFrom': int(start.timestamp()), 'timeTo': int(end.timestamp())})
+            data = self.request('POST', '/api/events/v3/events/', params=params, body=body)
             page = data.get('events')
             if data.get('errors') or not isinstance(page, list) or any(not isinstance(item, dict) for item in page):
                 raise SIEMError('MaxPatrol events must be an array of objects')
@@ -262,8 +263,55 @@ class Client:
                      incident_id, offset, len(page))
             events.extend(page)
             if len(page) < 250:
-                return events
+                break
             previous, offset, token = page, offset + len(page), data.get('token')
+
+        self._recover_subevents(events, body)
+        return events
+
+    def _recover_subevents(self, events, body):
+        known = {event_uuid(row) for row in events}
+        attempted = set()
+        remaining = MAX_SUBEVENT_REQUESTS_PER_INCIDENT
+        # Newly returned descendants can themselves point to missing events.
+        for parent in events:
+            if not remaining:
+                break
+            uid, event_time = event_uuid(parent), parent.get('time')
+            if not uid or uid in attempted or not isinstance(event_time, str) or not event_time:
+                continue
+            missing = set()
+            for field in ('subevents', 'subevents.missed'):
+                references = parent.get(field)
+                if isinstance(references, list):
+                    missing.update(child for value in references if (child := event_uuid({'uuid': value})))
+            missing.difference_update(known)
+            if not missing:
+                continue
+            attempted.add(uid)
+            params = {'eventId': uid, 'field': 'subevents', 'time': event_time,
+                      'offset': 0, 'limit': 250, 'noCount': 'true'}
+            while remaining and missing:
+                remaining -= 1
+                try:
+                    data = self.request('POST', '/api/events/v3/events', params=params.copy(), body=body)
+                    page = data.get('events')
+                    if data.get('errors') or not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
+                        raise SIEMError('MaxPatrol subevents must be an array of objects')
+                except SIEMError as exc:
+                    log.warning('MaxPatrol subevent retrieval failed: parent=%s reason=%s', uid, error_reason(exc))
+                    break
+                for row in page:
+                    child = event_uuid(row)
+                    if child and child not in known:
+                        known.add(child)
+                        events.append(row)
+                        missing.discard(child)
+                if len(page) < params['limit']:
+                    break
+                params['offset'] += len(page)
+                if token := data.get('token'):
+                    params['token'] = token
 
 
 def event_uuid(event):
@@ -326,7 +374,7 @@ def build_event_materials(rows, *, is_active=None):
     log.info('MaxPatrol subevents summary: roots=%s events=%s missing=%s errors=%s complete=%s',
              len(rows), len(events), len(missing), len(errors), summary['complete'])
     if missing:
-        log.warning('MaxPatrol v3 response has missing linked events: count=%s sample=%r; no additional API requests',
+        log.warning('MaxPatrol event collection has missing linked events: count=%s sample=%r',
                     len(missing), sorted(missing)[:10])
     return {'events': [*events.values(), *unidentified],
             'event_tree': render_event_tree(roots, events, edges),
