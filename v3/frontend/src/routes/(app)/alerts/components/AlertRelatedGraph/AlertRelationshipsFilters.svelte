@@ -107,9 +107,9 @@
 				class="h-7 rounded-l-none text-xs"
 				value={String(value.daysBack)}
 				oninput={(event) =>
-					(value.numberOfNodes = parsePositiveInt(
+					(value.daysBack = parsePositiveInt(
 						(event.currentTarget as HTMLInputElement).value,
-						value.numberOfNodes
+						value.daysBack
 					))}
 			/>
 		</div>

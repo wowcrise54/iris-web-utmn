@@ -8,6 +8,6 @@ export const defaultAlertRelationshipsFilters = (): AlertRelationshipsFiltersVal
 	closedAlerts: true,
 	openCases: true,
 	closedCases: true,
-	numberOfNodes: 100,
-	daysBack: 180
+	numberOfNodes: 10,
+	daysBack: 2
 });
