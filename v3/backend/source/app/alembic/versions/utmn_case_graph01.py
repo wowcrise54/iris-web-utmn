@@ -5,6 +5,7 @@
 """Create the beta.23 graph schema alongside existing investigation graph data."""
 import sqlalchemy as sa
 from alembic import op
+from psycopg2.extensions import TRANSACTION_STATUS_IDLE
 from sqlalchemy.dialects import postgresql
 
 from app.alembic.alembic_utils import _has_table
@@ -199,6 +200,10 @@ def _copy_existing_graph():
     bind = op.get_bind()
     if not _has_table('investigation_graph_node'):
         return
+    # Legacy revisions can commit the database transaction without clearing Alembic's
+    # transaction object. Start a real transaction if the PostgreSQL driver is idle.
+    if bind.connection.driver_connection.get_transaction_status() == TRANSACTION_STATUS_IDLE:
+        bind.exec_driver_sql('BEGIN')
     # Hold the previous graph stable until this transaction installs the new API schema.
     bind.execute(sa.text(
         'LOCK TABLE investigation_graph_node, investigation_graph_edge, '

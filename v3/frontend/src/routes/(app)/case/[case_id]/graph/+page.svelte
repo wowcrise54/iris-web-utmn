@@ -4,12 +4,18 @@
 
 	import { mode } from 'mode-watcher';
 	import { getContext, tick } from 'svelte';
+	import { io } from 'socket.io-client';
+	import { socketOrigin } from '$lib/config/api.config';
+	import { auth, current_user } from '$lib/stores/auth.store';
+	import { CHAT_PANEL_CTX, type ChatPanelContext } from '$lib/contexts/chat-panel.context.svelte';
 	import {
 		CASE_ACCESS_CTX,
 		type CaseAccessContext
 	} from '$lib/contexts/case-access.context.svelte';
 	import PathFinder from './PathFinder.svelte';
 	import GraphTable from './GraphTable.svelte';
+	import { parseGraphSuggestions, type GraphSuggestion } from './suggestions';
+	import { replaySteps } from './replay';
 	import GraphEditDialog from './graph-edit-dialog.svelte';
 	import { graphRelationLabels } from './types';
 	import type { GraphRelationType } from './types';
@@ -21,7 +27,7 @@
 		GraphView,
 		GraphViewState
 	} from './types';
-	import type { Core } from 'cytoscape';
+	import type { Core, EdgeCollection, EventObject, NodeSingular } from 'cytoscape';
 	import DOMPurify from 'dompurify';
 	import {
 		FingerprintIcon,
@@ -59,6 +65,7 @@
 	import CaseWorkspace from '../components/CaseWorkspace.svelte';
 
 	const access = getContext<CaseAccessContext | undefined>(CASE_ACCESS_CTX);
+	const chat = getContext<ChatPanelContext | undefined>(CHAT_PANEL_CTX);
 	const canEdit = $derived(access?.canEdit() ?? false);
 	let edit = $state<GraphEdit | null>(null);
 	let activeViewId = $state<number | null>(null);
@@ -249,6 +256,163 @@
 	};
 	let loadVersion = 0;
 	let network = $state<Core | null>(null);
+	let drawingConnection = $state(false);
+	type RelationChange = { id: number; expected: string; relation: string };
+	type EditState = Record<string, unknown>;
+	type HistoryReceipt = {
+		history_token?: string;
+		history?: { before: EditState; after: EditState };
+	};
+	type HistoryAction =
+		| { kind: 'lifecycle'; token: string }
+		| { kind: 'relations'; changes: RelationChange[] }
+		| {
+				kind: 'item';
+				resource: 'nodes' | 'edges';
+				id: number;
+				expected: EditState;
+				value: EditState;
+		  };
+	let undoHistory = $state<HistoryAction[]>([]);
+	let redoHistory = $state<HistoryAction[]>([]);
+	let bulkBusy = $state(false);
+	let bulkError = $state(false);
+
+	async function applyHistory(action: HistoryAction, mode: 'edit' | 'undo' | 'redo') {
+		if (!canEdit || bulkBusy || (action.kind === 'relations' && !action.changes.length)) return;
+		const identifier = caseId;
+		bulkBusy = true;
+		bulkError = false;
+		try {
+			const base = `/api/v2/cases/${identifier}/graph`;
+			const response =
+				action.kind === 'relations'
+					? await ApiService.post<HistoryReceipt>(
+							`${base}/edges/relations`,
+							{ changes: action.changes },
+							{ fetch }
+						)
+					: action.kind === 'lifecycle'
+						? await ApiService.post<HistoryReceipt>(
+								`${base}/history/apply`,
+								{ token: action.token },
+								{ fetch }
+							)
+						: await ApiService.put<HistoryReceipt>(
+								`${base}/${action.resource}/${action.id}`,
+								{ ...action.value, expected: action.expected },
+								{ fetch }
+							);
+			if (identifier !== caseId) return;
+			if (!response.ok) {
+				bulkError = true;
+				await load(identifier, false);
+				return;
+			}
+			let inverse: HistoryAction;
+			if (action.kind === 'lifecycle') {
+				const data = response.data;
+				if (!data || typeof data === 'string' || !data.history_token) {
+					bulkError = true;
+					await load(identifier, false);
+					return;
+				}
+				inverse = { kind: 'lifecycle', token: data.history_token };
+			} else if (action.kind === 'relations') {
+				inverse = {
+					kind: 'relations',
+					changes: action.changes.map(({ id, expected, relation }) => ({
+						id,
+						expected: relation,
+						relation: expected
+					}))
+				};
+			} else {
+				inverse = { ...action, expected: action.value, value: action.expected };
+			}
+			if (mode === 'undo') {
+				undoHistory = undoHistory.slice(0, -1);
+				redoHistory = [...redoHistory.slice(-19), inverse];
+			} else {
+				undoHistory = [...undoHistory.slice(-19), inverse];
+				redoHistory = mode === 'redo' ? redoHistory.slice(0, -1) : [];
+			}
+			await load(identifier, false);
+		} catch {
+			if (identifier === caseId) bulkError = true;
+		} finally {
+			bulkBusy = false;
+		}
+	}
+
+	function changeSelectedRelations(keys: string[], relation: string) {
+		const byKey = new Map(graph.edges.map((edge) => [edge.key, edge]));
+		const changes: RelationChange[] = [];
+		for (const key of keys) {
+			const edge = byKey.get(key);
+			if (!edge?.id || !edge.relation) return;
+			if (edge.relation !== relation)
+				changes.push({ id: edge.id, expected: edge.relation, relation });
+		}
+		void applyHistory({ kind: 'relations', changes }, 'edit');
+	}
+
+	$effect(() => {
+		const graphInstance = network;
+		if (
+			!graphInstance ||
+			!drawingConnection ||
+			!canEdit ||
+			tableOpen ||
+			edit ||
+			replayStep !== null
+		)
+			return;
+
+		const core = graphInstance as Core & {
+			edgehandles(options: {
+				canConnect: (source: NodeSingular, target: NodeSingular) => boolean;
+				snap: boolean;
+			}): { enableDrawMode(): void; disableDrawMode(): void; stop(): void; destroy(): void };
+		};
+		const isEndpoint = (node: NodeSingular) => manualEndpoints.some(({ key }) => key === node.id());
+		let disposing = false;
+		const handles = core.edgehandles({
+			canConnect: (source, target) =>
+				source.id() !== target.id() && isEndpoint(source) && isEndpoint(target),
+			snap: false
+		});
+		function complete(
+			_event: EventObject,
+			source: NodeSingular,
+			target: NodeSingular,
+			preview: EdgeCollection
+		) {
+			preview.remove();
+			if (disposing) return;
+			drawingConnection = false;
+			if (isEndpoint(source) && isEndpoint(target)) {
+				edit = { resource: 'edges', source: source.id(), target: target.id() };
+			}
+		}
+		function cancel(event: KeyboardEvent) {
+			if (event.key === 'Escape') drawingConnection = false;
+		}
+		core.on('ehcomplete', complete);
+		handles.enableDrawMode();
+		window.addEventListener('keydown', cancel);
+		return () => {
+			window.removeEventListener('keydown', cancel);
+			disposing = true;
+			if (!core.destroyed()) {
+				handles.stop();
+				core.off('ehcomplete', complete);
+				handles.disableDrawMode();
+				handles.destroy();
+			}
+		};
+	});
+
 	let pendingViewState: GraphViewState | null = null;
 
 	// UX state
@@ -290,9 +454,137 @@
 		),
 		edges: graph.edges.map((edge) => ({ id: edge.key, from: edge.source, to: edge.target }))
 	});
+	let suggesting = $state(false);
+	let suggestionFailed = $state(false);
+	let suggestionChatId = $state<number | null>(null);
+	let suggestionEvidence = $state<GraphResponse['events']>([]);
+	const suggestionEvents = $derived(new Map(suggestionEvidence.map((event) => [event.id, event])));
+	let dismissedSuggestions = $state<string[]>([]);
+	const suggestionKey = (item: GraphSuggestion) =>
+		JSON.stringify([
+			...(item.directed ? [item.source, item.target] : [item.source, item.target].sort()),
+			item.relation,
+			item.directed
+		]);
+	const suggestionMessage = $derived.by(() => {
+		if (
+			suggestionChatId === null ||
+			chat?.state.currentConversation?.id !== suggestionChatId ||
+			chat.state.streamingConversationId === suggestionChatId
+		)
+			return undefined;
+		return [...chat.state.messages]
+			.reverse()
+			.find(
+				(message) => message.conversation_id === suggestionChatId && message.role === 'assistant'
+			);
+	});
+	const suggestions = $derived.by(() => {
+		if (!suggestionMessage) return [];
+		const text = suggestionMessage.content
+			.filter((block) => block.type === 'text')
+			.map((block) => block.text ?? '')
+			.join('');
+		const proposals = parseGraphSuggestions(
+			text,
+			new Set(graph.nodes.filter(({ kind }) => kind !== 'event').map(({ key }) => key)),
+			new Set(graph.relation_types.map(({ name }) => name))
+		);
+		const excluded = new Set(dismissedSuggestions);
+		for (const edge of graph.edges) {
+			excluded.add(
+				suggestionKey({ ...edge, relation: edge.relation ?? 'related_to', rationale: '' })
+			);
+		}
+		return proposals.filter((proposal) => {
+			const key = suggestionKey(proposal);
+			if (proposal.event_ids.some((id) => !suggestionEvents.has(id)) || excluded.has(key))
+				return false;
+			excluded.add(key);
+			return true;
+		});
+	});
+
+	async function suggestGraphLinks() {
+		if (!chat?.canAnalyzeAlert || suggesting || graph.nodes.length < 2) return;
+		const identifier = caseId;
+		suggesting = true;
+		suggestionFailed = false;
+		suggestionChatId = null;
+		suggestionEvidence = [];
+		dismissedSuggestions = [];
+		try {
+			const evidence = await requestGraph(identifier, true, []);
+			if (caseId !== identifier) return;
+			if (!evidence.ok || !evidence.data || typeof evidence.data === 'string') {
+				suggestionFailed = true;
+				return;
+			}
+			suggestionEvidence = evidence.data.events;
+			const result = await chat.analyzeCaseGraph(
+				identifier,
+				irisT('Graph link suggestions', $irisLocale),
+				irisT(
+					'Read the current case graph with iris_case_graph_get (sections nodes, edges and events). Suggest up to five new links between existing nodes, supported by events. Return only a JSON array of objects with source, target, relation, directed (boolean), event_ids (integer array), and rationale (string). Return [] if no proposal has evidence. Do not modify the case.',
+					$irisLocale
+				)
+			);
+			if (caseId === identifier) {
+				suggestionFailed = !result;
+				suggestionChatId = result ? (chat.state.currentConversation?.id ?? null) : null;
+			}
+		} catch {
+			if (caseId === identifier) suggestionFailed = true;
+		} finally {
+			suggesting = false;
+		}
+	}
+
 	const selectedEdge = $derived(graph.edges.find((edge) => edge.key === selectedEdgeId));
 	const selectedEventIds = $derived(new Set(selectedEdge?.event_ids));
 	const supportingEvents = $derived(graph.events.filter((event) => selectedEventIds.has(event.id)));
+
+	let recordingEvent = $state(false);
+	let recordEventError = $state(false);
+
+	async function recordEdgeEvent(form: HTMLFormElement, edge: GraphEdge) {
+		if (!canEdit || !edge.id || recordingEvent) return;
+		const identifier = caseId;
+		const data = new FormData(form);
+		const title = String(data.get('title') ?? '').trim();
+		const occurredAt = new Date(String(data.get('occurred_at') ?? ''));
+		if (!title || !Number.isFinite(occurredAt.getTime())) {
+			recordEventError = true;
+			return;
+		}
+		recordingEvent = true;
+		recordEventError = false;
+		try {
+			const response = await ApiService.post(
+				`/api/v2/cases/${identifier}/graph/edges/${edge.id}/events`,
+				{
+					title,
+					occurred_at: occurredAt.toISOString(),
+					description: String(data.get('description') ?? '')
+				},
+				{ fetch }
+			);
+			if (caseId !== identifier) return;
+			if (!response.ok) {
+				recordEventError = true;
+				return;
+			}
+			form.reset();
+			const selection = selectedEdgeId;
+			if (await load(identifier, false)) {
+				if (caseId === identifier && selection === edge.key) selectedEdgeId = edge.key;
+			}
+		} catch {
+			if (caseId === identifier) recordEventError = true;
+		} finally {
+			recordingEvent = false;
+		}
+	}
 
 	const groupCounts = $derived.by<Record<Group, number>>(() => {
 		const counts: Record<Group, number> = {
@@ -346,6 +638,37 @@
 	const displayedNodes = $derived(
 		graphData.nodes.filter((node) => visibleGroups[node.group] !== false || pathKeys.has(node.id))
 	);
+	const visibleEdges = $derived(
+		graph.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+	);
+	const steps = $derived(replaySteps(visibleEdges, graph.events));
+	let replayStep = $state<number | null>(null);
+	let replayPlaying = $state(false);
+	const currentReplayStep = $derived(Math.min(replayStep ?? 0, steps.length));
+	const replayAt = $derived(steps[currentReplayStep - 1]?.at);
+	const replayKeys = $derived(new Set(steps.slice(0, replayStep ?? 0).flatMap(({ keys }) => keys)));
+	const displayedEdges = $derived(
+		replayStep === null ? visibleEdges : visibleEdges.filter(({ key }) => replayKeys.has(key))
+	);
+
+	$effect(() => {
+		const step = replayStep;
+		if (!replayPlaying || step === null) return;
+		if (step >= steps.length) {
+			replayPlaying = false;
+			return;
+		}
+		const timer = setTimeout(() => {
+			replayStep = step + 1;
+		}, 850);
+		return () => clearTimeout(timer);
+	});
+
+	function closeReplay() {
+		replayPlaying = false;
+		replayStep = null;
+	}
+
 	const elements = $derived.by<CyElementDef[]>(() => [
 		...displayedNodes.map(
 			(node): CyElementDef => ({
@@ -375,29 +698,27 @@
 						: ['dimmed']
 			})
 		),
-		...graph.edges
-			.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
-			.map((edge): CyElementDef => {
-				const relation = graph.relation_types.find((type) => type.name === edge.relation);
-				return {
-					group: 'edges',
-					data: {
-						id: edge.key,
-						source: edge.source,
-						target: edge.target,
-						label: edgeLabel(edge, $irisLocale),
-						arrow: edge.directed ? 'triangle' : 'none',
-						color: paletteHex(relation?.color, isDark),
-						lineStyle: edge.origin === 'manual' ? (relation?.line_style ?? 'solid') : 'dashed',
-						width: Math.min(6, 1 + Math.log2(Math.max(1, edge.event_ids.length)))
-					},
-					classes: pathKeys.has(edge.key)
-						? ['highlighted', 'show-label']
-						: matches.has(edge.source) && matches.has(edge.target) && !pathKeys.size
-							? []
-							: ['dimmed']
-				};
-			})
+		...displayedEdges.map((edge): CyElementDef => {
+			const relation = graph.relation_types.find((type) => type.name === edge.relation);
+			return {
+				group: 'edges',
+				data: {
+					id: edge.key,
+					source: edge.source,
+					target: edge.target,
+					label: edgeLabel(edge, $irisLocale),
+					arrow: edge.directed ? 'triangle' : 'none',
+					color: paletteHex(relation?.color, isDark),
+					lineStyle: edge.origin === 'manual' ? (relation?.line_style ?? 'solid') : 'dashed',
+					width: Math.min(6, 1 + Math.log2(Math.max(1, edge.event_ids.length)))
+				},
+				classes: pathKeys.has(edge.key)
+					? ['highlighted', 'show-label']
+					: matches.has(edge.source) && matches.has(edge.target) && !pathKeys.size
+						? []
+						: ['dimmed']
+			};
+		})
 	]);
 
 	const nodeById = $derived.by(() => {
@@ -504,6 +825,7 @@
 	const handleClick = (detail: { nodeId?: string; edgeId?: string }) => {
 		contextMenu = { open: false, x: 0, y: 0 };
 		selectedNodeId = typeof detail.nodeId === 'string' ? detail.nodeId : null;
+		recordEventError = false;
 		selectedEdgeId = typeof detail.edgeId === 'string' ? detail.edgeId : null;
 	};
 
@@ -596,6 +918,12 @@
 		if (instance && pendingViewState) applyViewState(pendingViewState);
 	};
 
+	function requestGraph(identifier: number, includeEvents: boolean, objects: string[]) {
+		const includes = [...objects, ...(includeEvents ? ['events'] : [])];
+		const query = includes.length ? '?include=' + includes.join(',') : '';
+		return ApiService.get<GraphResponse>(`/api/v2/cases/${identifier}/graph${query}`, { fetch });
+	}
+
 	const load = async (
 		identifier: number,
 		reset = true,
@@ -603,14 +931,23 @@
 		objects = reset ? [] : includedObjects
 	) => {
 		const version = ++loadVersion;
+		drawingConnection = false;
+		closeReplay();
 		gapsVersion++;
 		gapsOpen = false;
 		pathKeys = new Set();
 		loading = true;
 		error = null;
 		if (reset) {
+			undoHistory = [];
+			redoHistory = [];
+			bulkError = false;
 			pendingViewState = null;
 			graph = emptyGraph();
+			suggestionFailed = false;
+			suggestionChatId = null;
+			suggestionEvidence = [];
+			dismissedSuggestions = [];
 			edit = null;
 			activeViewId = null;
 			searchQuery = '';
@@ -621,12 +958,7 @@
 		selectedEdgeId = null;
 
 		try {
-			const includes = [...objects, ...(includeEvents ? ['events'] : [])];
-			const query = includes.length ? '?include=' + includes.join(',') : '';
-			const response = await ApiService.get<GraphResponse>(
-				`/api/v2/cases/${identifier}/graph${query}`,
-				{ fetch }
-			);
+			const response = await requestGraph(identifier, includeEvents, objects);
 			if (version !== loadVersion) return;
 			if (!response.ok || !response.data || typeof response.data === 'string') {
 				error = 'Failed to load graph data';
@@ -642,6 +974,116 @@
 			if (version === loadVersion) loading = false;
 		}
 	};
+
+	type GraphViewer = { peer: string; user_id: number; name: string };
+	let graphViewers = $state<GraphViewer[]>([]);
+	let graphUpdatedBy = $state<string | null>(null);
+	const viewerNames = $derived([
+		...new Map(graphViewers.map((viewer) => [viewer.user_id, viewer.name])).values()
+	]);
+
+	$effect(() => {
+		const identifier = caseId;
+		let pending = false;
+		let active = true;
+		graphViewers = [];
+		graphUpdatedBy = null;
+		const viewers = new Map<string, { viewer: GraphViewer; expires: number }>();
+		const socket = io(`${socketOrigin()}/case-graph`, {
+			auth: (send) => send({ case_id: identifier, token: auth.getAccessToken() }),
+			transports: ['websocket', 'polling']
+		});
+
+		function publishViewers() {
+			const now = Date.now();
+			for (const [peer, entry] of viewers) {
+				if (entry.expires <= now) viewers.delete(peer);
+			}
+			graphViewers = [...viewers.values()].map(({ viewer }) => viewer);
+		}
+
+		socket.on('graph-viewer', (viewer: GraphViewer) => {
+			viewers.set(viewer.peer, { viewer, expires: Date.now() + 25_000 });
+			publishViewers();
+		});
+		socket.on('graph-viewer-left', ({ peer }: { peer: string }) => {
+			viewers.delete(peer);
+			publishViewers();
+		});
+		socket.on('graph-changed', ({ updated_by }: { updated_by: string }) => {
+			graphUpdatedBy = updated_by;
+			void refresh();
+		});
+		socket.on('connect', () => {
+			socket.emit('graph-heartbeat');
+			void refresh();
+		});
+		socket.on('disconnect', () => {
+			viewers.clear();
+			publishViewers();
+		});
+		const presenceTimer = window.setInterval(() => {
+			if (socket.connected) socket.emit('graph-heartbeat');
+			publishViewers();
+		}, 10_000);
+
+		async function refresh() {
+			if (
+				pending ||
+				document.hidden ||
+				loading ||
+				error ||
+				edit ||
+				drawingConnection ||
+				importing ||
+				recordingEvent ||
+				bulkBusy ||
+				replayStep !== null
+			)
+				return;
+			const version = loadVersion;
+			pending = true;
+			try {
+				const response = await requestGraph(identifier, visibleGroups.event, includedObjects);
+				if (
+					!active ||
+					recordingEvent ||
+					bulkBusy ||
+					version !== loadVersion ||
+					edit ||
+					drawingConnection ||
+					importing ||
+					replayStep !== null ||
+					!response.ok ||
+					!response.data ||
+					typeof response.data === 'string'
+				)
+					return;
+				if (JSON.stringify(graph) === JSON.stringify(response.data)) return;
+				graph = response.data;
+				if (!graph.nodes.some(({ key }) => key === selectedNodeId)) selectedNodeId = null;
+				if (!graph.edges.some(({ key }) => key === selectedEdgeId)) selectedEdgeId = null;
+				pathKeys = new Set();
+				gapsVersion++;
+				gapsOpen = false;
+			} catch {
+				// Keep the current graph and retry on the next interval.
+			} finally {
+				pending = false;
+			}
+		}
+
+		const timer = window.setInterval(() => void refresh(), 5000);
+		document.addEventListener('visibilitychange', refresh);
+		return () => {
+			active = false;
+			window.clearInterval(timer);
+			window.clearInterval(presenceTimer);
+			socket.removeAllListeners();
+			socket.disconnect();
+			document.removeEventListener('visibilitychange', refresh);
+		};
+	});
 
 	$effect(() => {
 		void load(caseId);
@@ -698,6 +1140,31 @@
 		applyViewState(view.state);
 	};
 
+	async function downloadViewSnapshot(view: GraphView) {
+		const identifier = caseId;
+		exportFailed = false;
+		try {
+			const result = await ApiService.get<{ snapshot: string }>(
+				`/api/v2/cases/${identifier}/graph/views/${view.id}/snapshot`,
+				{ fetch }
+			);
+			if (identifier !== caseId) return;
+			const data = result.data;
+			if (
+				!result.ok ||
+				!data ||
+				typeof data === 'string' ||
+				!data.snapshot.startsWith('data:image/png;base64,')
+			) {
+				exportFailed = true;
+				return;
+			}
+			downloadFile(`case-${identifier}-graph-view-${view.id}.png`, data.snapshot, 'image/png');
+		} catch {
+			if (identifier === caseId) exportFailed = true;
+		}
+	}
+
 	const saveEdit = async (item: GraphEdit, body: Record<string, unknown>) => {
 		const identifier = caseId;
 		const path = `/api/v2/cases/${identifier}/graph/${item.resource}`;
@@ -707,13 +1174,41 @@
 			body.state = state;
 		}
 		try {
+			if (item.resource === 'views' && body.capture === true && network) {
+				body.snapshot = exportPng(network, { scale: 1, maxWidth: 1200 });
+			}
+			delete body.capture;
 			const result = item.remove
-				? await ApiService.delete(`${path}/${item.id}`, { fetch })
+				? await ApiService.delete<HistoryReceipt>(`${path}/${item.id}`, { fetch })
 				: item.id
-					? await ApiService.put(`${path}/${item.id}`, body, { fetch })
-					: await ApiService.post(path, body, { fetch });
+					? await ApiService.put<HistoryReceipt>(`${path}/${item.id}`, body, { fetch })
+					: await ApiService.post<HistoryReceipt>(path, body, { fetch });
 			if (!result.ok) return false;
 			if (caseId === identifier) {
+				const data = result.data;
+				if (item.resource !== 'views') {
+					redoHistory = [];
+					if (data && typeof data !== 'string') {
+						if (data.history_token) {
+							undoHistory = [
+								...undoHistory.slice(-19),
+								{ kind: 'lifecycle', token: data.history_token }
+							];
+						} else if (item.id && data.history) {
+							const { before, after } = data.history;
+							undoHistory = [
+								...undoHistory.slice(-19),
+								{
+									kind: 'item',
+									resource: item.resource,
+									id: item.id,
+									expected: after,
+									value: before
+								}
+							];
+						}
+					}
+				}
 				if (item.remove && item.resource === 'views' && activeViewId === item.id)
 					activeViewId = null;
 				await load(identifier, false);
@@ -874,6 +1369,41 @@
 				>
 					{irisT('Add connection', $irisLocale)}
 				</Button>
+				<Button
+					variant={drawingConnection ? 'secondary' : 'outline'}
+					size="xs"
+					aria-pressed={drawingConnection}
+					disabled={!network ||
+						loading ||
+						tableOpen ||
+						replayStep !== null ||
+						manualEndpoints.length < 2}
+					onclick={() => (drawingConnection = !drawingConnection)}
+					>{irisT('Draw connection', $irisLocale)}</Button
+				>
+				{#if undoHistory.length || redoHistory.length}
+					<Button
+						size="xs"
+						variant="ghost"
+						disabled={bulkBusy || !undoHistory.length}
+						onclick={() => applyHistory(undoHistory[undoHistory.length - 1], 'undo')}
+					>
+						{irisT('Undo graph edit', $irisLocale)}
+					</Button>
+					<Button
+						size="xs"
+						variant="ghost"
+						disabled={bulkBusy || !redoHistory.length}
+						onclick={() => applyHistory(redoHistory[redoHistory.length - 1], 'redo')}
+					>
+						{irisT('Redo graph edit', $irisLocale)}
+					</Button>
+				{/if}
+				{#if bulkError}
+					<span role="alert" class="text-xs text-destructive"
+						>{irisT('Could not apply graph edit', $irisLocale)}</span
+					>
+				{/if}
 			{/if}
 			<Button
 				variant={visibleGroups.node ? 'secondary' : 'ghost'}
@@ -939,6 +1469,7 @@
 				variant={tableOpen ? 'secondary' : 'ghost'}
 				aria-pressed={tableOpen}
 				onclick={() => {
+					drawingConnection = false;
 					tableOpen = !tableOpen;
 					contextMenu = { open: false, x: 0, y: 0 };
 				}}
@@ -949,6 +1480,30 @@
 				<Button size="xs" variant="ghost" onclick={() => (pathKeys = new Set())}>
 					{irisT('Clear highlight', $irisLocale)}
 				</Button>
+			{/if}
+			{#if chat?.canAnalyzeAlert && graph.nodes.length >= 2}
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={suggesting || loading}
+					onclick={suggestGraphLinks}
+				>
+					{irisT('Graph link suggestions', $irisLocale)}
+				</Button>
+				{#if suggestionFailed}
+					<span role="alert" class="text-xs text-destructive">
+						{irisT('Could not start graph analysis', $irisLocale)}
+					</span>
+				{/if}
+			{/if}
+			{#if steps.length > 0 || replayStep !== null}
+				<Button
+					size="sm"
+					variant="outline"
+					aria-pressed={replayStep !== null}
+					onclick={() => (replayStep === null ? (replayStep = 0) : closeReplay())}
+					>{irisT('Graph replay', $irisLocale)}</Button
+				>
 			{/if}
 			<div class="ml-auto flex flex-wrap items-center gap-2">
 				<select
@@ -1052,7 +1607,13 @@
 				>
 					<option value="" disabled>{irisT('Saved graph views', $irisLocale)}</option>
 					{#each graph.views as view (view.id)}
-						<option value={view.id}>{view.label}</option>
+						<option value={view.id}
+							>{view.label} · {irisT(
+								view.is_shared ? 'Shared graph view' : 'Private graph view',
+								$irisLocale
+							)}{#if view.is_report_default}
+								· {irisT('Report view', $irisLocale)}{/if}</option
+						>
 					{/each}
 				</select>
 				{#if activeView}
@@ -1065,6 +1626,11 @@
 						{irisT('Restore graph view', $irisLocale)}
 					</Button>
 				{/if}
+				{#if activeView?.has_snapshot}
+					<Button size="xs" variant="ghost" onclick={() => downloadViewSnapshot(activeView)}>
+						{irisT('Download saved graph snapshot', $irisLocale)}
+					</Button>
+				{/if}
 				{#if canEdit}
 					<Button
 						variant="outline"
@@ -1073,7 +1639,7 @@
 						onclick={() => (edit = { resource: 'views' })}
 						>{irisT('Save graph view', $irisLocale)}</Button
 					>
-					{#if activeView}
+					{#if activeView && (activeView.owner_id === null || activeView.owner_id === $current_user?.user_id)}
 						<Button
 							variant="outline"
 							size="xs"
@@ -1094,6 +1660,106 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if viewerNames.length || graphUpdatedBy}
+			<div class="flex flex-wrap gap-x-4 gap-y-1 border-b px-3 py-1 text-xs text-muted-foreground">
+				{#if viewerNames.length}
+					<span>{irisT('Graph viewers', $irisLocale)} · {viewerNames.join(', ')}</span>
+				{/if}
+				{#if graphUpdatedBy}
+					<span>{irisT('Graph updated by', $irisLocale)} · {graphUpdatedBy}</span>
+				{/if}
+			</div>
+		{/if}
+
+		{#if suggestionMessage}
+			<section class="max-h-60 space-y-2 overflow-y-auto border-b px-3 py-2 text-xs">
+				<h2 class="font-medium">{irisT('Graph link suggestions', $irisLocale)}</h2>
+				{#if !suggestions.length}
+					<p class="text-muted-foreground">
+						{irisT('No graph suggestions to review', $irisLocale)}
+					</p>
+				{/if}
+				{#each suggestions as suggestion (suggestionKey(suggestion))}
+					<div class="flex flex-wrap items-start justify-between gap-2 rounded border p-2">
+						<div class="min-w-0 space-y-1">
+							<p class="font-medium">
+								{nodeById.get(suggestion.source)?.label ?? suggestion.source}
+								{suggestion.directed ? '→' : '↔'}
+								{nodeById.get(suggestion.target)?.label ?? suggestion.target}
+								· {irisT(
+									graphRelationLabels[suggestion.relation] ?? suggestion.relation,
+									$irisLocale
+								)}
+							</p>
+							<p>{suggestion.rationale}</p>
+							<div class="flex flex-wrap items-center gap-2">
+								<span>{irisT('Supporting events', $irisLocale)}</span>
+								{#each suggestion.event_ids as eventId (eventId)}
+									<a class="underline" href={`/case/${caseId}/timeline?event=${eventId}`}
+										>#{eventId} · {suggestionEvents.get(eventId)?.title}</a
+									>
+								{/each}
+							</div>
+						</div>
+						<div class="flex gap-2">
+							{#if canEdit}
+								<Button
+									size="xs"
+									variant="outline"
+									onclick={() => {
+										edit = {
+											...suggestion,
+											resource: 'edges',
+											label: (
+												graphRelationLabels[suggestion.relation] ?? suggestion.relation
+											).slice(0, 200)
+										};
+									}}>{irisT('Review proposed connection', $irisLocale)}</Button
+								>
+							{/if}
+							<Button
+								size="xs"
+								variant="ghost"
+								onclick={() =>
+									(dismissedSuggestions = [...dismissedSuggestions, suggestionKey(suggestion)])}
+								>{irisT('Dismiss graph suggestion', $irisLocale)}</Button
+							>
+						</div>
+					</div>
+				{/each}
+			</section>
+		{/if}
+
+		{#if replayStep !== null}
+			<div class="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
+				<Button
+					size="sm"
+					variant="outline"
+					disabled={!steps.length}
+					onclick={() => {
+						if (!replayPlaying && replayStep !== null && replayStep >= steps.length) replayStep = 0;
+						replayPlaying = !replayPlaying;
+					}}
+					>{irisT(replayPlaying ? 'Pause graph replay' : 'Play graph replay', $irisLocale)}</Button
+				>
+				<input
+					type="range"
+					min={0}
+					max={steps.length}
+					value={currentReplayStep}
+					aria-label={irisT('Graph replay', $irisLocale)}
+					oninput={(event) => {
+						replayPlaying = false;
+						replayStep = event.currentTarget.valueAsNumber;
+					}}
+				/>
+				<span>{currentReplayStep} / {steps.length}</span>
+				{#if replayAt !== undefined}
+					<span>{new Date(replayAt).toLocaleString($irisLocale)}</span>
+				{/if}
+			</div>
+		{/if}
 
 		{#if gapsOpen}
 			<div class="max-h-52 overflow-y-auto border-b px-3 py-2 text-xs" aria-busy={gapsLoading}>
@@ -1139,17 +1805,24 @@
 								id: node.id,
 								cells: [node.label, irisT(node.group, $irisLocale)]
 							}))}
-						edges={graph.edges
+						edges={displayedEdges
 							.filter(
 								(edge) =>
-									visibleNodeIds.has(edge.source) &&
-									visibleNodeIds.has(edge.target) &&
-									(matches.has(edge.source) || matches.has(edge.target) || pathKeys.has(edge.key))
+									matches.has(edge.source) || matches.has(edge.target) || pathKeys.has(edge.key)
 							)
 							.map((edge) => ({
 								id: edge.key,
+								editable: Boolean(edge.id && edge.relation),
 								cells: [
 									nodeById.get(edge.source)?.label ?? edge.source,
+									edge.relation
+										? irisT(
+												graph.relation_types.find(({ name }) => name === edge.relation)?.label ??
+													graphRelationLabels[edge.relation] ??
+													edge.relation,
+												$irisLocale
+											)
+										: '',
 									edgeLabel(edge, $irisLocale) ?? (edge.directed ? '→' : '↔'),
 									nodeById.get(edge.target)?.label ?? edge.target
 								]
@@ -1158,6 +1831,12 @@
 						selectedEdge={selectedEdgeId}
 						onSelect={handleClick}
 						onLocate={locateTableRows}
+						relationTypes={graph.relation_types.map(({ name }) => ({
+							name,
+							label: irisT(graphRelationLabels[name] ?? name, $irisLocale)
+						}))}
+						onChangeRelation={canEdit ? changeSelectedRelations : undefined}
+						{bulkBusy}
 					/>
 				{/if}
 				{#if graphData.nodes.length > 0 && displayedNodes.length > 0}
@@ -1323,6 +2002,54 @@
 							</div>
 						{/if}
 						<h2 class="mb-2 text-xs font-medium">{irisT('Supporting events', $irisLocale)}</h2>
+						{#if canEdit && selectedEdge.id}
+							{#key selectedEdge.key}
+								<details class="mb-3 rounded border p-2 text-xs">
+									<summary class="cursor-pointer"
+										>{irisT('Record supporting event', $irisLocale)}</summary
+									>
+									<form
+										class="mt-2 grid gap-2"
+										onsubmit={(event) => {
+											event.preventDefault();
+											if (selectedEdge) void recordEdgeEvent(event.currentTarget, selectedEdge);
+										}}
+									>
+										<label class="grid gap-1">
+											{irisT('Event title', $irisLocale)}
+											<Input name="title" required maxlength={200} disabled={recordingEvent} />
+										</label>
+										<label class="grid gap-1">
+											{irisT('Event time (local)', $irisLocale)}
+											<Input
+												name="occurred_at"
+												type="datetime-local"
+												required
+												disabled={recordingEvent}
+											/>
+										</label>
+										<label class="grid gap-1">
+											{irisT('Description', $irisLocale)}
+											<textarea
+												name="description"
+												maxlength={10000}
+												rows={3}
+												disabled={recordingEvent}
+												class="w-full rounded-md border border-input bg-background px-2 py-1"
+											></textarea>
+										</label>
+										{#if recordEventError}
+											<p role="alert" class="text-destructive">
+												{irisT('Could not record supporting event', $irisLocale)}
+											</p>
+										{/if}
+										<Button type="submit" size="xs" disabled={recordingEvent || loading}
+											>{irisT('Save', $irisLocale)}</Button
+										>
+									</form>
+								</details>
+							{/key}
+						{/if}
 						{#if !supportingEvents.length}
 							<p class="text-xs text-muted-foreground">{irisT('No linked events', $irisLocale)}</p>
 						{/if}

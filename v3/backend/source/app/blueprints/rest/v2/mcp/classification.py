@@ -44,6 +44,8 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset({
     'iris_case_notes_list', 'iris_case_notes_get',
     'iris_case_notes_directories_list',
     'iris_case_tasks_list', 'iris_case_tasks_get',
+    'iris_case_graph_get', 'iris_case_graph_neighbours',
+    'iris_case_graph_paths', 'iris_case_graph_gaps',
     'iris_case_evidence_analyze', 'iris_case_evidence_analysis_get',
     'iris_case_sandbox_list', 'iris_case_sandbox_events_get',
     'iris_search',

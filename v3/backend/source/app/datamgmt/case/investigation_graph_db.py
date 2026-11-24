@@ -1,10 +1,16 @@
 from collections import defaultdict
+from datetime import datetime, timezone
+from uuid import UUID
 
 from app.business.investigation_graph import derive_event_edges, project_graph_events, validate_edge_endpoints
 from app.business.case_graph_relation_types import case_graph_relation_types_list
+from sqlalchemy import or_
+
+from app.datamgmt.states import update_timeline_state
+from app.iris_engine.utils.graph_snapshot import png_snapshot_base64
 from app.db import db
 from app.models.assets import AnalysisStatus, AssetsType, CaseAssets, CompromiseStatus
-from app.models.cases import Cases, CasesEvent
+from app.models.cases import Cases, CasesEvent, CaseEventTimeline, CaseTimeline
 from app.models.evidences import CaseReceivedFile
 from app.models.iocs import Ioc
 from app.models.case_graph import (
@@ -12,6 +18,8 @@ from app.models.case_graph import (
 )
 from app.models.models import CaseEventCategory, CaseEventsAssets, CaseEventsIoc, EventCategory, IocAssetLink
 from app.models.models import CaseTasks, IocType, Notes
+
+from app.util import add_obj_history_entry
 
 
 CASE_OBJECT_NODES = {
@@ -21,7 +29,7 @@ CASE_OBJECT_NODES = {
 }
 
 
-def read_investigation_graph(case_id, *, include_events=False, includes=()):
+def read_investigation_graph(case_id, *, include_events=False, includes=(), viewer_id=None):
     assets = CaseAssets.query.with_entities(
         CaseAssets.asset_id, CaseAssets.asset_name, CaseAssets.asset_description, CaseAssets.asset_ip,
         CaseAssets.asset_compromise_status_id, AssetsType.asset_icon_compromised,
@@ -154,10 +162,21 @@ def read_investigation_graph(case_id, *, include_events=False, includes=()):
         item['event_ids'] = [event_id for event_id in item['event_ids'] if event_id in events]
         edges.append(item)
 
-    views = CaseGraphView.query.filter_by(case_id=case_id).order_by(CaseGraphView.view_id)
+    views = CaseGraphView.query.filter_by(case_id=case_id).filter(
+        or_(CaseGraphView.is_shared.is_(True), CaseGraphView.owner_id.is_(None),
+            CaseGraphView.owner_id == viewer_id),
+    ).with_entities(
+        CaseGraphView.view_id, CaseGraphView.name, CaseGraphView.state, CaseGraphView.owner_id,
+        CaseGraphView.is_shared, CaseGraphView.is_report_default, CaseGraphView.snapshot.is_not(None).label('has_snapshot'),
+    ).order_by(CaseGraphView.view_id)
     return {
         'nodes': nodes, 'edges': edges, 'events': [events[key] for key in sorted(events)],
-        'views': [serialize_graph_item(view) for view in views],
+        'views': [
+            {'id': view.view_id, 'label': view.name, 'state': view.state,
+             'owner_id': view.owner_id, 'is_shared': view.is_shared or view.owner_id is None,
+             'has_snapshot': view.has_snapshot, 'is_report_default': view.is_report_default}
+            for view in views
+        ],
         'relation_types': case_graph_relation_types_list(),
     }
 
@@ -196,7 +215,11 @@ def serialize_graph_item(item):
             'target': f'{item.target_kind}:{item.target_id}',
             'directed': item.directed, 'event_ids': sorted(link.event_id for link in item.evidence),
         }
-    return {'id': item.view_id, 'label': item.name, 'state': item.state}
+    return {
+        'id': item.view_id, 'label': item.name, 'state': item.state,
+        'owner_id': item.owner_id, 'is_shared': item.is_shared or item.owner_id is None,
+        'has_snapshot': bool(item.snapshot), 'is_report_default': bool(item.is_report_default),
+    }
 
 
 def _case_endpoint_keys(case_id, keys):
@@ -240,7 +263,102 @@ def _set_manual_edge(item, values):
                          for event_id in sorted(requested_ids - current_ids))
 
 
-def write_graph_item(case_id, resource, identifier, values):
+def _graph_edit_state(item, resource):
+    if resource == 'nodes':
+        return {'label': item.label, 'description': item.description or ''}
+    edge = serialize_graph_item(item)
+    return {field: edge[field] for field in ('label', 'source', 'target', 'directed', 'relation', 'event_ids')}
+
+
+_LIFECYCLE_COLUMNS = {
+    'nodes': ('node_id', 'node_uuid', 'label', 'node_type', 'description', 'icon',
+              'color', 'tlp_id', 'custom_attributes', 'created_by_id', 'created_at', 'updated_at'),
+    'edges': ('edge_id', 'edge_uuid', 'source_kind', 'source_id', 'target_kind', 'target_id',
+              'relation_type_id', 'directed', 'label', 'description', 'confidence', 'first_seen',
+              'last_seen', 'tlp_id', 'origin', 'review_state', 'custom_attributes', 'created_by_id',
+              'created_at', 'updated_at'),
+}
+
+
+def _attached_edges(case_id, node_id):
+    return CaseGraphEdge.query.filter(
+        CaseGraphEdge.case_id == case_id,
+        ((CaseGraphEdge.source_kind == 'node') & (CaseGraphEdge.source_id == node_id))
+        | ((CaseGraphEdge.target_kind == 'node') & (CaseGraphEdge.target_id == node_id)),
+    )
+
+
+def _graph_row_snapshot(item, resource):
+    def encode(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, UUID):
+            return str(value)
+        return value
+
+    columns = {key: encode(getattr(item, key)) for key in _LIFECYCLE_COLUMNS[resource]}
+    if resource == 'edges':
+        columns['event_ids'] = sorted(entry.event_id for entry in item.evidence)
+    return columns
+
+
+def _graph_lifecycle_snapshot(item, resource, case_id):
+    snapshot = {'row': _graph_row_snapshot(item, resource)}
+    if resource == 'nodes':
+        snapshot['edges'] = [
+            _graph_row_snapshot(edge, 'edges')
+            for edge in _attached_edges(case_id, item.node_id).order_by(CaseGraphEdge.edge_id)
+        ]
+    return snapshot
+
+
+def _restore_graph_row(case_id, resource, snapshot):
+    identifier_key = _LIFECYCLE_COLUMNS[resource][0]
+    model = GRAPH_ITEMS[resource]
+    if model.query.filter(GRAPH_ITEM_IDS[resource] == snapshot[identifier_key]).first() is not None:
+        raise ValueError('The graph item already exists')
+
+    values = {key: snapshot[key] for key in _LIFECYCLE_COLUMNS[resource]}
+    for key, value in values.items():
+        if value is not None and (key.endswith('_at') or key in ('first_seen', 'last_seen')):
+            values[key] = datetime.fromisoformat(value)
+        elif value is not None and key.endswith('_uuid'):
+            values[key] = UUID(value)
+    item = model(case_id=case_id, **values)
+    if resource == 'edges':
+        endpoints = {
+            'source': f"{item.source_kind}:{item.source_id}",
+            'target': f"{item.target_kind}:{item.target_id}",
+            'event_ids': snapshot['event_ids'],
+        }
+        _set_manual_edge(item, endpoints)
+    db.session.add(item)
+    db.session.flush()
+    return item
+
+
+def apply_graph_lifecycle(case_id, resource, snapshot, action):
+    case = Cases.query.filter_by(case_id=case_id).with_for_update().first()
+    if case is None:
+        return False
+    if action == 'restore':
+        _restore_graph_row(case_id, resource, snapshot['row'])
+        for edge in snapshot.get('edges', []):
+            _restore_graph_row(case_id, 'edges', edge)
+    else:
+        identifier = snapshot['row'][_LIFECYCLE_COLUMNS[resource][0]]
+        model = GRAPH_ITEMS[resource]
+        item = model.query.filter(GRAPH_ITEM_IDS[resource] == identifier, model.case_id == case_id).first()
+        if item is None or _graph_lifecycle_snapshot(item, resource, case_id) != snapshot:
+            raise ValueError('The graph item or its connections changed. Refresh the graph and try again.')
+        if resource == 'nodes':
+            _attached_edges(case_id, identifier).delete(synchronize_session=False)
+        db.session.delete(item)
+    db.session.commit()
+    return True
+
+
+def write_graph_item(case_id, resource, identifier, values, *, user_id=None, expected=None):
     # Serialize edits for a case so edge creation cannot race manual node removal.
     case = Cases.query.filter_by(case_id=case_id).with_for_update().first()
     if case is None:
@@ -252,17 +370,20 @@ def write_graph_item(case_id, resource, identifier, values):
     ).first()
     if item is None:
         return None
+    if resource == 'views' and identifier is not None and item.owner_id not in (None, user_id):
+        return None
 
     if values is None:
+        lifecycle = _graph_lifecycle_snapshot(item, resource, case_id) if resource in _LIFECYCLE_COLUMNS else None
         if resource == 'nodes':
-            CaseGraphEdge.query.filter(
-                CaseGraphEdge.case_id == case_id,
-                ((CaseGraphEdge.source_kind == 'node') & (CaseGraphEdge.source_id == identifier))
-                | ((CaseGraphEdge.target_kind == 'node') & (CaseGraphEdge.target_id == identifier)),
-            ).delete(synchronize_session=False)
+            _attached_edges(case_id, identifier).delete(synchronize_session=False)
         db.session.delete(item)
         db.session.commit()
-        return {'id': identifier}
+        return {'id': identifier, 'lifecycle': lifecycle}
+
+    before = _graph_edit_state(item, resource) if identifier is not None and resource in ('nodes', 'edges') else None
+    if expected is not None and expected != before:
+        raise ValueError('This graph item changed. Refresh the graph and try again.')
 
     if resource == 'edges':
         _set_manual_edge(item, values)
@@ -277,11 +398,102 @@ def write_graph_item(case_id, resource, identifier, values):
                 raise ValueError('Unknown graph relation type')
             item.relation_type = relation
     if resource == 'views':
+        if item.owner_id is None:
+            item.owner_id = user_id
         values['name'] = values.pop('label')
     for field, value in values.items():
         setattr(item, field, value)
+    if resource == 'views':
+        report_ready = item.is_shared and png_snapshot_base64(item.snapshot) is not None
+        if values.get('is_report_default') and not report_ready:
+            raise ValueError('Share the view and save a PNG snapshot before selecting it for reports')
+        if not report_ready:
+            item.is_report_default = False
+
     db.session.add(item)
     db.session.flush()
+    if resource == 'views' and item.is_report_default:
+        CaseGraphView.query.filter(
+            CaseGraphView.case_id == case_id,
+            CaseGraphView.view_id != item.view_id,
+            CaseGraphView.is_report_default.is_(True),
+        ).update({CaseGraphView.is_report_default: False}, synchronize_session=False)
     result = serialize_graph_item(item)
+    if identifier is None and resource in _LIFECYCLE_COLUMNS:
+        result['lifecycle'] = _graph_lifecycle_snapshot(item, resource, case_id)
+    if before is not None and before['label'] and before != _graph_edit_state(item, resource):
+        result['history'] = {'before': before, 'after': _graph_edit_state(item, resource)}
     db.session.commit()
     return result
+
+
+
+def record_graph_edge_event(case_id, edge_id, user_id, title, occurred_at, description):
+    # Use the same case lock as graph edits to serialize evidence writes.
+    case = Cases.query.filter_by(case_id=case_id).with_for_update().first()
+    if case is None:
+        return None
+    edge = CaseGraphEdge.query.filter_by(case_id=case_id, edge_id=edge_id).first()
+    if edge is None:
+        return None
+    if len(edge.evidence) >= 500:
+        raise ValueError('This connection already has 500 supporting events')
+
+    date_utc = occurred_at.astimezone(timezone.utc).replace(tzinfo=None)
+    event = CasesEvent(
+        case_id=case_id, user_id=user_id, event_title=title,
+        event_content=description, event_source='Investigation graph',
+        event_date=date_utc, event_date_wtz=date_utc, event_tz='+00:00',
+        event_added=datetime.now(timezone.utc).replace(tzinfo=None),
+        event_in_graph=True, event_in_summary=False,
+    )
+    add_obj_history_entry(event, 'created')
+    db.session.add(event)
+    db.session.flush()
+    edge.evidence.append(CaseGraphEdgeEvent(event_id=event.event_id))
+
+    default_timeline = CaseTimeline.query.filter_by(case_id=case_id, is_default=True).first()
+    if default_timeline is not None:
+        db.session.add(CaseEventTimeline(event_id=event.event_id, timeline_id=default_timeline.timeline_id))
+    update_timeline_state(case_id, user_id)
+    result = {'id': event.event_id, 'title': title, 'date': date_utc.isoformat()}
+    db.session.commit()
+    return result
+
+
+
+def update_graph_edge_relations(case_id, changes):
+    case = Cases.query.filter_by(case_id=case_id).with_for_update().first()
+    if case is None:
+        return None
+    ids = {change['id'] for change in changes}
+    if len(ids) != len(changes):
+        raise ValueError('A connection may only appear once in the selection')
+    edges = {edge.edge_id: edge for edge in CaseGraphEdge.query.filter(
+        CaseGraphEdge.case_id == case_id, CaseGraphEdge.edge_id.in_(ids),
+    ).all()}
+    if edges.keys() != ids:
+        return None
+
+    names = {change['relation'] for change in changes}
+    relations = {relation.name: relation for relation in CaseGraphRelationType.query.filter(
+        CaseGraphRelationType.name.in_(names),
+    ).all()}
+    if relations.keys() != names:
+        raise ValueError('Unknown graph relation type')
+    if any(edges[change['id']].relation_type.name != change['expected'] for change in changes):
+        raise ValueError('One or more connections changed. Refresh the graph and try again.')
+
+    for change in changes:
+        edges[change['id']].relation_type = relations[change['relation']]
+    db.session.commit()
+    return {'updated': len(edges)}
+
+
+
+def read_report_graph_snapshot(case_id):
+    row = CaseGraphView.query.with_entities(CaseGraphView.snapshot).filter(
+        CaseGraphView.case_id == case_id, CaseGraphView.is_shared.is_(True),
+        CaseGraphView.is_report_default.is_(True), CaseGraphView.snapshot.is_not(None),
+    ).order_by(CaseGraphView.view_id.desc()).first()
+    return png_snapshot_base64(row.snapshot) if row else None

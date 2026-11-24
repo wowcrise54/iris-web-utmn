@@ -18,6 +18,8 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import base64
+from io import BytesIO
 import logging
 log = logging.getLogger(__name__)
 import os
@@ -33,6 +35,7 @@ from app.business.cases import cases_export_to_json
 
 from app.datamgmt.activities.activities_db import get_auto_activities
 from app.datamgmt.activities.activities_db import get_manual_activities
+from app.datamgmt.case.investigation_graph_db import read_report_graph_snapshot
 from app.iris_engine.utils.tracker import track_activity
 
 from app.models.models import CaseTemplateReport
@@ -98,7 +101,9 @@ def _get_case_info_according_to_type(case_identifier, doc_type):
         _type_: case info
     """
     if doc_type == 'Investigation':
-        return _get_case_info(case_identifier)
+        info = _get_case_info(case_identifier)
+        info['graph_snapshot'] = read_report_graph_snapshot(case_identifier)
+        return info
     if doc_type == 'Activities':
         return _get_activity_info(case_identifier)
 
@@ -118,6 +123,27 @@ def _naming_substitutions(case_info):
         '%case_name%': case_info['case'].get('name'),
         '%date%': datetime.utcnow().strftime('%Y-%m-%d'),
     }
+
+
+def _append_graph_snapshot(path, snapshot):
+    from docx import Document
+    from docx.image.exceptions import InvalidImageStreamError, UnrecognizedImageError, UnexpectedEndOfFileError
+
+    document = Document(path)
+    try:
+        picture = document.add_picture(BytesIO(base64.b64decode(snapshot, validate=True)))
+    except (InvalidImageStreamError, UnrecognizedImageError, UnexpectedEndOfFileError, ValueError):
+        log.warning('Ignoring an invalid investigation graph snapshot')
+        return
+
+    section = document.sections[-1]
+    available = section.page_width - section.left_margin - section.right_margin
+    height_limit = (section.page_height - section.top_margin - section.bottom_margin) * 0.8
+    ratio = min(1, available / picture.width, height_limit / picture.height)
+    if ratio < 1:
+        picture.width = round(picture.width * ratio)
+        picture.height = round(picture.height * ratio)
+    document.save(path)
 
 
 class IrisMakeDocReport:
@@ -157,6 +183,9 @@ class IrisMakeDocReport:
                                     case_info,
                                     output_file_path
                                     )
+            snapshot = case_info.get('graph_snapshot')
+            if snapshot:
+                _append_graph_snapshot(output_file_path, snapshot)
 
             return output_file_path
 

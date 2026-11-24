@@ -4,7 +4,13 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import type { GraphEdit, GraphNode, GraphRelation, GraphRelationType } from './types';
 
-	let { edit, nodes, relationTypes, onSave, onClose }: {
+	let {
+		edit,
+		nodes,
+		relationTypes,
+		onSave,
+		onClose
+	}: {
 		edit: GraphEdit;
 		nodes: GraphNode[];
 		relationTypes: GraphRelationType[];
@@ -21,10 +27,17 @@
 	let relation = $state<GraphRelation | ''>('');
 	let eventIds = $state('');
 	let saving = $state(false);
+	let shared = $state(false);
+	let capture = $state(false);
+	let reportDefault = $state(false);
+	const reportReady = $derived(shared && (capture || Boolean(edit.has_snapshot)));
 	let error = $state('');
 
 	$effect(() => {
 		label = edit.label ?? '';
+		shared = edit.is_shared ?? false;
+		capture = false;
+		reportDefault = edit.is_report_default ?? false;
 		description = edit.description ?? '';
 		source = edit.source ?? '';
 		target = edit.target ?? '';
@@ -34,24 +47,50 @@
 		error = '';
 	});
 
-	const title = $derived(edit.remove ? 'Delete graph item' : {
-		nodes: edit.id ? 'Edit graph node' : 'Add graph node',
-		edges: edit.id ? 'Edit connection' : 'Add connection',
-		views: edit.id ? 'Update graph view' : 'Save graph view'
-	}[edit.resource]);
+	const title = $derived(
+		edit.remove
+			? 'Delete graph item'
+			: {
+					nodes: edit.id ? 'Edit graph node' : 'Add graph node',
+					edges: edit.id ? 'Edit connection' : 'Add connection',
+					views: edit.id ? 'Update graph view' : 'Save graph view'
+				}[edit.resource]
+	);
 
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (saving) return;
 		const body: Record<string, unknown> = { label: label.trim() };
+		if (!edit.remove && edit.resource === 'views')
+			Object.assign(body, {
+				is_shared: shared,
+				capture,
+				is_report_default: reportReady && reportDefault
+			});
 		if (!edit.remove && edit.resource === 'nodes') body.description = description;
 		if (!edit.remove && edit.resource === 'edges') {
-			const ids = eventIds.trim() ? eventIds.trim().split(/[\s,]+/).map(Number) : [];
-			if (!source || !target || source === target || ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+			const ids = eventIds.trim()
+				? eventIds
+						.trim()
+						.split(/[\s,]+/)
+						.map(Number)
+				: [];
+			if (
+				!source ||
+				!target ||
+				source === target ||
+				ids.some((id) => !Number.isSafeInteger(id) || id < 1)
+			) {
 				error = 'Choose two distinct nodes and enter valid event IDs.';
 				return;
 			}
-			Object.assign(body, { source, target, directed, relation: relation || null, event_ids: [...new Set(ids)] });
+			Object.assign(body, {
+				source,
+				target,
+				directed,
+				relation: relation || null,
+				event_ids: [...new Set(ids)]
+			});
 		}
 		saving = true;
 		error = '';
@@ -64,7 +103,12 @@
 	}
 </script>
 
-<Dialog.Root open={true} onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+<Dialog.Root
+	open={true}
+	onOpenChange={(open) => {
+		if (!open && !saving) onClose();
+	}}
+>
 	<Dialog.Content class="max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>{t(title, $locale)}</Dialog.Title>
@@ -73,19 +117,43 @@
 			{#if edit.remove}
 				<p class="break-words text-sm">{edit.label}</p>
 				{#if edit.resource === 'nodes'}
-					<p class="text-sm text-muted-foreground">{t('Connections to this node will also be deleted.', $locale)}</p>
+					<p class="text-sm text-muted-foreground">
+						{t('Connections to this node will also be deleted.', $locale)}
+					</p>
 				{/if}
 			{:else}
 				<label class="block space-y-1 text-sm">
 					<span>{t('Name', $locale)}</span>
-					<input class="w-full rounded-md border bg-background px-2 py-1" bind:value={label}
-						required minlength="1" maxlength="200" />
+					<input
+						class="w-full rounded-md border bg-background px-2 py-1"
+						bind:value={label}
+						required
+						minlength="1"
+						maxlength="200"
+					/>
 				</label>
-				{#if edit.resource === 'nodes'}
+				{#if edit.resource === 'views'}
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={shared} />
+						{t('Share with case members', $locale)}
+					</label>
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={capture} />
+						{t('Save a PNG snapshot', $locale)}
+					</label>
+					<label class="flex items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={reportDefault} disabled={!reportReady} />
+						{t('Use this view in investigation reports', $locale)}
+					</label>
+				{:else if edit.resource === 'nodes'}
 					<label class="block space-y-1 text-sm">
 						<span>{t('Description', $locale)}</span>
-						<textarea class="w-full rounded-md border bg-background px-2 py-1" bind:value={description}
-							maxlength="10000" rows="3"></textarea>
+						<textarea
+							class="w-full rounded-md border bg-background px-2 py-1"
+							bind:value={description}
+							maxlength="10000"
+							rows="3"
+						></textarea>
 					</label>
 				{:else if edit.resource === 'edges'}
 					{#snippet endpoints()}
@@ -96,18 +164,29 @@
 					{/snippet}
 					<label class="block space-y-1 text-sm">
 						<span>{t('Source', $locale)}</span>
-						<select class="w-full rounded-md border bg-background px-2 py-1" aria-label={t('Source', $locale)} bind:value={source} required>
+						<select
+							class="w-full rounded-md border bg-background px-2 py-1"
+							aria-label={t('Source', $locale)}
+							bind:value={source}
+							required
+						>
 							{@render endpoints()}
 						</select>
 					</label>
 					<label class="block space-y-1 text-sm">
 						<span>{t('Target', $locale)}</span>
-						<select class="w-full rounded-md border bg-background px-2 py-1" aria-label={t('Target', $locale)} bind:value={target} required>
+						<select
+							class="w-full rounded-md border bg-background px-2 py-1"
+							aria-label={t('Target', $locale)}
+							bind:value={target}
+							required
+						>
 							{@render endpoints()}
 						</select>
 					</label>
 					<label class="flex items-center gap-2 text-sm">
-						<input type="checkbox" bind:checked={directed} /> {t('Directed connection', $locale)}
+						<input type="checkbox" bind:checked={directed} />
+						{t('Directed connection', $locale)}
 					</label>
 					<label class="block space-y-1 text-sm">
 						<span>{t('Connection type', $locale)}</span>
@@ -120,14 +199,20 @@
 					</label>
 					<label class="block space-y-1 text-sm">
 						<span>{t('Supporting event IDs', $locale)}</span>
-						<input class="w-full rounded-md border bg-background px-2 py-1" bind:value={eventIds}
-							placeholder="101, 102" maxlength="10000" />
+						<input
+							class="w-full rounded-md border bg-background px-2 py-1"
+							bind:value={eventIds}
+							placeholder="101, 102"
+							maxlength="10000"
+						/>
 					</label>
 				{/if}
 			{/if}
 			{#if error}<p class="text-sm text-destructive" role="alert">{t(error, $locale)}</p>{/if}
 			<div class="flex justify-end gap-2">
-				<Button type="button" variant="outline" disabled={saving} onclick={onClose}>{t('Cancel', $locale)}</Button>
+				<Button type="button" variant="outline" disabled={saving} onclick={onClose}
+					>{t('Cancel', $locale)}</Button
+				>
 				<Button type="submit" variant={edit.remove ? 'destructive' : 'default'} disabled={saving}>
 					{t(edit.remove ? 'Delete' : 'Save', $locale)}
 				</Button>

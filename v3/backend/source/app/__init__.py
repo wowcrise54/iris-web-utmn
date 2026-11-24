@@ -626,6 +626,8 @@ from app.blueprints.socket_io_event_handlers.update_event_handlers import regist
 from app.blueprints.socket_io_event_handlers.notification_event_handlers import register_notification_socket_handlers
 from app.blueprints.socket_io_event_handlers.collab_event_handlers import register_collab_socket_handlers
 
+from app.blueprints.socket_io_event_handlers import graph_event_handlers as _graph_event_handlers
+
 register_case_event_handlers()
 register_notes_event_handlers()
 register_update_event_handlers()

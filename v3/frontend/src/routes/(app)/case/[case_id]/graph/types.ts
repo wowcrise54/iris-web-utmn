@@ -54,7 +54,15 @@ export type GraphViewState = {
 	include_objects?: string[];
 };
 
-export type GraphView = { id: number; label: string; state: GraphViewState };
+export type GraphView = {
+	id: number;
+	label: string;
+	state: GraphViewState;
+	owner_id: number | null;
+	is_shared: boolean;
+	has_snapshot: boolean;
+	is_report_default: boolean;
+};
 export type GraphResource = 'nodes' | 'edges' | 'views';
 
 export type GraphEdit = {
@@ -68,4 +76,7 @@ export type GraphEdit = {
 	relation?: GraphRelation | null;
 	event_ids?: number[];
 	remove?: boolean;
+	is_shared?: boolean;
+	has_snapshot?: boolean;
+	is_report_default?: boolean;
 };

@@ -2,14 +2,17 @@
 	import { translate, useLocale } from '$lib/i18n/context';
 	import { Button } from '$lib/components/ui/button';
 
-	type Row = { id: string; cells: string[] };
+	type Row = { id: string; cells: string[]; editable?: boolean };
 	let {
 		nodes,
 		edges,
 		selectedNode,
 		selectedEdge,
 		onSelect,
-		onLocate
+		onLocate,
+		relationTypes,
+		onChangeRelation,
+		bulkBusy
 	}: {
 		nodes: Row[];
 		edges: Row[];
@@ -17,6 +20,9 @@
 		selectedEdge: string | null;
 		onSelect: (detail: { nodeId?: string; edgeId?: string }) => void;
 		onLocate: (kind: 'nodes' | 'edges', ids: string[]) => void;
+		relationTypes: { name: string; label: string }[];
+		onChangeRelation?: (keys: string[], relation: string) => void;
+		bulkBusy: boolean;
 	} = $props();
 
 	const locale = useLocale();
@@ -28,8 +34,9 @@
 	let descending = $state(false);
 	let page = $state(0);
 	let checked = $state(new Set<string>());
+	let relation = $state('');
 	const columns = $derived(
-		kind === 'nodes' ? ['Name', 'Type'] : ['Source', 'Connection type', 'Target']
+		kind === 'nodes' ? ['Name', 'Type'] : ['Source', 'Connection type', 'Name', 'Target']
 	);
 	const filtered = $derived.by(() => {
 		const search = filter.trim().toLocaleLowerCase();
@@ -47,7 +54,28 @@
 	const currentPage = $derived(Math.min(page, pages - 1));
 	const visible = $derived(filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize));
 	const selectedRows = $derived(filtered.filter((row) => checked.has(row.id)));
+	const bulkEligible = $derived(
+		kind === 'edges' && selectedRows.length <= 100 && selectedRows.every((row) => row.editable)
+	);
 	const pageChecked = $derived(visible.length > 0 && visible.every((row) => checked.has(row.id)));
+
+	function exportSelection() {
+		const csvCell = (value: string) => {
+			const safe = /^[\s]*[=+@-]|^[\t\r\n]/.test(value) ? "'" + value : value;
+			return '"' + safe.replaceAll('"', '""') + '"';
+		};
+		const records = [
+			['ID', ...columns.map(t)],
+			...selectedRows.map(({ id, cells }) => [id, ...cells])
+		];
+		const csv = records.map((cells) => cells.map(csvCell).join(',')).join('\r\n');
+		const url = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8' }));
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `case-graph-selection-${kind}.csv`;
+		link.click();
+		window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+	}
 
 	function setChecked(ids: string[], value: boolean) {
 		const next = new Set(checked);
@@ -111,6 +139,34 @@
 					)}
 			>
 				{t('Locate on graph')} ({selectedRows.length})
+			</Button>
+			{#if onChangeRelation && kind === 'edges' && bulkEligible}
+				<select
+					class="rounded border bg-background px-2 py-1 text-xs"
+					bind:value={relation}
+					aria-label={t('New connection type')}
+					disabled={bulkBusy}
+				>
+					<option value="">{t('New connection type')}</option>
+					{#each relationTypes as type (type.name)}
+						<option value={type.name}>{type.label}</option>
+					{/each}
+				</select>
+				<Button
+					size="xs"
+					variant="outline"
+					disabled={!relation || bulkBusy}
+					onclick={() =>
+						onChangeRelation?.(
+							selectedRows.map((row) => row.id),
+							relation
+						)}
+				>
+					{t('Change selected connection types')}
+				</Button>
+			{/if}
+			<Button size="xs" variant="outline" onclick={exportSelection}>
+				{t('Export graph selection as CSV')}
 			</Button>
 			<Button size="xs" variant="ghost" onclick={() => (checked = new Set())}>
 				{t('Clear selection')}

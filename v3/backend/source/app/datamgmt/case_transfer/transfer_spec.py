@@ -42,6 +42,11 @@ from app.models.cases import CaseTags
 from app.models.cases import CaseTimeline
 from app.models.cases import Cases
 from app.models.cases import CasesEvent
+from app.models.case_graph import CaseGraphEdge
+from app.models.case_graph import CaseGraphEdgeEvent
+from app.models.case_graph import CaseGraphNode
+from app.models.case_graph import CaseGraphRelationType
+from app.models.case_graph import CaseGraphView
 from app.models.comments import AssetComments
 from app.models.comments import Comments
 from app.models.comments import EventComments
@@ -78,6 +83,16 @@ from app.models.models import TaskStatus
 
 USER_REF_PREFIX = 'user'
 
+GRAPH_ENDPOINT_ENTITIES = {
+    'asset': 'asset',
+    'ioc': 'ioc',
+    'event': 'event',
+    'evidence': 'evidence',
+    'task': 'task',
+    'note': 'note',
+    'node': 'graph_node',
+}
+
 
 class LookupSpec:
     """A reference-data table resolved by name on the target instance.
@@ -111,7 +126,8 @@ class EntitySpec:
     """
 
     def __init__(self, key, model, pk, case_column=None, fields=(), user_refs=(),
-                 entity_refs=None, lookup_refs=None, self_refs=(), blob_column=None):
+                 entity_refs=None, lookup_refs=None, self_refs=(), blob_column=None,
+                 required_refs=(), poly_refs=()):
         self.key = key
         self.model = model
         self.pk = pk
@@ -122,6 +138,8 @@ class EntitySpec:
         self.lookup_refs = dict(lookup_refs or {})
         self.self_refs = tuple(self_refs)
         self.blob_column = blob_column
+        self.required_refs = tuple(required_refs)
+        self.poly_refs = tuple(poly_refs)
 
 
 _LOOKUP_SPECS = (
@@ -145,6 +163,8 @@ _LOOKUP_SPECS = (
                extra_columns=('status_description', 'status_bscolor'), creatable=False),
     LookupSpec('evidence_type', EvidenceTypes, 'id', 'name', extra_columns=('description',)),
     LookupSpec('event_category', EventCategory, 'id', 'name'),
+    LookupSpec('graph_relation_type', CaseGraphRelationType, 'id', 'name',
+               extra_columns=('label', 'description', 'directed', 'color', 'line_style', 'stix_relationship')),
 )
 
 LOOKUPS = {spec.key: spec for spec in _LOOKUP_SPECS}
@@ -302,6 +322,30 @@ ENTITIES = [
                fields=('schema_version', 'revision', 'fields', 'selections', 'author_name',
                        'created_at', 'updated_at', 'missing_sources'),
                user_refs=('author_id',)),
+
+    EntitySpec('graph_node', CaseGraphNode, 'node_id', case_column='case_id',
+               fields=('label', 'node_type', 'description', 'icon', 'color', 'custom_attributes',
+                       'created_at', 'updated_at'),
+               user_refs=('created_by_id',),
+               lookup_refs={'tlp_id': 'tlp'}),
+
+    EntitySpec('graph_edge', CaseGraphEdge, 'edge_id', case_column='case_id',
+               fields=('directed', 'label', 'description', 'confidence', 'first_seen', 'last_seen',
+                       'origin', 'review_state', 'custom_attributes', 'created_at', 'updated_at'),
+               user_refs=('created_by_id',),
+               lookup_refs={'relation_type_id': 'graph_relation_type', 'tlp_id': 'tlp'},
+               required_refs=('relation_type_id',),
+               poly_refs=(('source_kind', 'source_id', GRAPH_ENDPOINT_ENTITIES),
+                          ('target_kind', 'target_id', GRAPH_ENDPOINT_ENTITIES))),
+
+    EntitySpec('graph_edge_event', CaseGraphEdgeEvent, None,
+               entity_refs={'edge_id': 'graph_edge', 'event_id': 'event'},
+               required_refs=('edge_id', 'event_id')),
+
+    EntitySpec('graph_view', CaseGraphView, 'view_id', case_column='case_id',
+               fields=('name', 'description', 'is_shared', 'is_report_default', 'state', 'snapshot',
+                       'created_at', 'updated_at'),
+               user_refs=('owner_id',)),
 ]
 
 ENTITIES_BY_KEY = {spec.key: spec for spec in ENTITIES}

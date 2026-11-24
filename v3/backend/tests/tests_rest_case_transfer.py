@@ -338,6 +338,69 @@ class TestsRestCaseTransfer(TestCase):
 
         self.assertEqual(expected, self._shape(imported['case_id']))
 
+    def test_round_trip_should_remap_graph_connections_evidence_and_view_positions(self):
+        source = self._build_rich_case(self._subject.create_dummy_user())
+        graph_url = f'/api/v2/cases/{source["case_id"]}/graph'
+        node = self._subject.create(f'{graph_url}/nodes', {'label': 'Graph hypothesis'}).json()
+        asset_key = f'asset:{source["asset_id"]}'
+        edge = self._subject.create(f'{graph_url}/edges', {
+            'source': asset_key, 'target': node['key'], 'label': 'Supporting connection',
+            'relation': 'related_to', 'directed': True, 'event_ids': [source['linked_event_id']],
+        }).json()
+        view = self._subject.create(f'{graph_url}/views', {
+            'label': 'Review layout', 'is_shared': True,
+            'state': {'positions': {asset_key: {'x': 12, 'y': 34}, node['key']: {'x': 56, 'y': 78}},
+                      'center': {'x': 0, 'y': 0}, 'scale': 1},
+        }).json()
+
+        imported = self._import(self._export(source['case_id']))
+        target_id = imported['case_id']
+        graph = self._subject.get(f'/api/v2/cases/{target_id}/graph').json()
+        target_asset = self._first(target_id, 'assets', 'asset_name', 'DC01')
+        target_event = self._event(target_id, 'Initial access')
+        target_node = next(item for item in graph['nodes'] if item['label'] == node['label'])
+        target_edge = next(item for item in graph['edges'] if item['label'] == edge['label'])
+        target_view = next(item for item in graph['views'] if item['label'] == view['label'])
+        target_asset_key = f'asset:{target_asset["asset_id"]}'
+
+        self.assertNotEqual(node['id'], target_node['id'])
+        self.assertNotEqual(edge['id'], target_edge['id'])
+        self.assertNotEqual(view['id'], target_view['id'])
+        self.assertEqual(target_asset_key, target_edge['source'])
+        self.assertEqual(target_node['key'], target_edge['target'])
+        self.assertEqual('related_to', target_edge['relation'])
+        self.assertEqual([target_event['event_id']], target_edge['event_ids'])
+        self.assertEqual({target_asset_key: {'x': 12, 'y': 34}, target_node['key']: {'x': 56, 'y': 78}},
+                         target_view['state']['positions'])
+
+    def test_graph_history_restores_a_deleted_node_with_its_connections(self):
+        source = self._build_rich_case(self._subject.create_dummy_user())
+        url = f'/api/v2/cases/{source["case_id"]}/graph'
+        node = self._subject.create(f'{url}/nodes', {'label': 'Node with evidence'}).json()
+        edge = self._subject.create(f'{url}/edges', {
+            'source': f'asset:{source["asset_id"]}', 'target': node['key'],
+            'label': 'Documented relation', 'relation': 'related_to', 'directed': True,
+            'event_ids': [source['linked_event_id']],
+        }).json()
+
+        receipt = self._subject.delete(f'{url}/nodes/{node["id"]}').json()
+        self.assertIsInstance(receipt['history_token'], str)
+        graph = self._subject.get(url).json()
+        self.assertNotIn(node['key'], [item['key'] for item in graph['nodes']])
+        self.assertNotIn(edge['key'], [item['key'] for item in graph['edges']])
+
+        undo = self._subject.create(f'{url}/history/apply', {'token': receipt['history_token']}).json()
+        graph = self._subject.get(url).json()
+        self.assertIn(node['key'], [item['key'] for item in graph['nodes']])
+        restored = next(item for item in graph['edges'] if item['key'] == edge['key'])
+        self.assertEqual(edge['event_ids'], restored['event_ids'])
+        self.assertEqual(edge['relation'], restored['relation'])
+
+        self._subject.create(f'{url}/history/apply', {'token': undo['history_token']})
+        graph = self._subject.get(url).json()
+        self.assertNotIn(node['key'], [item['key'] for item in graph['nodes']])
+        self.assertNotIn(edge['key'], [item['key'] for item in graph['edges']])
+
     def test_round_trip_should_create_a_distinct_case(self):
         source = self._build_rich_case(self._subject.create_dummy_user())
         imported = self._import(self._export(source['case_id']))

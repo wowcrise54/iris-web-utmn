@@ -28,9 +28,12 @@ should not.
 
 import uuid
 
+from sqlalchemy import or_
+
 from app.db import db
 from app.datamgmt.case_transfer.transfer_spec import CASE_SPEC
 from app.datamgmt.case_transfer.transfer_spec import ENTITIES
+from app.datamgmt.case_transfer.transfer_spec import GRAPH_ENDPOINT_ENTITIES
 from app.datamgmt.case_transfer.transfer_spec import LOOKUPS
 from app.datamgmt.case_transfer.transfer_spec import USER_REF_PREFIX
 from app.models.authorization import User
@@ -84,6 +87,12 @@ def _read_row(row, spec, collector):
             collector.lookup_ids[lookup_key].add(value)
             payload[column] = make_ref(lookup_key, value)
 
+    for kind_column, id_column, kinds in spec.poly_refs:
+        kind = getattr(row, kind_column)
+        payload[kind_column] = kind
+        entity = kinds.get(kind)
+        payload[id_column] = make_ref(entity, getattr(row, id_column)) if entity else None
+
     for column in spec.self_refs:
         value = getattr(row, column)
         # The datastore root uses 0 rather than NULL to mean "no parent".
@@ -110,16 +119,21 @@ def _entity_query(spec, case_identifier):
     pulled in from a case the caller has no access to.
     """
     if spec.case_column is not None:
-        return spec.model.query.filter(getattr(spec.model, spec.case_column) == case_identifier)
+        query = spec.model.query.filter(getattr(spec.model, spec.case_column) == case_identifier)
+        if spec.key == 'graph_view':
+            query = query.filter(or_(spec.model.is_shared.is_(True), spec.model.owner_id.is_(None)))
+        return query
 
     from app.models.assets import CaseAssets
     from app.models.cases import CasesEvent
+    from app.models.case_graph import CaseGraphEdge
     from app.models.evidences import CaseReceivedFile
     from app.models.iocs import Ioc
     from app.models.models import CaseTasks
     from app.models.models import Notes
 
     joins = {
+        'graph_edge_event': (CaseGraphEdge, 'edge_id', 'edge_id', CaseGraphEdge.case_id),
         'note_revision': (Notes, 'note_id', 'note_id', Notes.note_case_id),
         'ioc_asset_link': (Ioc, 'ioc_id', 'ioc_id', Ioc.case_id),
         'event_timeline': (CasesEvent, 'event_id', 'event_id', CasesEvent.case_id),
@@ -371,6 +385,10 @@ def write_case_bundle(new_case_identifier, entities, ref_map):
     it rows with no way back to the archive.
     """
     written = {}
+    graph_refs = {}
+    graph_lookups = {ref: identifier for ref, identifier in ref_map.items()
+                     if isinstance(ref, str) and ref.startswith('graph_relation_type:')}
+    graph_entities = set(GRAPH_ENDPOINT_ENTITIES.values()) | {'graph_edge'}
 
     for spec in ENTITIES:
         rows = entities.get(spec.key) or []
@@ -406,10 +424,16 @@ def write_case_bundle(new_case_identifier, entities, ref_map):
                 setattr(row, column, ref_map.get(payload.get(column)))
 
             for column in spec.entity_refs:
-                setattr(row, column, ref_map.get(payload.get(column)))
+                if column not in spec.required_refs:
+                    setattr(row, column, ref_map.get(payload.get(column)))
 
             for column in spec.lookup_refs:
-                setattr(row, column, ref_map.get(payload.get(column)))
+                if column not in spec.required_refs:
+                    setattr(row, column, ref_map.get(payload.get(column)))
+
+            if spec.required_refs or spec.poly_refs:
+                if not _resolve_graph_references(row, spec, payload, graph_refs, graph_lookups):
+                    continue
 
             # Self-references are left null on the first pass: the row they
             # point at may not exist yet, and ordering within an entity is not
@@ -438,12 +462,70 @@ def write_case_bundle(new_case_identifier, entities, ref_map):
                     setattr(row, column, ref_map.get(payload.get(column)))
             db.session.flush()
 
+        if spec.key in graph_entities:
+            graph_refs[spec.key] = {
+                payload['_ref']: getattr(row, spec.pk)
+                for row, payload in deferred
+                if isinstance(payload.get('_ref'), str) and payload['_ref'].startswith(spec.key + ':')
+            }
+
+        if spec.key == 'graph_view':
+            for row, _ in deferred:
+                row.state = _remap_graph_positions(row.state, graph_refs)
+
         if spec.key == 'dspath':
             _restore_datastore_root(new_case_identifier, deferred)
 
         written[spec.key] = deferred
 
     return written
+
+
+def _resolve_graph_references(row, spec, payload, graph_refs, ref_map):
+    for column in spec.required_refs:
+        ref = payload.get(column)
+        if not isinstance(ref, str):
+            return False
+        entity = spec.entity_refs.get(column)
+        if entity:
+            resolved = graph_refs.get(entity, {}).get(ref)
+        else:
+            lookup = spec.lookup_refs[column]
+            resolved = ref_map.get(ref) if ref.startswith(lookup + ':') else None
+        if resolved is None:
+            return False
+        setattr(row, column, resolved)
+
+    for kind_column, id_column, kinds in spec.poly_refs:
+        kind = payload.get(kind_column)
+        ref = payload.get(id_column)
+        if not isinstance(kind, str) or not isinstance(ref, str):
+            return False
+        entity = kinds.get(kind)
+        resolved = graph_refs.get(entity, {}).get(ref)
+        if resolved is None:
+            return False
+        setattr(row, kind_column, kind)
+        setattr(row, id_column, resolved)
+    return True
+
+
+def _remap_graph_positions(state, graph_refs):
+    if not isinstance(state, dict):
+        return {}
+    positions = state.get('positions')
+    if not isinstance(positions, dict):
+        return {**state, 'positions': {}}
+    remapped = {}
+    for key, point in positions.items():
+        if not isinstance(key, str):
+            continue
+        kind, _, old_id = key.partition(':')
+        entity = GRAPH_ENDPOINT_ENTITIES.get(kind)
+        identifier = graph_refs.get(entity, {}).get(make_ref(entity, old_id))
+        if identifier is not None:
+            remapped[make_ref(kind, identifier)] = point
+    return {**state, 'positions': remapped}
 
 
 def _prepare_datastore_files(new_case_identifier, rows):
