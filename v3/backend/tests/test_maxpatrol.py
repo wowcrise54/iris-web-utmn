@@ -139,6 +139,8 @@ class MaxPatrolTests(unittest.TestCase):
         self.assertEqual([call[0] for call in order.mock_calls[:2]], ['events', 'create'])
         self.assertEqual(client.events.call_args_list[0].args[0], 'new')
         self.assertEqual(client.events.call_count, 6)
+        self.assertEqual([call.args[0] for call in client.events.call_args_list],
+                         ['new', 'older', '0', '1', '2', '3'])
 
     def test_retry_failed_incident_and_skip_success_after_restart(self):
         m = self.core()

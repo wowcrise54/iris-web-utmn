@@ -20,6 +20,14 @@ NAMESPACE = UUID('dc32cd4f-0440-4f48-b09e-e3aeb86cf716')
 EVENT_REFRESH_WINDOW = timedelta(hours=24)
 
 
+def event_collected_at(state):
+    try:
+        collected = datetime.fromisoformat(state['collected_at'].replace('Z', '+00:00'))
+        return collected if collected.tzinfo else collected.replace(tzinfo=timezone.utc)
+    except (KeyError, ValueError, TypeError, AttributeError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
 def configuration(row):
     values = {p['param_name']: p.get('value', p.get('default')) for p in row.module_config or []}
     values['api_token'] = decrypt_secret(values.get('api_token'))
@@ -115,7 +123,9 @@ class IrisStore:
         from app.models.alerts import Alert
         rows = self._recent_imports(
             MaxPatrolReceipt.incident_id, Alert.alert_source_content['event_collection']).yield_per(100)
-        return [incident_id for incident_id, state in rows if self._event_refresh_due(state)]
+        candidates = [(event_collected_at(state), incident_id) for incident_id, state in rows
+                      if self._event_refresh_due(state)]
+        return [incident_id for _, incident_id in sorted(candidates)]
 
     def _event_refresh_due(self, state):
         if not isinstance(state, dict):
@@ -125,12 +135,9 @@ class IrisStore:
             return False
         if state.get('version') != 2:
             return True
-        try:
-            collected = datetime.fromisoformat(state['collected_at'].replace('Z', '+00:00'))
-            cooldown = 300 if state.get('complete') else 3600
-            return (datetime.now(timezone.utc) - collected).total_seconds() >= max(cooldown, self.config.interval)
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return True
+        cooldown = 300 if state.get('complete') else 120
+        elapsed = datetime.now(timezone.utc) - event_collected_at(state)
+        return elapsed.total_seconds() >= max(cooldown, self.config.interval)
 
     def refresh_events(self, incident_id, materials):
         if not self.active():

@@ -423,13 +423,21 @@ def collect(config, client, store, *, now=None, extra_incidents=()):
     processed_incidents = set()
     deferred_refreshes = []
     refresh_attempts = 0
+
+    def reserve_backlog_attempt(backlog):
+        for candidate in backlog:
+            yield candidate
+            if refresh_attempts:
+                break
+
     log.info('MaxPatrol collection started: customer=%s time_from=%s time_to=%s',
              config.customer_id, timestamp(start), timestamp(end))
     try:
         incidents = ((incident, 'listed') for incident in client.incidents(start, end))
         refreshes = ((incident, 'deferred') for incident in deferred_refreshes)
         backlog = (({'id': uid}, 'saved') for uid in extra_incidents)
-        for incident, origin in chain(incidents, refreshes, backlog):
+        # Keep new imports first and give the backlog one attempt before fresh refreshes.
+        for incident, origin in chain(incidents, reserve_backlog_attempt(backlog), refreshes, backlog):
             deferred = origin == 'deferred'
             incident_id = str(incident.get('id') or '').strip()
             if not deferred:

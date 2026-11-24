@@ -152,8 +152,9 @@ class StorageTests(unittest.TestCase):
             now = datetime.now(timezone.utc)
             for name, age, collected_min, expected in (
                     ('old', 25, 120, False),
-                    ('cooldown', 2, 10, False),
-                    ('retry', 2, 61, True)):
+                    ('cooldown', 0.1, 1, False),
+                    ('retry', 0.1, 3, True),
+                    ('backlog', 2, 61, True)):
                 alert_uuid = uuid4()
                 h.db.session.add(h.models.MaxPatrolReceipt(source_key=h.config.source_key,
                     incident_id=name, alert_uuid=alert_uuid, imported_at=now - timedelta(hours=age)))
@@ -163,7 +164,7 @@ class StorageTests(unittest.TestCase):
                             'collected_at': (now - timedelta(minutes=collected_min)).isoformat()}}))
                 h.db.session.commit()
                 self.assertEqual(h.store.needs_event_refresh(name), expected)
-            self.assertEqual(h.store.refresh_candidates(), ['retry'])
+            self.assertEqual(h.store.refresh_candidates(), ['backlog', 'retry'])
 
     def test_refresh_metadata_and_incident_queries_do_not_deserialize_event_payloads(self):
         def metadata_only(raw):
